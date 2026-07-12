@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { resolveBundledRclonePath } = require('./runtimePaths');
 
 const APPS_FOLDER = 'LabSuite-Apps';
 
@@ -15,9 +16,11 @@ function getRcloneBin() {
     isPackaged = app.isPackaged;
   } catch (e) {}
 
-  return isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac')
-    : path.join(__dirname, '../bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac');
+  return resolveBundledRclonePath({
+    isPackaged,
+    resourcesPath: process.resourcesPath,
+    mainDir: __dirname
+  });
 }
 
 function getConfigPath() {

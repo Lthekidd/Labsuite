@@ -150,6 +150,14 @@ function main() {
   checkElectronVersion();
   checkRcloneBinary(path.join(ROOT, 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac'), 'bundled rclone');
 
+  const packagedApp = path.join(ROOT, 'dist-packaged', 'win-unpacked', 'LabSuite.exe');
+  if (fs.existsSync(packagedApp)) {
+    checkRcloneBinary(
+      path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'rclone-win.exe'),
+      'packaged rclone'
+    );
+  }
+
   for (const candidate of [
     ['dist-packaged/win-unpacked/LabSuite.exe', 'packaged LabSuite.exe'],
     [`dist-packaged/LabSuite-v${PACKAGE_VERSION}-Setup.exe`, 'LabSuite installer']
