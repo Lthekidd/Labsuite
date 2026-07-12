@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.3 — 2026-07-13
+
+### Fixed
+
+- Installed builds now find the bundled rclone executable in `resources/bin`, matching the electron-builder `extraResources` layout.
+- Google Drive connection, encrypted app sync, and local WebDAV restore share one packaged-binary resolver with a legacy-layout fallback.
+- Release verification now checks that the packaged rclone binary is present and runnable before an installer can be published.
+
 ## 2.2.2 — 2026-07-12
 
 ### Improved

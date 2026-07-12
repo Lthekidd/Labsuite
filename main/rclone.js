@@ -7,6 +7,7 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const { buildExcludeArgs } = require('./filesystem');
+const { resolveBundledRclonePath } = require('./runtimePaths');
 
 const REMOTE = 'gdrive-crypt';         // encrypted remote
 const ENCRYPTED_FOLDER = 'LabSuite-Encrypted';
@@ -72,9 +73,11 @@ function getPaths() {
     userDataDir = path.join(__dirname, '../data');
   }
 
-  const rcloneBin = isPackaged
-    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac')
-    : path.join(__dirname, '../bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac');
+  const rcloneBin = resolveBundledRclonePath({
+    isPackaged,
+    resourcesPath: process.resourcesPath,
+    mainDir: __dirname
+  });
 
   const configPath = path.join(userDataDir, 'rclone.conf');
 
