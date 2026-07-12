@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download verified rclone binary
+        run: npm run download-rclone
+
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
