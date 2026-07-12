@@ -43,6 +43,14 @@ function requestJson(port, requestPath, options = {}) {
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function canonicalExistingPath(filePath) {
+  try {
+    return fs.realpathSync.native(filePath).toLowerCase();
+  } catch (_) {
+    return path.resolve(filePath).toLowerCase();
+  }
+}
+
 function waitForProcess(child, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -251,8 +259,9 @@ async function main() {
         pollSeconds: 10
       });
       let runtimeUploads = 0;
+      const canonicalRuntimeFile = canonicalExistingPath(runtimeFile);
       service.events.on('upload', upload => {
-        if (String(upload.guestPath).toLowerCase() === runtimeFile.toLowerCase()) runtimeUploads += 1;
+        if (canonicalExistingPath(String(upload.guestPath)) === canonicalRuntimeFile) runtimeUploads += 1;
       });
       const helperEnv = { ...process.env, LOCALAPPDATA: guestProfile };
       const firstRun = spawn('powershell.exe', [
