@@ -19,9 +19,26 @@ const compactInputStyle = {
 export default function LabSuiteSettings() {
   const [settings, setSettings] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const [updateStatus, setUpdateStatus] = useState({
+    supported: false,
+    status: 'loading',
+    currentVersion: '',
+    message: 'Loading update status...'
+  });
 
   useEffect(() => {
     loadSettings();
+    ipcRenderer.invoke('updates:getStatus')
+      .then((status) => setUpdateStatus(status || {}))
+      .catch((error) => setUpdateStatus({
+        supported: false,
+        status: 'error',
+        message: `Could not load update status: ${error.message}`
+      }));
+
+    const handleUpdateStatus = (_event, status) => setUpdateStatus(status || {});
+    ipcRenderer.on('updates:status', handleUpdateStatus);
+    return () => ipcRenderer.removeListener('updates:status', handleUpdateStatus);
   }, []);
 
   const loadSettings = async () => {
@@ -70,6 +87,24 @@ export default function LabSuiteSettings() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const checkForUpdates = async () => {
+    setUpdateStatus((current) => ({
+      ...current,
+      status: 'checking',
+      message: 'Checking GitHub for a newer LabSuite release...'
+    }));
+    try {
+      const status = await ipcRenderer.invoke('updates:check');
+      setUpdateStatus(status || {});
+    } catch (error) {
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        message: `Update check failed: ${error.message}`
+      }));
     }
   };
 
@@ -440,6 +475,50 @@ export default function LabSuiteSettings() {
               style={inputStyle}
             />
           </div>
+        </section>
+
+        {/* Software Updates */}
+        <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <h2 style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)' }}>Software Updates</h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 18px' }}>
+            Installed version: {updateStatus.currentVersion ? `v${updateStatus.currentVersion}` : 'Unknown'}. LabSuite also checks automatically after startup and every six hours.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={checkForUpdates}
+              disabled={!updateStatus.supported || ['checking', 'available', 'downloading', 'downloaded'].includes(updateStatus.status)}
+              style={{ minWidth: '170px', padding: '10px 16px' }}
+            >
+              {updateStatus.status === 'checking' && 'Checking...'}
+              {updateStatus.status === 'available' && 'Starting Download...'}
+              {updateStatus.status === 'downloading' && `Downloading ${Math.round(updateStatus.progress || 0)}%`}
+              {updateStatus.status === 'downloaded' && 'Update Ready'}
+              {!['checking', 'available', 'downloading', 'downloaded'].includes(updateStatus.status) && 'Check for Updates'}
+            </button>
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                flex: '1 1 320px',
+                fontSize: '13px',
+                lineHeight: 1.5,
+                color: updateStatus.status === 'error'
+                  ? 'var(--accent-error)'
+                  : updateStatus.status === 'downloaded'
+                    ? 'var(--accent-secondary)'
+                    : 'var(--text-secondary)'
+              }}
+            >
+              {updateStatus.message || 'Click the button to check for a new release.'}
+            </div>
+          </div>
+          {updateStatus.status === 'downloaded' && (
+            <p style={{ margin: '14px 0 0', color: 'var(--text-muted)', fontSize: '12px' }}>
+              The window close button only hides LabSuite. Use Quit from the system-tray icon, then reopen LabSuite to install the update.
+            </p>
+          )}
         </section>
 
         {/* Advanced Emergency Tools */}

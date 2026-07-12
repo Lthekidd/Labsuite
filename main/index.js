@@ -87,6 +87,30 @@ let quitCleanupStarted = false;
 let quitDatabaseFlushComplete = false;
 let quitDatabaseFlushPromise = null;
 const recentRendererMessages = new Map();
+let autoUpdater = null;
+let updaterInitialized = false;
+let updateCheckPromise = null;
+let updateStatus = {
+  supported: false,
+  status: 'unavailable',
+  currentVersion: app.getVersion(),
+  availableVersion: null,
+  progress: null,
+  lastCheckedAt: null,
+  message: 'Update checks are available in the installed version of LabSuite.'
+};
+
+function getUpdateStatus() {
+  return { ...updateStatus };
+}
+
+function publishUpdateStatus(changes = {}) {
+  updateStatus = { ...updateStatus, ...changes, currentVersion: app.getVersion() };
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updates:status', getUpdateStatus());
+  }
+  return getUpdateStatus();
+}
 
 function isTrustedRendererUrl(rawUrl) {
   try {
@@ -159,6 +183,137 @@ function canCheckForUpdates() {
   }
 
   return true;
+}
+
+function initializeAutoUpdater() {
+  if (updaterInitialized) return getUpdateStatus();
+  updaterInitialized = true;
+
+  if (!canCheckForUpdates()) {
+    return publishUpdateStatus({
+      supported: false,
+      status: 'unavailable',
+      message: 'Update checks are available in the installed version of LabSuite.'
+    });
+  }
+
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+      publishUpdateStatus({
+        supported: true,
+        status: 'checking',
+        progress: null,
+        message: 'Checking GitHub for a newer LabSuite release...'
+      });
+    });
+    autoUpdater.on('update-not-available', () => {
+      publishUpdateStatus({
+        supported: true,
+        status: 'up-to-date',
+        availableVersion: null,
+        progress: null,
+        lastCheckedAt: new Date().toISOString(),
+        message: `LabSuite v${app.getVersion()} is up to date.`
+      });
+    });
+    autoUpdater.on('update-available', (info) => {
+      console.log(`LabSuite: Update ${info.version} is available and will download in the background.`);
+      publishUpdateStatus({
+        supported: true,
+        status: 'available',
+        availableVersion: info.version,
+        progress: 0,
+        lastCheckedAt: new Date().toISOString(),
+        message: `LabSuite v${info.version} is available. Starting the download...`
+      });
+    });
+    autoUpdater.on('download-progress', (progress) => {
+      const percent = Math.max(0, Math.min(100, Number(progress?.percent) || 0));
+      const versionLabel = updateStatus.availableVersion ? ` v${updateStatus.availableVersion}` : '';
+      publishUpdateStatus({
+        supported: true,
+        status: 'downloading',
+        progress: percent,
+        message: `Downloading LabSuite${versionLabel} (${Math.round(percent)}%)...`
+      });
+    });
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log(`LabSuite: Update ${info.version} downloaded; it will install when LabSuite exits.`);
+      publishUpdateStatus({
+        supported: true,
+        status: 'downloaded',
+        availableVersion: info.version,
+        progress: 100,
+        lastCheckedAt: new Date().toISOString(),
+        message: `LabSuite v${info.version} is ready. Quit LabSuite from the system tray, then reopen it to finish installing.`
+      });
+    });
+    autoUpdater.on('error', (err) => {
+      console.warn('LabSuite: Auto-updater check skipped:', err.message);
+      publishUpdateStatus({
+        supported: true,
+        status: 'error',
+        progress: null,
+        lastCheckedAt: new Date().toISOString(),
+        message: `Update check failed: ${err.message}`
+      });
+    });
+
+    publishUpdateStatus({
+      supported: true,
+      status: 'idle',
+      message: 'LabSuite checks for updates automatically. You can also check now.'
+    });
+    console.log('LabSuite: Auto-updater is ready.');
+  } catch (err) {
+    console.error('LabSuite: Failed to initialize auto-updater:', err.message);
+    publishUpdateStatus({
+      supported: false,
+      status: 'error',
+      message: `The updater could not start: ${err.message}`
+    });
+  }
+
+  return getUpdateStatus();
+}
+
+async function checkForLabSuiteUpdates({ notify = false } = {}) {
+  initializeAutoUpdater();
+  if (!autoUpdater || !updateStatus.supported) return getUpdateStatus();
+  if (updateStatus.status === 'downloaded') return getUpdateStatus();
+  if (updateCheckPromise) {
+    await updateCheckPromise;
+    return getUpdateStatus();
+  }
+
+  publishUpdateStatus({
+    status: 'checking',
+    progress: null,
+    message: 'Checking GitHub for a newer LabSuite release...'
+  });
+
+  updateCheckPromise = (notify
+    ? autoUpdater.checkForUpdatesAndNotify()
+    : autoUpdater.checkForUpdates()
+  ).catch((err) => {
+    console.warn('LabSuite: Update check failed:', err.message);
+    publishUpdateStatus({
+      supported: true,
+      status: 'error',
+      progress: null,
+      lastCheckedAt: new Date().toISOString(),
+      message: `Update check failed: ${err.message}`
+    });
+  }).finally(() => {
+    updateCheckPromise = null;
+  });
+
+  await updateCheckPromise;
+  return getUpdateStatus();
 }
 
 // ── Window factory ───────────────────────────────────────────────────────────
@@ -306,6 +461,8 @@ function createWindow() {
   const { ipcMain, shell } = require('electron');
   ipcMain.handle('app:getLogPath', () => getLogPath());
   ipcMain.handle('app:getVersion', () => app.getVersion());
+  ipcMain.handle('updates:getStatus', () => getUpdateStatus());
+  ipcMain.handle('updates:check', () => checkForLabSuiteUpdates({ notify: false }));
   ipcMain.handle('app:openExternal', async (_event, { url } = {}) => {
     const target = new URL(String(url || '').trim());
     if (!['http:', 'https:'].includes(target.protocol)) {
@@ -375,27 +532,11 @@ app.on('ready', () => {
     }, 1000);
   }
 
-  // Initialize auto-updates in production
-  if (canCheckForUpdates()) {
+  // Initialize auto-updates in production.
+  const updaterState = initializeAutoUpdater();
+  if (updaterState.supported) {
     try {
-      const { autoUpdater } = require('electron-updater');
-      autoUpdater.autoDownload = true;
-      autoUpdater.autoInstallOnAppQuit = true;
-      autoUpdater.on('error', (err) => {
-        console.warn('LabSuite: Auto-updater check skipped:', err.message);
-      });
-      autoUpdater.on('update-available', (info) => {
-        console.log(`LabSuite: Update ${info.version} is available and will download in the background.`);
-      });
-      autoUpdater.on('update-downloaded', (info) => {
-        console.log(`LabSuite: Update ${info.version} downloaded; it will install when LabSuite exits.`);
-      });
-
-      const checkForUpdates = () => {
-        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-          console.warn('LabSuite: Auto-updater check skipped:', err.message);
-        });
-      };
+      const checkForUpdates = () => checkForLabSuiteUpdates({ notify: true });
       const firstUpdateCheck = setTimeout(checkForUpdates, 30 * 1000);
       const periodicUpdateCheck = setInterval(checkForUpdates, 6 * 60 * 60 * 1000);
       firstUpdateCheck.unref?.();

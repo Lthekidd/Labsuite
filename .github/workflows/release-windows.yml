@@ -40,13 +40,10 @@ jobs:
       - name: Build renderer and main process
         run: npm run build
 
-      - name: Build signed Windows installer
+      - name: Build unsigned Windows installer
         run: npx electron-builder --win --publish never
-        env:
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-      - name: Verify release signatures and update metadata
+      - name: Verify unsigned installer and update metadata
         shell: pwsh
         run: |
           $installer = Get-ChildItem dist-packaged -Filter 'LabSuite-v*-Setup.exe' | Select-Object -First 1
@@ -54,8 +51,8 @@ jobs:
           if (-not (Test-Path dist-packaged/latest.yml)) { throw 'latest.yml was not generated.' }
           if (-not (Test-Path "$($installer.FullName).blockmap")) { throw 'Installer blockmap was not generated.' }
           $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
-          if ($signature.Status -ne 'Valid') {
-            throw "Installer signature is $($signature.Status), expected Valid."
+          if ($signature.Status -ne 'NotSigned') {
+            throw "Installer signature is $($signature.Status), expected NotSigned for the personal-use release."
           }
 
       - name: Create draft GitHub release

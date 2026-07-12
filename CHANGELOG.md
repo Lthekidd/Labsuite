@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.1 — 2026-07-12
+
+### Added
+
+- A manual **Check for Updates** control with live checking, download, and ready-to-install status in Suite Settings.
+
+### Changed
+
+- Windows installers and GitHub update releases now use an unsigned personal-use build policy, avoiding paid certificate requirements.
+
 ## 2.2.0 — 2026-07-12
 
 ### Added
