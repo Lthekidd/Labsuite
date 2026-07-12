@@ -5,6 +5,7 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const REQUIRED_RCLONE_VERSION = '1.74.4';
 const MIN_ELECTRON_MAJOR = 43;
+const PACKAGE_VERSION = require('../package.json').version;
 
 function fail(message) {
   console.error(`release-security: ${message}`);
@@ -131,8 +132,8 @@ function checkSignedIfPackaged(filePath, label) {
 
   const status = getAuthenticodeStatus(filePath);
   if (status !== 'Valid') {
-    if (process.env.LABSUITE_ALLOW_UNSIGNED_RELEASE === '1') {
-      console.warn(`release-security: ${label} signature is ${status}; allowed by LABSUITE_ALLOW_UNSIGNED_RELEASE=1.`);
+    if (status === 'NotSigned') {
+      console.warn(`release-security: ${label} is unsigned by personal-use policy; Windows will show an Unknown publisher warning.`);
       return;
     }
     fail(`${label} is not signed with a valid Authenticode signature (status: ${status}).`);
@@ -150,11 +151,8 @@ function main() {
   checkRcloneBinary(path.join(ROOT, 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac'), 'bundled rclone');
 
   for (const candidate of [
-    ['release/win-unpacked/LabSuite.exe', 'packaged LabSuite.exe'],
-    ['release-latest/win-unpacked/LabSuite.exe', 'latest packaged LabSuite.exe'],
-    ['release/LabSuite-v2.2.0-Setup.exe', 'LabSuite installer'],
-    ['release-latest/LabSuite-v2.2.0-Setup.exe', 'latest LabSuite installer'],
-    ['release-v2.2-build/LabSuite-v2.2.0-Setup.exe', 'LabSuite v2.2 installer']
+    ['dist-packaged/win-unpacked/LabSuite.exe', 'packaged LabSuite.exe'],
+    [`dist-packaged/LabSuite-v${PACKAGE_VERSION}-Setup.exe`, 'LabSuite installer']
   ]) {
     checkSignedIfPackaged(path.join(ROOT, candidate[0]), candidate[1]);
   }

@@ -89,6 +89,8 @@ const INVOKE_CHANNELS = new Set([
   'app:getVersion',
   'app:getLogPath',
   'app:openExternal',
+  'updates:getStatus',
+  'updates:check',
 
   // Advanced Features API (1, 3, 5, 7)
   'restore:browseSnapshot',
@@ -199,6 +201,7 @@ const LISTEN_CHANNELS = new Set([
   'lan:transfer-progress',
   'lan:transfer-queue',
   'vmProtect:state',
+  'updates:status',
   'notepad:open-file'
 ]);
 

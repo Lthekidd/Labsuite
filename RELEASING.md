@@ -5,13 +5,11 @@ LabSuite uses GitHub Releases and `electron-updater` to deliver Windows updates.
 ## One-time setup
 
 1. Push this source tree to the public repository `Lthekidd/Labsuite`. The repository is currently empty, so review the files before the first push. Local databases, rclone credentials, binaries, build outputs, and installers are excluded by `.gitignore`.
-2. Obtain a Windows Authenticode code-signing certificate. A standard OV certificate or Azure Trusted Signing works with automatic updates; an EV certificate gives immediate SmartScreen reputation but is less convenient in hosted CI.
-3. In GitHub, open **Settings → Secrets and variables → Actions** and add:
-   - `WIN_CSC_LINK`: an exportable `.pfx` certificate encoded as base64, or another electron-builder-supported certificate reference.
-   - `WIN_CSC_KEY_PASSWORD`: the `.pfx` password.
-4. In **Settings → Actions → General**, keep workflow permissions set to read/write, or rely on the workflow's `contents: write` permission if organization policy allows it.
+2. In **Settings → Actions → General**, keep workflow permissions set to read/write, or rely on the workflow's `contents: write` permission if organization policy allows it.
 
-Never commit a certificate, certificate password, Google token, `rclone.conf`, or LabSuite database.
+LabSuite currently uses unsigned personal-use installers, so no paid Authenticode certificate or signing secrets are required. Windows will display an **Unknown publisher** warning during installation. Only install releases published from your own `Lthekidd/Labsuite` repository.
+
+Never commit a Google token, `rclone.conf`, LabSuite database, or any other private credential.
 
 ## Publish an update
 
@@ -26,7 +24,7 @@ Never commit a certificate, certificate password, Google token, `rclone.conf`, o
    git push origin v2.2.1
    ```
 
-5. GitHub Actions runs the test suite, builds and signs the NSIS installer, verifies `latest.yml` and the blockmap, and creates a **draft** release.
+5. GitHub Actions runs the test suite, builds the unsigned NSIS installer, verifies `latest.yml` and the blockmap, and creates a **draft** release.
 6. Download and test the draft installer on one computer.
 7. In GitHub **Releases**, edit the draft and click **Publish release**. Only this final action makes the update visible to installed clients.
 

@@ -10,7 +10,7 @@ publish:
   releaseType: draft
 directories:
   output: dist-packaged
-forceCodeSigning: true
+forceCodeSigning: false
 files:
   - dist/**/*
   - main/**/*
@@ -28,9 +28,9 @@ win:
   target:
     - nsis
   icon: assets/icon.ico
-  forceCodeSigning: true
+  forceCodeSigning: false
   signAndEditExecutable: true
-  verifyUpdateCodeSignature: true
+  verifyUpdateCodeSignature: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
