@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "LabSuite CoinGecko Exporter",
+  "version": "1.1.2",
+  "description": "Local-only exporter for CoinGecko portfolio transaction rows into a LabSuite-friendly CSV.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://www.coingecko.com/*"],
+  "action": {
+    "default_title": "LabSuite CoinGecko Exporter",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.coingecko.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

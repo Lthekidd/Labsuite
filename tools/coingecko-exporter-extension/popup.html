@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>LabSuite CoinGecko Exporter</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="panel">
+      <header>
+        <div class="mark"></div>
+        <div>
+          <h1>LabSuite Exporter</h1>
+          <p>CoinGecko portfolio CSV</p>
+        </div>
+      </header>
+
+      <section class="actions">
+        <button id="exportPortfolioCoins" class="primary">Scan Non-Zero Holdings</button>
+        <button id="exportVisible">Export Current Rows</button>
+        <button id="autoLoadExport">Auto-Load Current Page</button>
+        <button id="downloadCsv" disabled>Download CSV</button>
+      </section>
+
+      <section class="status">
+        <div id="statusText">Open a CoinGecko portfolio or transaction page.</div>
+        <div id="preview"></div>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

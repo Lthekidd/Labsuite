@@ -1,0 +1,47 @@
+# Dependency directories
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+dist-packaged/
+release*/
+
+# Local databases, binaries and config
+data/
+bin/
+.agents/
+encrypted/
+LabSuite-Control/
+LabSuite-Encrypted/
+vaultsync/
+tests/e2e/temp_user_data_app/
+labsuite_db.json
+rclone.conf
+rclone_env.txt
+*.bak
+
+# Temp and log files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Environment credentials
+.env
+.env.local
+.env.production.local
+
+# Scratch / dev test files
+scratch_test.js
+scratch_*.js
+
+# Binary artifacts (extra safety)
+*.blockmap
+*.exe
+builder-debug.yml
+logo_source.png

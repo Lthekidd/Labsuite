@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Content Security Policy: restrict scripts to self, allow Google OAuth redirect -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self';
+             script-src 'self' blob:;
+             style-src 'self' 'unsafe-inline';
+             connect-src 'self' https://accounts.google.com https://www.googleapis.com ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*;
+             img-src 'self' data: https:;
+             font-src 'self' data:;">
+  <title>LabSuite</title>
+  <link rel="stylesheet" href="./renderer/index.css">
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="./renderer/index.jsx"></script>
+</body>
+</html>

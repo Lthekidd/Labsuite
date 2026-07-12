@@ -1,0 +1,51 @@
+appId: com.labsuite.app
+productName: LabSuite
+artifactName: ${productName}-v${version}-Setup.${ext}
+copyright: Copyright © 2026 LabSuite Team
+publish:
+  provider: github
+  owner: Lthekidd
+  repo: labsuite
+  private: false
+  releaseType: draft
+directories:
+  output: dist-packaged
+forceCodeSigning: true
+files:
+  - dist/**/*
+  - main/**/*
+  - renderer/**/*
+  - package.json
+  - CHANGELOG.md
+extraResources:
+  - from: bin
+    to: bin
+  - from: assets
+    to: assets
+  - from: tools/coingecko-exporter-extension
+    to: tools/coingecko-exporter-extension
+win:
+  target:
+    - nsis
+  icon: assets/icon.ico
+  forceCodeSigning: true
+  signAndEditExecutable: true
+  verifyUpdateCodeSignature: true
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LabSuite
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh
+fileAssociations:
+  - ext: txt
+    name: Text Document
+    role: Editor
+mac:
+  target:
+    - dmg
+  icon: assets/icon.png
+  category: public.app-category.utilities
+asar: true
