@@ -257,15 +257,26 @@ async function main() {
       const helperEnv = { ...process.env, LOCALAPPDATA: guestProfile };
       const firstRun = spawn('powershell.exe', [
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-NoPicker'
-      ], { env: helperEnv, windowsHide: true, stdio: 'ignore' });
+      ], { env: helperEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let firstRunOutput = '';
+      firstRun.stdout.on('data', chunk => { firstRunOutput += chunk.toString(); });
+      firstRun.stderr.on('data', chunk => { firstRunOutput += chunk.toString(); });
       for (let attempt = 0; attempt < 100; attempt += 1) {
         const pendingEnrollment = service.getState().pendingEnrollments.find(item => item.enrollmentId === runtimeInvitation.enrollmentId);
         if (pendingEnrollment && pendingEnrollment.state === 'pending') break;
         await wait(50);
       }
       assert.strictEqual(service.approveEnrollment(runtimeInvitation.enrollmentId).success, true);
-      assert.strictEqual(await waitForProcess(firstRun), 0, 'Portable helper should enroll and upload successfully in Windows PowerShell.');
-      assert.strictEqual(runtimeUploads, 1, 'Initial helper run should upload the selected file exactly once.');
+      assert.strictEqual(
+        await waitForProcess(firstRun),
+        0,
+        `Portable helper should enroll and upload successfully in Windows PowerShell.\n${firstRunOutput.trim()}`
+      );
+      assert.strictEqual(
+        runtimeUploads,
+        1,
+        `Initial helper run should upload the selected file exactly once.\n${firstRunOutput.trim()}`
+      );
 
       const watcherRun = spawn('powershell.exe', [
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-RunWatcher', '-NoPicker'

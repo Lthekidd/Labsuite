@@ -1344,41 +1344,53 @@ function New-SignedHeaders($State, [string]$Method, [string]$PathAndQuery, [int6
   }
 }
 
-function Send-ProtectedFile($State, [string]$FilePath) {
+function Send-ProtectedFile($State, [string]$FilePath, [int]$MaxAttempts = 3) {
   if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
     Write-Warning "Waiting for missing file: $FilePath"
     return $false
   }
-  $stream = [IO.File]::Open($FilePath, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-  try {
-    $length = $stream.Length
-    $sha256 = Get-Sha256Hex $stream
-    $stream.Position = 0
-    $escapedPath = [Uri]::EscapeDataString([IO.Path]::GetFullPath($FilePath))
-    $pathAndQuery = '/upload?path=' + $escapedPath
-    $headers = New-SignedHeaders $State 'POST' $pathAndQuery $length $sha256
-    $request = [Net.HttpWebRequest]::Create(([string]$State.serverUrl).TrimEnd('/') + $pathAndQuery)
-    $request.Method = 'POST'
-    $request.ContentType = 'application/octet-stream'
-    $request.ContentLength = $length
-    $request.AllowWriteStreamBuffering = $false
-    $request.Timeout = 120000
-    $request.ReadWriteTimeout = 120000
-    foreach ($key in $headers.Keys) { $request.Headers.Add($key, [string]$headers[$key]) }
-    $requestStream = $request.GetRequestStream()
-    try { $stream.CopyTo($requestStream, 1MB) } finally { $requestStream.Dispose() }
-    $response = $request.GetResponse()
+  $attemptLimit = [Math]::Max(1, $MaxAttempts)
+  for ($attempt = 1; $attempt -le $attemptLimit; $attempt += 1) {
+    $stream = $null
     try {
-      $reader = New-Object IO.StreamReader($response.GetResponseStream())
-      $result = $reader.ReadToEnd() | ConvertFrom-Json
-      if (-not $result.success) { throw [string]$result.error }
-      Write-Host ("Protected: " + $FilePath) -ForegroundColor Green
-      return $true
-    } finally { $response.Dispose() }
-  } catch {
-    Write-Warning ("Could not protect " + $FilePath + ': ' + $_.Exception.Message)
-    return $false
-  } finally { $stream.Dispose() }
+      $stream = [IO.File]::Open($FilePath, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+      $length = $stream.Length
+      $sha256 = Get-Sha256Hex $stream
+      $stream.Position = 0
+      $escapedPath = [Uri]::EscapeDataString([IO.Path]::GetFullPath($FilePath))
+      $pathAndQuery = '/upload?path=' + $escapedPath
+      $headers = New-SignedHeaders $State 'POST' $pathAndQuery $length $sha256
+      $request = [Net.HttpWebRequest]::Create(([string]$State.serverUrl).TrimEnd('/') + $pathAndQuery)
+      $request.Method = 'POST'
+      $request.ContentType = 'application/octet-stream'
+      $request.ContentLength = $length
+      $request.AllowWriteStreamBuffering = $false
+      $request.Timeout = 120000
+      $request.ReadWriteTimeout = 120000
+      foreach ($key in $headers.Keys) { $request.Headers.Add($key, [string]$headers[$key]) }
+      $requestStream = $request.GetRequestStream()
+      try { $stream.CopyTo($requestStream, 1MB) } finally { $requestStream.Dispose() }
+      $response = $request.GetResponse()
+      try {
+        $reader = New-Object IO.StreamReader($response.GetResponseStream())
+        $result = $reader.ReadToEnd() | ConvertFrom-Json
+        if (-not $result.success) { throw [string]$result.error }
+        Write-Host ("Protected: " + $FilePath) -ForegroundColor Green
+        return $true
+      } finally { $response.Dispose() }
+    } catch {
+      $detail = $_.Exception.Message
+      if ($attempt -lt $attemptLimit) {
+        Write-Warning ("Upload attempt " + $attempt + ' of ' + $attemptLimit + " failed for " + $FilePath + ': ' + $detail + '. Retrying...')
+        Start-Sleep -Milliseconds (500 * $attempt)
+      } else {
+        Write-Warning ("Could not protect " + $FilePath + ' after ' + $attemptLimit + ' attempts: ' + $detail)
+      }
+    } finally {
+      if ($null -ne $stream) { $stream.Dispose() }
+    }
+  }
+  return $false
 }
 
 function Send-Heartbeat($State) {
@@ -1478,9 +1490,11 @@ if ($RunWatcher) {
   } finally { $mutex.ReleaseMutex(); $mutex.Dispose() }
 }
 
+$failedFiles = New-Object Collections.Generic.List[string]
 foreach ($file in @($state.files)) {
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
     Write-Warning "Waiting for missing file: $file"
+    $failedFiles.Add([string]$file)
     continue
   }
   $item = Get-Item -LiteralPath $file
@@ -1488,6 +1502,8 @@ foreach ($file in @($state.files)) {
   if ($state.fileStamps.ContainsKey($file) -and [string]$state.fileStamps[$file] -eq $currentStamp) { continue }
   if (Send-ProtectedFile $state $file) {
     $state.fileStamps[$file] = $currentStamp
+  } else {
+    $failedFiles.Add([string]$file)
   }
 }
 Save-State $state
@@ -1497,6 +1513,9 @@ if ([bool]$state.alwaysProtect) {
   Start-HiddenWatcher $installed
   Write-Host 'Always Protect is enabled. LabSuite will catch up whenever this VM and the host are available.' -ForegroundColor Green
 } else {
+  if ($failedFiles.Count -gt 0) {
+    throw ('Protection failed for ' + $failedFiles.Count + ' selected file(s): ' + ($failedFiles -join ', '))
+  }
   Write-Host 'One-time protection finished. Run this helper again to send updated copies.' -ForegroundColor Green
 }
 `;

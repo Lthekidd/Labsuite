@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.2 — 2026-07-12
+
+### Improved
+
+- VM Protect portable helpers retry transient uploads and now report a real failure when a one-time protection run cannot upload every selected file.
+- GitHub Actions captures PowerShell helper diagnostics and supports manual validation runs before a release tag is created.
+
 ## 2.2.1 — 2026-07-12
 
 ### Added
