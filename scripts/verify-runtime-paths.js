@@ -50,6 +50,14 @@ try {
 
   const builderConfig = fs.readFileSync(path.join(root, 'electron-builder.yml'), 'utf8');
   assert.match(builderConfig, /- from: bin\s+[\s\S]*?to: bin/);
+
+  const releaseWorkflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-windows.yml'), 'utf8');
+  const downloadStepIndex = releaseWorkflow.indexOf('run: npm run download-rclone');
+  const testStepIndex = releaseWorkflow.indexOf('run: npm test');
+  const packageStepIndex = releaseWorkflow.indexOf('run: npx electron-builder --win --publish never');
+  assert.ok(downloadStepIndex >= 0, 'Fresh release runners must download the excluded rclone binary.');
+  assert.ok(downloadStepIndex < testStepIndex, 'rclone must be downloaded before the automated test suite.');
+  assert.ok(downloadStepIndex < packageStepIndex, 'rclone must be downloaded before electron-builder packages extraResources.');
 } finally {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
