@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.4 — 2026-07-13
+
+### Added
+
+- Onboarding fields for a personal Google OAuth Desktop client, with a direct link to rclone's official setup guide.
+- A **Suite Settings → Google OAuth Client** migration tool for existing installations that preserves the encrypted vault and refreshes Google authorization.
+
+### Fixed
+
+- rclone's shared-client retirement notice no longer hides the real cause of a failed backup in Activity.
+- Google reconnect temporarily pauses new backup work, refuses to run during an active transfer, restores the previous configuration if approval fails, and never exposes the stored token or client secret to the renderer.
+
+### Important
+
+- rclone's shared Google Drive client ID is being retired during 2026. Each LabSuite PC should be updated to a personal Google OAuth Desktop client from Suite Settings.
+
 ## 2.2.3 — 2026-07-13
 
 ### Fixed

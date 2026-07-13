@@ -1253,6 +1253,38 @@ function setupIpc(mainWindowArg, getMainWindow) {
     return rclone.checkConfig();
   });
 
+  ipcMain.handle('auth:getGDriveClientStatus', async () => {
+    return rclone.getGoogleDriveClientStatus();
+  });
+
+  ipcMain.handle('auth:reconnectGDriveClient', async (_event, { clientId, clientSecret } = {}) => {
+    if (backupWorker.isRunning) {
+      throw new Error('Wait for the current backup to finish before reconnecting Google Drive.');
+    }
+    const shouldResume = !backupsArePaused();
+    if (shouldResume) {
+      watcher.stopWatcher();
+      scheduler.stopScheduler();
+      backupWorker.cancelScheduledBackup();
+      db.setSetting('sync_paused', '1');
+      sendToRenderer('status:change', { status: 'paused', details: 'Google Drive reconnect in progress' });
+    }
+    try {
+      const result = await rclone.reconnectGoogleDriveClient(clientId, clientSecret);
+      gDriveInfoRefresh = null;
+      db.deleteCache('gdrive_info');
+      return result;
+    } finally {
+      if (shouldResume) {
+        watcher.initWatcher();
+        scheduler.startScheduler();
+        db.setSetting('sync_paused', '0');
+        backupWorker.resumeScheduledBackup();
+        sendToRenderer('status:change', { status: 'idle', details: '' });
+      }
+    }
+  });
+
   ipcMain.handle('vault:metadata', async () => {
     return remoteSafety.inspectRawVault();
   });
