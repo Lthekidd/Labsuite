@@ -1234,6 +1234,10 @@ function setupIpc(mainWindowArg, getMainWindow) {
     return { success: true, filePath: result.filePath };
   });
 
+  ipcMain.handle('diagnostics:getFailureLog', () => (
+    JSON.stringify(buildDiagnosticsReport(), null, 2)
+  ));
+
   ipcMain.handle('settings:exportDecryptTool', async () => {
     const win = getWin() || null;
     const result = await dialog.showSaveDialog(win, {

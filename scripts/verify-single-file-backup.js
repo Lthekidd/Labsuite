@@ -42,6 +42,11 @@ try {
   assert.strictEqual(uploads.length, 1, 'Single-file backup should plan exactly one upload.');
   assert.strictEqual(uploads[0].localPath, protectedFile);
   assert.strictEqual(uploads[0].relativePath, 'protected.txt');
+  assert.strictEqual(
+    require('../main/backupManifest').getRemoteFilePath(firstFolder, 'protected.txt'),
+    firstFolder.remote_path,
+    'A standalone file remote path must not append its filename twice.'
+  );
 
   db.upsertManifestEntry(firstFolder.id, 'protected.txt', {
     local_path: protectedFile,

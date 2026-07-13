@@ -1287,6 +1287,11 @@ class BackupWorker extends EventEmitter {
   async uploadNewFiles(folder, items, base, coveredChildren, counters, totals) {
     if (items.length === 0) return;
 
+    if (folder.source_type === 'file') {
+      for (const item of items) await this.uploadSingleItem(folder, item, counters);
+      return;
+    }
+
     try {
       await rclone.copyFilesFrom(folder.local_path, folder.remote_path, items.map(item => item.relativePath), progress => {
         this.emitActiveTransfers(folder, items, progress, 'uploading');
@@ -1323,6 +1328,11 @@ class BackupWorker extends EventEmitter {
 
   async uploadPackedFileMigrations(folder, items, base, coveredChildren, counters, totals) {
     if (items.length === 0) return;
+
+    if (folder.source_type === 'file') {
+      for (const item of items) await this.uploadSinglePackedFileMigration(folder, item, counters);
+      return;
+    }
 
     this.emitItems(folder, items, {
       status: 'uploading',
@@ -1387,6 +1397,11 @@ class BackupWorker extends EventEmitter {
 
   async uploadModifiedFiles(folder, items, base, coveredChildren, counters, totals) {
     if (items.length === 0) return;
+
+    if (folder.source_type === 'file') {
+      for (const item of items) await this.uploadSingleItem(folder, item, counters);
+      return;
+    }
 
     const runId = this.makeRunId();
     const stagingRoot = this.makeStagingRoot(folder, runId);
@@ -1562,6 +1577,11 @@ class BackupWorker extends EventEmitter {
 
   async deleteFilesToHistory(folder, items, base, coveredChildren, counters, totals) {
     if (items.length === 0) return;
+
+    if (folder.source_type === 'file') {
+      for (const item of items) await this.deleteSingleItem(folder, item, counters);
+      return;
+    }
 
     const packedItems = items.filter(item => item.previousStorage === 'pack' && item.previousPackRemotePath);
     for (const item of packedItems.slice(0, FILE_ACTIVITY_PREVIEW_LIMIT)) {

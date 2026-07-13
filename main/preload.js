@@ -55,6 +55,7 @@ const INVOKE_CHANNELS = new Set([
   // Logs & Activity API
   'logs:export',
   'diagnostics:export',
+  'diagnostics:getFailureLog',
   'activity:get',
   'activity:clear',
   'backup:restorePoints',
