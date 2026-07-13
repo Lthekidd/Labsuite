@@ -49,13 +49,13 @@ assert.ok(
 
 const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'apps', 'LabSuiteBackup.jsx'), 'utf8');
 assert.ok(
-  rendererSource.includes("remotePath: item.remotePath,\n          localDestination: dest"),
+  /remotePath:\s*item\.remotePath,\s*localDestination:\s*dest/.test(rendererSource),
   'single-file checkpoint restore must use the planned encrypted remote path'
 );
 
 const workerSource = fs.readFileSync(path.join(__dirname, '..', 'main', 'backupWorker.js'), 'utf8');
 assert.ok(
-  workerSource.includes('if (!dirtyOnly) {\n        db.addRestorePoint({'),
+  /if \(!dirtyOnly\) \{\s*db\.addRestorePoint\(\{/.test(workerSource),
   'unchanged dirty-only scans must not create duplicate checkpoint dates'
 );
 

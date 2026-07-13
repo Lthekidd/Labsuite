@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.16 — 2026-07-13
+
+### Fixed
+
+- Corrected the release-test assertion used by v2.2.15 so Windows installer builds validate the checkpoint file-restore path reliably on GitHub.
+
 ## 2.2.15 — 2026-07-13
 
 ### Fixed
