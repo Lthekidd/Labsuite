@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.7 — 2026-07-13
+
+### Fixed
+
+- Files and temporary directories that disappear while a backup scan is running are now skipped or preserved as deletions instead of being counted as failed uploads.
+- Electron Builder's `dist-packaged` output is treated as disposable build output by Smart Exclusions, alongside `dist`, `node_modules`, and other development artifacts.
+- Stale dirty manifest entries for newly created files that no longer exist are removed automatically on the next backup.
+- The sidebar health badge now considers only enabled backups owned by the current PC, refreshes periodically, displays the number of affected folders, and exposes the stored reason as a tooltip.
+
+### Resolved on the development PC
+
+- Seventy-four transient `ENOENT` errors from `E:\\LabSuite\\dist-packaged\\win-unpacked.tmp` no longer keep the suite in a failing state after a successful retry.
+
 ## 2.2.6 — 2026-07-13
 
 ### Fixed

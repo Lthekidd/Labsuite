@@ -80,6 +80,8 @@ export default function App() {
   const [healthStatus, setHealthStatus] = useState('Checking...');
   const [backupSubTab, setBackupSubTab] = useState('dashboard');
   const [globalStatus, setGlobalStatus] = useState('Protected');
+  const [globalStatusDetail, setGlobalStatusDetail] = useState('All enabled backups on this PC are healthy.');
+  const [globalFailureCount, setGlobalFailureCount] = useState(0);
 
   const refreshGlobalStatus = () => {
     Promise.all([
@@ -88,13 +90,26 @@ export default function App() {
     ]).then(([foldersList, s]) => {
       if (s && s.setup_complete !== '1') {
         setGlobalStatus('pending');
+        setGlobalStatusDetail('Finish backup setup to start protection.');
+        setGlobalFailureCount(0);
         return;
       }
-      const hasErrors = (foldersList || []).some(f => f.consecutive_failures > 0);
-      if (hasErrors) {
+      const activeLocalFolders = (foldersList || []).filter(folder => (
+        (folder.enabled === 1 || folder.enabled === true || folder.enabled === undefined) &&
+        folder.is_local_computer_backup !== false &&
+        !folder.imported_from_remote_catalog
+      ));
+      const failingFolders = activeLocalFolders.filter(folder => Number(folder.consecutive_failures) > 0);
+      if (failingFolders.length > 0) {
         setGlobalStatus('Failing');
+        setGlobalFailureCount(failingFolders.length);
+        setGlobalStatusDetail(failingFolders[0].last_error || `${failingFolders.length} enabled backup folder${failingFolders.length === 1 ? '' : 's'} need attention.`);
       } else {
         setGlobalStatus('Protected');
+        setGlobalFailureCount(0);
+        setGlobalStatusDetail(activeLocalFolders.length > 0
+          ? 'All enabled backups on this PC are healthy.'
+          : 'No backup folders are enabled on this PC.');
       }
     });
   };
@@ -153,6 +168,7 @@ export default function App() {
     const intervalId = setInterval(() => {
       safeInvoke('auth:getGDriveInfo').then(info => { if (info) setGlobalGDriveInfo(info); });
       safeInvoke('health:get').then(health => { if (health && health.gdriveStatus) setHealthStatus(health.gdriveStatus); });
+      refreshGlobalStatus();
     }, 60000);
 
     return () => {
@@ -173,7 +189,11 @@ export default function App() {
   const storagePercent = globalGDriveInfo.total > 0
     ? Math.min(100, (globalGDriveInfo.used / globalGDriveInfo.total) * 100)
     : 0;
-  const compactStatus = globalStatus === 'Protected' ? 'OK' : globalStatus;
+  const compactStatus = globalStatus === 'Protected'
+    ? 'OK'
+    : globalStatus === 'Failing'
+      ? `${globalFailureCount || 1} ISSUE${(globalFailureCount || 1) === 1 ? '' : 'S'}`
+      : globalStatus;
 
   const handleMinimize = () => ipcRenderer.send('window:minimize');
   const handleMaximize = () => ipcRenderer.send('window:maximize');
@@ -256,7 +276,7 @@ export default function App() {
                 <span className={`suite-status-label ${isConnected ? 'is-connected' : 'is-disconnected'}`}>
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
-                <span className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}>
+                <span title={globalStatusDetail} className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}>
                   {compactStatus}
                 </span>
               </div>

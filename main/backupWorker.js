@@ -1,4 +1,5 @@
 const EventEmitter = require('events');
+const fs = require('fs');
 const path = require('path');
 const db = require('./database');
 const rclone = require('./rclone');
@@ -909,6 +910,40 @@ class BackupWorker extends EventEmitter {
     });
   }
 
+  async handleDisappearedLocalItem(folder, item, counters) {
+    if (fs.existsSync(item.localPath)) return false;
+    const entry = db.getManifestEntry(folder.id, item.relativePath) || {};
+    const previousRemotePath = item.previousRemotePath || entry.remote_path || null;
+    const previousStorage = item.previousStorage || entry.storage || 'file';
+    const previousPackRemotePath = item.previousPackRemotePath || entry.pack_remote_path || null;
+
+    if (previousStorage === 'pack' && previousPackRemotePath) {
+      manifest.recordDeleted(folder, item.relativePath, previousPackRemotePath);
+      counters.filesDone += 1;
+    } else if (previousRemotePath) {
+      await this.deleteSingleItem(folder, {
+        ...item,
+        type: 'delete_history',
+        previousRemotePath,
+        previousStorage
+      }, counters);
+      return true;
+    } else {
+      db.removeManifestEntry(folder.id, item.relativePath);
+      counters.filesDone += 1;
+    }
+
+    const skippedAt = new Date().toISOString();
+    this.emitFileActivity(folder, item, {
+      status: 'skipped',
+      percent: 100,
+      completedAt: skippedAt,
+      updatedAt: skippedAt,
+      error: 'File disappeared before upload; it was skipped safely.'
+    });
+    return true;
+  }
+
   async repairActiveCopies(folder, items, base, coveredChildren, counters, totals) {
     for (const item of items) {
       this.emitItems(folder, [item], { status: 'versioning', percent: 0, error: 'Repairing active backup copy' });
@@ -943,6 +978,14 @@ class BackupWorker extends EventEmitter {
   async uploadPackedFiles(folder, items, base, coveredChildren, counters, totals, packSettings) {
     if (items.length === 0) return;
 
+    const availableItems = [];
+    for (const item of items) {
+      if (fs.existsSync(item.localPath)) availableItems.push(item);
+      else await this.handleDisappearedLocalItem(folder, item, counters);
+    }
+    items = availableItems;
+    if (items.length === 0) return;
+
     const runId = this.makeRunId();
     const directMigrationHistoryRoot = this.makeHistoryRoot(folder, runId);
     const groups = packStore.groupPackItems(items, packSettings);
@@ -973,6 +1016,22 @@ class BackupWorker extends EventEmitter {
       try {
         packFile = packStore.createPackFile(folder, packId, group);
       } catch (error) {
+        const survivingItems = [];
+        let missingCount = 0;
+        for (const item of group) {
+          if (fs.existsSync(item.localPath)) {
+            survivingItems.push(item);
+          } else {
+            missingCount += 1;
+            await this.handleDisappearedLocalItem(folder, item, counters);
+          }
+        }
+        if (missingCount > 0) {
+          if (survivingItems.length > 0) {
+            await this.uploadPackedFiles(folder, survivingItems, base, coveredChildren, counters, totals, packSettings);
+          }
+          continue;
+        }
         for (const item of group) {
           manifest.recordFailure(folder, item.relativePath, error);
           this.failItem(folder, item, error);
@@ -1181,6 +1240,7 @@ class BackupWorker extends EventEmitter {
       });
       this.completeItem(folder, item, counters);
     } catch (error) {
+      if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
       manifest.recordFailure(folder, item.relativePath, error);
       this.failItem(folder, item, error);
     }
@@ -1334,6 +1394,7 @@ class BackupWorker extends EventEmitter {
         });
         this.completeItem(folder, item, counters);
       } catch (error) {
+        if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
         manifest.recordFailure(folder, item.relativePath, error);
         this.failItem(folder, item, error);
       }
@@ -1348,6 +1409,7 @@ class BackupWorker extends EventEmitter {
     try {
       await rclone.syncFile(item.localPath, stagingPath);
     } catch (error) {
+      if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
       manifest.recordFailure(folder, item.relativePath, error);
       this.failItem(folder, item, error);
       return;

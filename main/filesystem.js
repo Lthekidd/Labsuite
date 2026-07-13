@@ -47,6 +47,7 @@ const DEFAULT_EXCLUSIONS = [
   '**/node_modules/**',
   '**/.git/**',
   '**/dist/**',
+  '**/dist-packaged/**',
   '**/.next/**',
   '**/__pycache__/**',
   '**/*.pyc',
