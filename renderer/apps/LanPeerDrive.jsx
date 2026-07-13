@@ -126,6 +126,7 @@ export default function LanPeerDrive() {
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [firewallIssue, setFirewallIssue] = useState(null);
   const [transfer, setTransfer] = useState(null);
   const [transferJobs, setTransferJobs] = useState([]);
   const [conflictStrategy, setConflictStrategy] = useState('keepBoth');
@@ -203,6 +204,7 @@ export default function LanPeerDrive() {
       .then(status => {
         if (!mounted || !status) return;
         setAccessStatus(status);
+        setFirewallIssue(status.firewall?.ok === false ? status.firewall : null);
         if (status.enabled) {
           safeInvoke('lan:startDiscovery', {
             filePort: status.port,
@@ -373,8 +375,9 @@ export default function LanPeerDrive() {
       const status = await safeInvoke('lan:enableFileAccess', { enabled: true });
       setAccessStatus(status || { enabled: true });
       await refreshPeers();
-      const firewallNote = status?.firewall && status.firewall.ok === false ? ` ${status.firewall.message}` : '';
-      setMessage(`Network Drive is enabled on this PC.${firewallNote}`);
+      const nextFirewallIssue = status?.firewall?.ok === false ? status.firewall : null;
+      setFirewallIssue(nextFirewallIssue);
+      setMessage(nextFirewallIssue ? 'Network Drive is enabled, but Windows still needs firewall approval.' : 'Network Drive is enabled on this PC.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -393,10 +396,32 @@ export default function LanPeerDrive() {
       setSelectedPeerId(null);
       setDrives([]);
       setItems([]);
+      setFirewallIssue(null);
       setCurrentPath('');
       setPageInfo({ loaded: 0, total: 0, hasMore: false });
       folderCache.current.clear();
       setMessage('Network Drive is disabled on this PC.');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const configureFirewall = async () => {
+    setIsBusy(true);
+    setError('');
+    setMessage('Waiting for Windows firewall approval...');
+    try {
+      const result = await safeInvoke('lan:configureFirewall');
+      if (result?.ok) {
+        setFirewallIssue(null);
+        setAccessStatus(previous => ({ ...previous, firewall: result }));
+        setMessage(result.message || 'Windows firewall now allows LabSuite Network Drive.');
+      } else {
+        setFirewallIssue(result || firewallIssue);
+        setMessage(result?.message || 'Windows firewall approval did not complete.');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1011,7 +1036,27 @@ export default function LanPeerDrive() {
         </section>
       )}
 
-      {(message || error) && (
+      {firewallIssue && !error && (
+        <div style={{
+          padding: '10px 12px',
+          borderRadius: '8px',
+          border: '1px solid rgba(251,191,36,0.3)',
+          color: '#fde68a',
+          background: 'rgba(251,191,36,0.07)',
+          fontSize: '13px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '14px'
+        }}>
+          <span>{firewallIssue.message || message || 'Windows firewall approval is required for other PCs to reach this one.'}</span>
+          <button className="btn btn-primary" type="button" onClick={configureFirewall} disabled={isBusy} style={{ whiteSpace: 'nowrap' }}>
+            {isBusy ? 'Waiting for Approval...' : 'Allow Through Firewall'}
+          </button>
+        </div>
+      )}
+
+      {(message || error) && (!firewallIssue || !!error) && (
         <div style={{
           padding: '10px 12px',
           borderRadius: '8px',
