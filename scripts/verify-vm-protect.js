@@ -307,7 +307,7 @@ async function main() {
       });
       const helperEnv = { ...process.env, LOCALAPPDATA: guestProfile };
       const firstRun = spawn('powershell.exe', [
-        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-NoPicker'
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-NoPicker', '-NoPause'
       ], { env: helperEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       let firstRunOutput = '';
       firstRun.stdout.on('data', chunk => { firstRunOutput += chunk.toString(); });
@@ -330,12 +330,78 @@ async function main() {
       );
 
       const watcherRun = spawn('powershell.exe', [
-        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-RunWatcher', '-NoPicker'
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', runtimeHelper, '-RunWatcher', '-NoPicker', '-NoPause'
       ], { env: helperEnv, windowsHide: true, stdio: 'ignore' });
       await wait(2500);
       try { watcherRun.kill(); } catch (_) {}
       await waitForProcess(watcherRun, 5000).catch(() => null);
       assert.strictEqual(runtimeUploads, 1, 'The watcher must seed persisted stamps instead of reuploading unchanged files at login.');
+
+      const bulkRuntimeHelper = path.join(tempDir, 'Bulk-Runtime-VM-Protect.ps1');
+      const bulkRuntimeInvitation = await service.createEnrollment({
+        name: 'PowerShell Bulk Runtime VM',
+        serverUrls: [`https://127.0.0.1:${port}`],
+        selectedFiles: [runtimeFile],
+        multiUse: true,
+        autoApprove: true,
+        maxGuests: 10
+      });
+      await service.writePortableHelper({
+        outputPath: bulkRuntimeHelper,
+        enrollment: bulkRuntimeInvitation,
+        name: 'PowerShell Bulk Runtime VM',
+        selectedFiles: [runtimeFile],
+        alwaysProtect: false,
+        pollSeconds: 10
+      });
+      const bulkRun = spawn('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', bulkRuntimeHelper, '-NoPicker', '-NoPause'
+      ], { env: helperEnv, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let bulkRunOutput = '';
+      bulkRun.stdout.on('data', chunk => { bulkRunOutput += chunk.toString(); });
+      bulkRun.stderr.on('data', chunk => { bulkRunOutput += chunk.toString(); });
+      assert.strictEqual(
+        await waitForProcess(bulkRun),
+        0,
+        `Bulk PowerShell helper should auto-enroll and upload successfully.\n${bulkRunOutput.trim()}`
+      );
+      assert.match(bulkRunOutput, /different VM Protect pairing was found/i, 'A new bulk helper must replace an existing VM pairing.');
+      assert.match(bulkRunOutput, /One-time protection finished/i);
+      assert.strictEqual(runtimeUploads, 2, 'A new bulk helper must enroll and upload instead of silently reusing the old pairing.');
+      const replacedState = JSON.parse(fs.readFileSync(path.join(guestProfile, 'LabSuiteVMProtect', 'state.json'), 'utf8').replace(/^\uFEFF/, ''));
+      assert.strictEqual(replacedState.enrollmentId, bulkRuntimeInvitation.enrollmentId, 'Local state must record which helper created the pairing.');
+      assert.ok(fs.existsSync(path.join(guestProfile, 'LabSuiteVMProtect', 'last-run.log')), 'The helper must preserve a local diagnostic log.');
+
+      const emptyProfile = path.join(tempDir, 'empty-guest-profile');
+      const emptyRuntimeHelper = path.join(tempDir, 'Empty-Runtime-VM-Protect.ps1');
+      fs.mkdirSync(emptyProfile, { recursive: true });
+      const emptyInvitation = await service.createEnrollment({
+        name: 'PowerShell Empty Runtime VM',
+        serverUrls: [`https://127.0.0.1:${port}`],
+        multiUse: true,
+        autoApprove: true,
+        maxGuests: 10
+      });
+      await service.writePortableHelper({
+        outputPath: emptyRuntimeHelper,
+        enrollment: emptyInvitation,
+        name: 'PowerShell Empty Runtime VM',
+        alwaysProtect: false
+      });
+      const emptyRun = spawn('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', emptyRuntimeHelper, '-NoPicker', '-NoPause'
+      ], { env: { ...process.env, LOCALAPPDATA: emptyProfile }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let emptyRunOutput = '';
+      emptyRun.stdout.on('data', chunk => { emptyRunOutput += chunk.toString(); });
+      emptyRun.stderr.on('data', chunk => { emptyRunOutput += chunk.toString(); });
+      assert.notStrictEqual(await waitForProcess(emptyRun), 0, 'A helper with no selected files must fail visibly.');
+      assert.match(emptyRunOutput, /LabSuite VM Protect could not finish setup/i);
+      assert.match(emptyRunOutput, /No files were selected/i);
+      assert.match(
+        fs.readFileSync(path.join(emptyProfile, 'LabSuiteVMProtect', 'last-run.log'), 'utf8'),
+        /ERROR: No files were selected/i,
+        'Startup failures must be written to the local diagnostic log'
+      );
     }
   } finally {
     await service.stop().catch(() => {});

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.24 — 2026-07-13
+
+### Fixed
+
+- New VM Protect bulk helpers now replace stale or different local pairings instead of silently skipping enrollment and file selection.
+- Portable helpers keep the PowerShell result visible, show connection progress, and save startup diagnostics to `%LOCALAPPDATA%\LabSuiteVMProtect\last-run.log`.
+
 ## 2.2.23 — 2026-07-13
 
 ### Fixed

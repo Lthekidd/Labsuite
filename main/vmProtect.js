@@ -1228,14 +1228,44 @@ param(
   [switch]$AlwaysProtect,
   [switch]$InstallStartup,
   [switch]$RunWatcher,
-  [switch]$NoPicker
+  [switch]$NoPicker,
+  [switch]$NoPause
 )
 
 $ErrorActionPreference = 'Stop'
-$Bootstrap = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__LABSUITE_BOOTSTRAP_BASE64__')) | ConvertFrom-Json
 $StateDir = Join-Path $env:LOCALAPPDATA 'LabSuiteVMProtect'
 $StatePath = Join-Path $StateDir 'state.json'
 $InstalledScript = Join-Path $StateDir 'LabSuite-VM-Protect.ps1'
+$RunLogPath = Join-Path $StateDir 'last-run.log'
+$script:PauseBeforeExit = -not $NoPause -and -not $RunWatcher
+
+function Write-RunLog([string]$Message) {
+  try {
+    New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
+    $line = [DateTime]::Now.ToString('s') + ' ' + $Message
+    Add-Content -LiteralPath $RunLogPath -Value $line -Encoding UTF8
+  } catch {}
+}
+
+function Wait-BeforeExit([string]$Prompt) {
+  if (-not $script:PauseBeforeExit -or -not [Environment]::UserInteractive) { return }
+  try { Read-Host $Prompt | Out-Null } catch {}
+}
+
+trap {
+  $detail = $_.Exception.Message
+  Write-RunLog ('ERROR: ' + $detail)
+  Write-Host ''
+  Write-Host 'LabSuite VM Protect could not finish setup.' -ForegroundColor Red
+  Write-Host $detail -ForegroundColor Yellow
+  Write-Host ('Diagnostic log: ' + $RunLogPath) -ForegroundColor DarkGray
+  Wait-BeforeExit 'Press Enter to close'
+  exit 1
+}
+
+Write-Host 'LabSuite VM Protect is starting...' -ForegroundColor Cyan
+Write-RunLog 'Helper started.'
+$Bootstrap = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__LABSUITE_BOOTSTRAP_BASE64__')) | ConvertFrom-Json
 $EmptySha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Add-Type -AssemblyName System.Security
@@ -1280,6 +1310,7 @@ function Save-State($State) {
 
 function Select-ProtectedFiles {
   Add-Type -AssemblyName System.Windows.Forms
+  Write-Host 'Choose the files this VM should protect.' -ForegroundColor Cyan
   $dialog = New-Object Windows.Forms.OpenFileDialog
   $dialog.Title = 'Choose files to protect with LabSuite'
   $dialog.Multiselect = $true
@@ -1313,7 +1344,9 @@ function Invoke-PinnedJson([string]$Method, [string]$Uri, $Body) {
 function Connect-LabSuite([string[]]$SelectedFiles) {
   $lastError = $null
   $announced = $false
+  $lastConnectionNotice = [DateTime]::MinValue
   $deadline = [DateTime]::Parse([string]$Bootstrap.expiresAt).ToUniversalTime()
+  Write-Host 'Connecting this VM to the LabSuite Secure Receiver...' -ForegroundColor Cyan
   while ([DateTime]::UtcNow -lt $deadline) {
     foreach ($server in @($Bootstrap.serverUrls)) {
       $response = $null
@@ -1341,6 +1374,7 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
       # Once a token is issued the invitation is consumed. Local state failures must be
       # surfaced immediately instead of retrying enrollment with an already-used invite.
       $state = [PSCustomObject]@{
+        enrollmentId = [string]$Bootstrap.enrollmentId
         guestId = [string]$response.guestId
         tokenProtected = Protect-Token ([string]$response.token)
         serverUrl = $server.TrimEnd('/')
@@ -1351,7 +1385,12 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
         pollSeconds = [int]$Bootstrap.pollSeconds
       }
       Save-State $state
+      Write-RunLog 'Pairing completed.'
       return $state
+    }
+    if (([DateTime]::UtcNow - $lastConnectionNotice).TotalSeconds -ge 10) {
+      Write-Host 'Waiting for the LabSuite host. Keep LabSuite and its Secure Receiver open.' -ForegroundColor Yellow
+      $lastConnectionNotice = [DateTime]::UtcNow
     }
     Start-Sleep -Seconds 2
   }
@@ -1484,7 +1523,18 @@ function Start-HiddenWatcher([string]$ScriptPath) {
 
 $state = Load-State
 $requestedFiles = Merge-Files @($Bootstrap.selectedFiles) @($Files)
-if ($null -ne $state) {
+$stateMatchesHelper = $null -ne $state -and [string]$state.enrollmentId -eq [string]$Bootstrap.enrollmentId
+$replaceExistingPairing = $null -ne $state -and -not $RunWatcher -and -not $stateMatchesHelper
+if ($null -eq $state -or $replaceExistingPairing) {
+  if ($replaceExistingPairing) {
+    Write-Host 'A different VM Protect pairing was found. This helper will replace it.' -ForegroundColor Yellow
+    Write-RunLog 'Replacing an existing pairing with this helper.'
+  }
+  if ($requestedFiles.Count -eq 0 -and -not $NoPicker -and -not $RunWatcher) { $requestedFiles = Select-ProtectedFiles }
+  if ($requestedFiles.Count -eq 0) { throw 'No files were selected. Run the helper again and choose at least one file.' }
+  $state = Connect-LabSuite $requestedFiles
+} else {
+  if (-not $RunWatcher) { Write-Host 'This helper is already paired. Checking protected files for changes...' -ForegroundColor Cyan }
   $script:ExpectedFingerprint = ([string]$state.tlsFingerprint).Replace(':', '').ToLowerInvariant()
   $loadedStamps = @{}
   if ($null -ne $state.fileStamps) {
@@ -1496,10 +1546,6 @@ if ($null -ne $state) {
   # when adding files so the host shows another explicit approval request.
   $requestedFiles = @()
   $state.files = Merge-Files @($state.files) @()
-} else {
-  if ($requestedFiles.Count -eq 0 -and -not $NoPicker -and -not $RunWatcher) { $requestedFiles = Select-ProtectedFiles }
-  if ($requestedFiles.Count -eq 0) { throw 'No files were selected. Run the helper again and choose at least one file.' }
-  $state = Connect-LabSuite $requestedFiles
 }
 
 if ($AlwaysProtect -or $InstallStartup -or [bool]$Bootstrap.alwaysProtect) { $state.alwaysProtect = $true }
@@ -1565,12 +1611,16 @@ if ([bool]$state.alwaysProtect) {
   $installed = Install-AlwaysProtect
   Start-HiddenWatcher $installed
   Write-Host 'Always Protect is enabled. LabSuite will catch up whenever this VM and the host are available.' -ForegroundColor Green
+  Write-RunLog 'Always Protect enabled successfully.'
 } else {
   if ($failedFiles.Count -gt 0) {
     throw ('Protection failed for ' + $failedFiles.Count + ' selected file(s): ' + ($failedFiles -join ', '))
   }
   Write-Host 'One-time protection finished. Run this helper again to send updated copies.' -ForegroundColor Green
+  Write-RunLog 'One-time protection finished successfully.'
 }
+Write-Host ('Diagnostic log: ' + $RunLogPath) -ForegroundColor DarkGray
+Wait-BeforeExit 'Setup finished. Press Enter to close'
 `;
 
 let defaultService = null;
