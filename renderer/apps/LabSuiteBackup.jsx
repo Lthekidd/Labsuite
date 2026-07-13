@@ -2900,6 +2900,18 @@ export default function LabSuiteBackup() {
                   </span>
                 </div>
                 <div className="activity-actions">
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handleExportDiagnostics}
+                    disabled={diagnosticsStatus === 'exporting'}
+                    title="Export paths, file checks, failed manifest entries, and sanitized LabSuite/rclone logs"
+                  >
+                    {diagnosticsStatus === 'exporting'
+                      ? 'Exporting...'
+                      : diagnosticsStatus === 'exported'
+                        ? 'Failure Log Saved'
+                        : 'Export Failure Log'}
+                  </button>
                   {syncStatus === 'paused' ? (
                     <button className="btn btn-primary" onClick={handleResumeSync}>Resume backup</button>
                   ) : (

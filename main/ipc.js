@@ -190,6 +190,75 @@ function getDuplicateFolderGroupsForDiagnostics(folders = []) {
     .map(([remote_path, items]) => ({ remote_path, items }));
 }
 
+function getDiagnosticPathState(filePath = '') {
+  const requestedPath = String(filePath || '');
+  if (!requestedPath) return { path: '', exists: false, error: 'No path recorded' };
+  try {
+    const stat = fs.statSync(requestedPath);
+    return {
+      path: requestedPath,
+      exists: true,
+      isFile: stat.isFile(),
+      isDirectory: stat.isDirectory(),
+      size: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+      realPath: fs.realpathSync(requestedPath)
+    };
+  } catch (error) {
+    return {
+      path: requestedPath,
+      exists: false,
+      errorCode: error.code || '',
+      error: error.message
+    };
+  }
+}
+
+function getBackupFailuresForDiagnostics(folders, state) {
+  const foldersById = new Map(folders.map(folder => [String(folder.id), folder]));
+  const manifestFailures = [];
+  for (const [folderId, entries] of Object.entries(state.backup_manifest || {})) {
+    const folder = foldersById.get(String(folderId)) || {};
+    for (const [relativePath, entry] of Object.entries(entries || {})) {
+      if (!['failed', 'active_repair_needed'].includes(String(entry.status || ''))) continue;
+      const currentCandidatePath = folder.local_path
+        ? path.join(folder.local_path, ...String(relativePath).replace(/\\/g, '/').split('/').filter(Boolean))
+        : '';
+      manifestFailures.push({
+        folderId,
+        folderPath: folder.local_path || '',
+        selectionPath: folder.selection_path || '',
+        remoteRoot: folder.remote_path || '',
+        relativePath,
+        status: entry.status || '',
+        storage: entry.storage || '',
+        remotePath: entry.remote_path || '',
+        retryCount: entry.retry_count || 0,
+        lastError: redactDiagnosticText(entry.last_error || ''),
+        recordedLocalSource: getDiagnosticPathState(entry.local_path || ''),
+        currentLocalCandidate: getDiagnosticPathState(currentCandidatePath),
+        selectedSource: getDiagnosticPathState(folder.selection_path || '')
+      });
+    }
+  }
+
+  return {
+    manifestFailures: manifestFailures.slice(0, 200),
+    recentFailedActivity: (state.sync_log || [])
+      .filter(log => log.status !== 'success')
+      .slice(-200)
+      .reverse()
+      .map(log => ({
+        timestamp: log.synced_at,
+        folderId: log.folder_id,
+        filePath: log.file_path,
+        action: log.action,
+        size: log.size_bytes || 0,
+        error: redactDiagnosticText(log.error_msg || '')
+      }))
+  };
+}
+
 function buildDiagnosticsReport() {
   const userDataDir = app.getPath('userData');
   const logsDir = app.getPath('logs');
@@ -257,6 +326,7 @@ function buildDiagnosticsReport() {
       remote_integrity_check_interval_hours: db.getSetting('remote_integrity_check_interval_hours'),
       explorer_friendly_active_vault: db.getSetting('explorer_friendly_active_vault')
     },
+    backupFailures: getBackupFailuresForDiagnostics(folders, state),
     logs: Object.fromEntries(logFiles.map(file => [path.basename(file), readTextTail(file)])),
     rendererCrashLog: readTextTail(path.join(userDataDir, 'react_crash_logs.txt')),
     notes: [

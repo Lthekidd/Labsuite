@@ -220,6 +220,11 @@ assert.strictEqual(
 );
 
 const packSettings = { enabled: true, smallFileMaxBytes: 64, maxRawBytes: 100, maxFiles: 2 };
+assert.strictEqual(
+  rclone.__private.isNotFoundError(new Error("CRITICAL: Source doesn't exist or is a directory")),
+  true,
+  'A missing prior remote source must be treated as absent during version promotion.'
+);
 assert.ok(packStore.shouldPackItem({ size: 64 }, packSettings));
 assert.ok(!packStore.shouldPackItem({ size: 65 }, packSettings));
 assert.deepStrictEqual(
