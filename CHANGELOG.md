@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.22 — 2026-07-13
+
+### Changed
+
+- GitHub release builds now publish updater releases automatically so installed PCs can detect new LabSuite versions without a manual draft-release step.
+
 ## 2.2.21 — 2026-07-13
 
 ### Added

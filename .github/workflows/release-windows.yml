@@ -73,7 +73,6 @@ jobs:
             $installer.FullName `
             $blockmap.FullName `
             $updateMetadata.FullName `
-            --draft `
             --title 'LabSuite ${{ github.ref_name }}' `
             --notes-file CHANGELOG.md
 
