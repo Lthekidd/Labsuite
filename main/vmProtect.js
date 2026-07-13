@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const { Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const { spawn: nodeSpawn } = require('child_process');
+const { createVmProtectV2Protocol } = require('./vmProtectV2');
 
 let nativeFs;
 try {
@@ -176,7 +177,15 @@ function parseStoredGuests(raw) {
       lastUploadAt: validIso(item.lastUploadAt),
       lastUploadBytes: Number.isFinite(Number(item.lastUploadBytes)) ? Number(item.lastUploadBytes) : 0,
       stagingBytes: Number.isSafeInteger(Number(item.stagingBytes)) && Number(item.stagingBytes) >= 0 ? Number(item.stagingBytes) : 0,
-      selectedFiles: normalizeSelectedFiles(item.selectedFiles)
+      selectedFiles: normalizeSelectedFiles(item.selectedFiles),
+      protocolVersion: Number(item.protocolVersion) >= 2 ? 2 : 1,
+      policy: item.policy && typeof item.policy === 'object' ? item.policy : {},
+      rootCount: Math.max(0, Math.min(Number(item.rootCount) || 0, 200)),
+      manifestFileCount: Math.max(0, Number(item.manifestFileCount) || 0),
+      pendingFiles: Math.max(0, Number(item.pendingFiles) || 0),
+      pendingBytes: Math.max(0, Number(item.pendingBytes) || 0),
+      lastCommitAt: validIso(item.lastCommitAt),
+      lastError: cleanMetadata(item.lastError, 1000)
     }));
   } catch (_) {
     return [];
@@ -214,6 +223,28 @@ function normalizeSelectedFiles(files) {
   return output;
 }
 
+function normalizeAgentRoots(roots) {
+  if (!Array.isArray(roots)) return [];
+  const output = [];
+  const seen = new Set();
+  for (const root of roots.slice(0, 200)) {
+    if (!root || typeof root !== 'object') continue;
+    const id = String(root.id || '').toLowerCase();
+    if (!/^root-[a-f0-9]{8,64}$/.test(id) || seen.has(id)) continue;
+    try {
+      const normalizedPath = normalizeGuestAbsolutePath(root.path).normalizedGuestPath;
+      seen.add(id);
+      output.push({
+        id,
+        path: normalizedPath,
+        type: root.type === 'file' ? 'file' : 'folder',
+        recursive: root.type === 'file' ? false : root.recursive !== false
+      });
+    } catch (_) {}
+  }
+  return output;
+}
+
 function publicGuest(guest, now = Date.now()) {
   const lastSeenMs = Date.parse(guest.lastSeen || '');
   const online = guest.status === 'online' && Number.isFinite(lastSeenMs) && now - lastSeenMs <= ONLINE_WINDOW_MS;
@@ -230,7 +261,17 @@ function publicGuest(guest, now = Date.now()) {
     lastUploadAt: guest.lastUploadAt || '',
     lastUploadBytes: guest.lastUploadBytes || 0,
     stagingBytes: guest.stagingBytes || 0,
-    selectedFiles: [...guest.selectedFiles]
+    selectedFiles: [...guest.selectedFiles],
+    protocolVersion: Number(guest.protocolVersion) >= 2 ? 2 : 1,
+    rootCount: Number(guest.rootCount) || 0,
+    manifestFileCount: Number(guest.manifestFileCount) || 0,
+    pendingFiles: Number(guest.pendingFiles) || 0,
+    pendingBytes: Number(guest.pendingBytes) || 0,
+    lastCommitAt: guest.lastCommitAt || '',
+    lastError: guest.lastError || '',
+    policy: guest.policy && typeof guest.policy === 'object'
+      ? { roots: Array.isArray(guest.policy.roots) ? guest.policy.roots.map(root => ({ ...root })) : [], excludePatterns: Array.isArray(guest.policy.excludePatterns) ? [...guest.policy.excludePatterns] : [] }
+      : { roots: [], excludePatterns: [] }
   };
 }
 
@@ -344,6 +385,7 @@ function createVmProtectService(dependencies = {}) {
   let tlsIdentity = null;
   let guests = null;
   let activeUploads = 0;
+  let v2Protocol = null;
   const activeGuestUploads = new Set();
   const enrollments = new Map();
   const usedNonces = new Map();
@@ -361,6 +403,14 @@ function createVmProtectService(dependencies = {}) {
 
   function getStagingRoot() {
     return path.join(getUserDataDir(), 'vm-protect-staging');
+  }
+
+  function getV2StagingRoot() {
+    return path.join(getUserDataDir(), 'vm-protect-staging-v2');
+  }
+
+  function getV2MetadataRoot() {
+    return path.join(getUserDataDir(), 'vm-protect-v2-meta');
   }
 
   function loadGuests() {
@@ -385,6 +435,27 @@ function createVmProtectService(dependencies = {}) {
 
   function emitState() {
     safeEmit('state', getState());
+  }
+
+  function getV2Protocol() {
+    if (v2Protocol) return v2Protocol;
+    v2Protocol = createVmProtectV2Protocol({
+      fs,
+      now,
+      getStagingRoot: getV2StagingRoot,
+      getMetadataRoot: getV2MetadataRoot,
+      authenticate,
+      getMaxFileBytes,
+      getGuestQuotaBytes,
+      emptySha256: EMPTY_SHA256,
+      sendJson,
+      touchGuest,
+      publicGuest: guest => publicGuest(guest, now()),
+      safeEmit,
+      emitState,
+      atomicReplace
+    });
+    return v2Protocol;
   }
 
   function getTlsIdentity() {
@@ -519,7 +590,8 @@ function createVmProtectService(dependencies = {}) {
     return { guest, contentLength, contentSha256 };
   }
 
-  async function handleEnrollment(req, res) {
+  async function handleEnrollment(req, res, options = {}) {
+    const protocolVersion = options.protocolVersion === 2 ? 2 : 1;
     const body = await readJsonBody(req);
     cleanupTransientCaches();
     const id = String(body.enrollmentId || '');
@@ -548,7 +620,8 @@ function createVmProtectService(dependencies = {}) {
     const request = {
       name: cleanLabel(body.name || enrollment.name, 'Windows VM'),
       machineName: cleanLabel(body.machineName, ''),
-      selectedFiles: normalizeSelectedFiles(body.selectedFiles || enrollment.selectedFiles)
+      selectedFiles: normalizeSelectedFiles(body.selectedFiles || enrollment.selectedFiles),
+      roots: protocolVersion === 2 ? normalizeAgentRoots(body.roots || enrollment.roots) : []
     };
 
     const issueGuest = () => {
@@ -575,7 +648,17 @@ function createVmProtectService(dependencies = {}) {
         lastUploadAt: '',
         lastUploadBytes: 0,
         stagingBytes: 0,
-        selectedFiles: normalizeSelectedFiles(source.selectedFiles || enrollment.selectedFiles)
+        selectedFiles: protocolVersion === 2
+          ? source.roots.map(root => root.path)
+          : normalizeSelectedFiles(source.selectedFiles || enrollment.selectedFiles),
+        protocolVersion,
+        policy: protocolVersion === 2 ? { roots: source.roots, excludePatterns: [] } : {},
+        rootCount: protocolVersion === 2 ? source.roots.length : 0,
+        manifestFileCount: 0,
+        pendingFiles: 0,
+        pendingBytes: 0,
+        lastCommitAt: '',
+        lastError: ''
       };
       try {
         loadGuests().push(guest);
@@ -608,10 +691,17 @@ function createVmProtectService(dependencies = {}) {
           id: guest.id,
           name: guest.name,
           status: 'online',
-          selectedFiles: [...guest.selectedFiles]
+          selectedFiles: [...guest.selectedFiles],
+          protocolVersion: guest.protocolVersion,
+          policy: guest.policy
         },
+        protocolVersion,
+        policy: protocolVersion === 2 ? guest.policy : undefined,
         maxFileBytes: getMaxFileBytes(),
-        guestQuotaBytes: getGuestQuotaBytes()
+        guestQuotaBytes: getGuestQuotaBytes(),
+        smallFileBundleBytes: protocolVersion === 2 ? getV2Protocol().constants.SMALL_FILE_BUNDLE_BYTES : undefined,
+        chunkBytes: protocolVersion === 2 ? getV2Protocol().constants.CHUNK_BYTES : undefined,
+        maxParallelUploads: protocolVersion === 2 ? getV2Protocol().constants.MAX_PARALLEL_UPLOADS : undefined
       });
     };
 
@@ -825,6 +915,14 @@ function createVmProtectService(dependencies = {}) {
   async function handleRequest(req, res) {
     try {
       const url = new URL(req.url, 'https://vm-protect.local');
+      if (req.method === 'POST' && url.pathname === '/agent/v2/pair') {
+        await handleEnrollment(req, res, { protocolVersion: 2 });
+        return;
+      }
+      if (url.pathname.startsWith('/agent/v2/')) {
+        const handled = await getV2Protocol().handle(req, res, url);
+        if (handled !== false) return;
+      }
       if (req.method === 'GET' && url.pathname === '/status') {
         const guestId = String(req.headers['x-labsuite-guest-id'] || '');
         if (guestId) {
@@ -942,8 +1040,10 @@ function createVmProtectService(dependencies = {}) {
       stagingRoot: getStagingRoot(),
       maxFileBytes: getMaxFileBytes(),
       guestQuotaBytes: getGuestQuotaBytes(),
-      activeUploads,
+      activeUploads: activeUploads + (v2Protocol ? v2Protocol.getActiveUploads() : 0),
       addresses,
+      v2StagingRoot: getV2StagingRoot(),
+      v2MetadataRoot: getV2MetadataRoot(),
       guests: loadGuests().map(guest => publicGuest(guest, now())),
       pendingEnrollments: [...enrollments.values()]
         .filter(item => ['invited', 'pending', 'approved'].includes(item.state) && (!item.consumed || item.multiUse) && item.expiresAtMs > now())
@@ -954,6 +1054,8 @@ function createVmProtectService(dependencies = {}) {
           name: cleanLabel(item.request && item.request.name || item.name, 'Windows VM'),
           machineName: cleanLabel(item.request && item.request.machineName, ''),
           selectedFiles: [...(item.request && item.request.selectedFiles || item.selectedFiles || [])],
+          roots: (item.request && item.request.roots || item.roots || []).map(root => ({ ...root })),
+          protocolVersion: Number(item.protocolVersion) >= 2 ? 2 : 1,
           vmId: item.vmId,
           vmxPath: item.vmxPath,
           vmwareUuid: item.vmwareUuid,
@@ -972,6 +1074,7 @@ function createVmProtectService(dependencies = {}) {
     if (!server) await start(options.port || DEFAULT_PORT);
     cleanupTransientCaches();
     const multiUse = options.multiUse === true;
+    const protocolVersion = options.protocolVersion === 2 ? 2 : 1;
     const maxTtl = multiUse ? MAX_BULK_ENROLLMENT_TTL_MS : MAX_SINGLE_ENROLLMENT_TTL_MS;
     const defaultTtl = multiUse ? DEFAULT_BULK_ENROLLMENT_TTL_MS : DEFAULT_ENROLLMENT_TTL_MS;
     const ttl = Math.max(60 * 1000, Math.min(Number(options.ttlMs) || defaultTtl, maxTtl));
@@ -989,6 +1092,8 @@ function createVmProtectService(dependencies = {}) {
       pairingCode,
       name: cleanLabel(options.name, 'Windows VM'),
       selectedFiles: normalizeSelectedFiles(options.selectedFiles || options.files),
+      roots: protocolVersion === 2 ? normalizeAgentRoots(options.roots) : [],
+      protocolVersion,
       vmId: cleanMetadata(options.vmId, 256),
       vmxPath: cleanMetadata(options.vmxPath, 32767),
       vmwareUuid: cleanMetadata(options.vmwareUuid, 256),
@@ -1013,6 +1118,8 @@ function createVmProtectService(dependencies = {}) {
       pairingCode,
       name: enrollment.name,
       selectedFiles: [...enrollment.selectedFiles],
+      roots: enrollment.roots.map(root => ({ ...root })),
+      protocolVersion: enrollment.protocolVersion,
       vmId: enrollment.vmId,
       vmxPath: enrollment.vmxPath,
       vmwareUuid: enrollment.vmwareUuid,
@@ -1060,6 +1167,7 @@ function createVmProtectService(dependencies = {}) {
     const enrollment = options.enrollment && options.enrollment.enrollmentId
       ? options.enrollment
       : await createEnrollment(options);
+    const protocolVersion = Number(options.protocolVersion || enrollment.protocolVersion) >= 2 ? 2 : 1;
     const bootstrap = {
       enrollmentId: enrollment.enrollmentId,
       secret: enrollment.secret,
@@ -1068,12 +1176,16 @@ function createVmProtectService(dependencies = {}) {
       expiresAt: enrollment.expiresAt,
       name: cleanLabel(options.name || enrollment.name, 'Windows VM'),
       selectedFiles: normalizeSelectedFiles(options.selectedFiles || options.files || enrollment.selectedFiles),
+      roots: protocolVersion === 2 ? (enrollment.roots || []).map(root => ({ ...root })) : [],
+      protocolVersion,
       alwaysProtect: options.alwaysProtect === true,
       multiUse: enrollment.multiUse === true,
       autoApprove: enrollment.autoApprove === true,
       pollSeconds: Math.max(10, Math.min(Number(options.pollSeconds) || 20, 3600))
     };
-    const helperText = buildPowerShellHelper(bootstrap);
+    const helperText = protocolVersion === 2
+      ? require('./vmProtectAgentV2').buildPowerShellV2Agent(bootstrap)
+      : buildPowerShellHelper(bootstrap);
     const helperDir = path.join(getUserDataDir(), 'vm-protect-helpers');
     const outputPath = path.resolve(options.outputPath || path.join(helperDir, `LabSuite-VM-Protect-${enrollment.enrollmentId.slice(0, 8)}.ps1`));
     fs.mkdirSync(path.dirname(outputPath), { recursive: true, mode: 0o700 });
@@ -1085,10 +1197,12 @@ function createVmProtectService(dependencies = {}) {
       path: outputPath,
       enrollment,
       capabilities: {
-        oneShotUpload: true,
+        protocolVersion,
+        manifestBatches: protocolVersion === 2,
+        oneShotUpload: protocolVersion === 1,
         alwaysProtect: true,
         startup: 'HKCU Run (current Windows user)',
-        watcher: 'poll-and-hash'
+        watcher: protocolVersion === 2 ? 'FileSystemWatcher with periodic reconciliation' : 'poll-and-hash'
       }
     };
   }
@@ -1171,6 +1285,16 @@ function createVmProtectService(dependencies = {}) {
       }
       await fs.promises.rm(guestRoot, { recursive: true, force: true });
       await fs.promises.rm(path.join(root, '.tmp', id), { recursive: true, force: true });
+      const v2Root = getV2StagingRoot();
+      const v2GuestRoot = path.resolve(v2Root, id);
+      const v2MetadataRoot = getV2MetadataRoot();
+      const v2GuestMetadataRoot = path.resolve(v2MetadataRoot, id);
+      if (isPathInside(v2Root, v2GuestRoot) && v2GuestRoot !== path.resolve(v2Root)) {
+        await fs.promises.rm(v2GuestRoot, { recursive: true, force: true });
+      }
+      if (isPathInside(v2MetadataRoot, v2GuestMetadataRoot) && v2GuestMetadataRoot !== path.resolve(v2MetadataRoot)) {
+        await fs.promises.rm(v2GuestMetadataRoot, { recursive: true, force: true });
+      }
       stagingDeleted = true;
     }
     emitState();
@@ -1191,6 +1315,7 @@ function createVmProtectService(dependencies = {}) {
     forgetGuest,
     locateVmrun,
     getStagingRoot,
+    getV2StagingRoot,
     getTlsFingerprint: () => getTlsIdentity().fingerprint
   };
 }
@@ -1805,5 +1930,6 @@ module.exports = {
   writePortableHelper: (...args) => getDefaultService().writePortableHelper(...args),
   deployHelper: (...args) => getDefaultService().deployHelper(...args),
   forgetGuest: (...args) => getDefaultService().forgetGuest(...args),
+  getV2StagingRoot: (...args) => getDefaultService().getV2StagingRoot(...args),
   locateVmrun: (...args) => getDefaultService().locateVmrun(...args)
 };

@@ -206,7 +206,6 @@ export default function VMProtect() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [helperResult, setHelperResult] = useState(null);
-  const [bulkPaths, setBulkPaths] = useState('');
   const [credentialVm, setCredentialVm] = useState(null);
   const [credentials, setCredentials] = useState({ username: '', password: '' });
 
@@ -409,7 +408,7 @@ export default function VMProtect() {
         vmxPath: getVmPath(vm),
         vmwareUuid: vm.vmwareUuid || ''
       });
-      if (!result || result.success === false) throw new Error(result?.error || 'Could not create the portable helper.');
+      if (!result || result.success === false) throw new Error(result?.error || 'Could not create the portable VM agent.');
       if (result.canceled) return;
       setHelperResult({
         vmName: getVmName(vm),
@@ -417,10 +416,10 @@ export default function VMProtect() {
         expiresAt: result.expiresAt || '',
         method: result.method || 'portable'
       });
-      setMessage(`Portable helper created for ${getVmName(vm)}.`);
+      setMessage(`Portable VM agent created for ${getVmName(vm)}.`);
       await reloadState();
     } catch (err) {
-      setError(err.message || 'Could not create the portable helper.');
+      setError(err.message || 'Could not create the portable VM agent.');
     } finally {
       setBusyKey('');
     }
@@ -432,12 +431,8 @@ export default function VMProtect() {
     clearNotices();
     try {
       await ensureReceiver();
-      const selectedFiles = bulkPaths
-        .split(/\r?\n/)
-        .map(item => item.trim())
-        .filter(Boolean);
-      const result = await invoke('vmProtect:createBulkHelper', { selectedFiles });
-      if (!result || result.success === false) throw new Error(result?.error || 'Could not create the bulk helper.');
+      const result = await invoke('vmProtect:createBulkHelper');
+      if (!result || result.success === false) throw new Error(result?.error || 'Could not create the bulk VM agent.');
       if (result.canceled) return;
       setHelperResult({
         vmName: 'bulk VM batch',
@@ -446,10 +441,10 @@ export default function VMProtect() {
         method: result.method || 'bulk',
         selectedFiles: asArray(result.selectedFiles)
       });
-      setMessage('Bulk helper created. Run the same script inside each VM you want to protect.');
+      setMessage('Bulk VM agent created. Run the same script inside each VM, then choose its folders or files there.');
       await reloadState();
     } catch (err) {
-      setError(err.message || 'Could not create the bulk helper.');
+      setError(err.message || 'Could not create the bulk VM agent.');
     } finally {
       setBusyKey('');
     }
@@ -486,14 +481,14 @@ export default function VMProtect() {
         username: credentials.username.trim(),
         password: credentials.password
       });
-      if (!result || result.success === false) throw new Error(result?.error || 'LabSuite could not install the helper in this VM.');
+      if (!result || result.success === false) throw new Error(result?.error || 'LabSuite could not install the agent in this VM.');
       setCredentialVm(null);
       setCredentials({ username: '', password: '' });
       setMessage(result.message || `Helper installed in ${getVmName(vm)}. Finish the pairing prompt inside the VM.`);
       await reloadState();
     } catch (err) {
       setCredentials(previous => ({ ...previous, password: '' }));
-      setError(err.message || 'LabSuite could not install the helper in this VM.');
+      setError(err.message || 'LabSuite could not install the agent in this VM.');
     } finally {
       setBusyKey('');
     }
@@ -502,7 +497,7 @@ export default function VMProtect() {
   const forgetGuest = async guest => {
     const guestId = guest.guestId || guest.deviceId || guest.id;
     if (!guestId) return;
-    const confirmed = window.confirm(`Forget ${guest.vmName || guest.name || 'this VM'}? Its existing backup history will be kept, but the helper will stop connecting.`);
+    const confirmed = window.confirm(`Forget ${guest.vmName || guest.name || 'this VM'}? Its existing backup history will be kept, but the VM agent will stop connecting.`);
     if (!confirmed) return;
     const key = `forget:${guestId}`;
     setBusyKey(key);
@@ -538,7 +533,7 @@ export default function VMProtect() {
       }
       await reloadState();
       setMessage(accepted
-        ? `${enrollment.name || enrollment.vmName || 'VM'} was approved. The helper will finish pairing automatically.`
+        ? `${enrollment.name || enrollment.vmName || 'VM'} was approved. The VM agent will finish pairing automatically.`
         : String(enrollment.state || '').toLowerCase() === 'invited' ? 'The unused VM invitation was canceled.' : 'The VM pairing request was rejected.');
     } catch (err) {
       setError(err.message || 'Could not respond to the VM pairing request.');
@@ -572,7 +567,7 @@ export default function VMProtect() {
               <h1 style={{ margin: 0, fontSize: '26px' }}>VM Protect</h1>
             </div>
             <p style={{ margin: '7px 0 0 47px', color: 'var(--text-secondary)', fontSize: '13px' }}>
-              Protect individual files inside your VMware virtual machines.
+              Protect folders and files inside your VMware virtual machines with one durable sync agent per VM.
             </p>
           </div>
           <button className="btn btn-secondary" type="button" onClick={() => loadEverything({ quiet: true })} disabled={loading || refreshing || !!busyKey} aria-label="Refresh detected virtual machines">
@@ -594,7 +589,7 @@ export default function VMProtect() {
           <div>
             <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 750 }}>No Google login inside your VM</div>
             <div style={{ marginTop: '4px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-              Google Drive stays connected only to LabSuite on this PC. The guest helper never receives your Google password, Drive token, vault password, or encryption keys.
+              Google Drive stays connected only to LabSuite on this PC. The guest agent never receives your Google password, Drive token, vault password, or encryption keys.
             </div>
           </div>
         </section>
@@ -635,8 +630,8 @@ export default function VMProtect() {
             label="VMware"
             title={discovery.vmwareInstalled ? 'Detected' : 'Not detected'}
             detail={discovery.vmwareInstalled
-              ? discovery.directDeployAvailable ? 'Direct helper install is available.' : 'Portable helper mode is available.'
-              : 'Install VMware Workstation or use a portable helper in a reachable VM.'}
+              ? discovery.directDeployAvailable ? 'Direct VM agent install is available.' : 'Portable VM agent mode is available.'
+              : 'Install VMware Workstation or use a portable VM agent in a reachable VM.'}
             good={!!discovery.vmwareInstalled}
           />
           <SummaryCard
@@ -662,9 +657,9 @@ export default function VMProtect() {
 
         <section style={{ ...cardStyle, padding: '16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', alignItems: 'start' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '16px' }}>Passwordless bulk helper</h2>
+            <h2 style={{ margin: 0, fontSize: '16px' }}>Passwordless bulk VM agent</h2>
             <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-              Create one reusable helper for many VMs. It auto-pairs each VM for the next 24 hours, so you do not need Windows passwords or one approval per VM.
+              Create one reusable agent for many VMs. It auto-pairs each VM for the next 24 hours, then lets the person inside that VM choose folders, individual files, and exclusions.
             </div>
             <button
               className="btn btn-primary"
@@ -673,42 +668,27 @@ export default function VMProtect() {
               disabled={!!busyKey}
               style={{ marginTop: '13px', padding: '8px 13px', fontSize: '12px' }}
             >
-              {busyKey === 'create:bulk' ? 'Creating...' : 'Create bulk helper'}
+              {busyKey === 'create:bulk' ? 'Creating...' : 'Create bulk agent'}
             </button>
           </div>
           <div>
-            <label htmlFor="vm-protect-bulk-paths" style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 750, letterSpacing: '0.3px' }}>OPTIONAL FILE PATHS, ONE PER LINE</label>
-            <textarea
-              id="vm-protect-bulk-paths"
-              value={bulkPaths}
-              onChange={event => setBulkPaths(event.target.value)}
-              placeholder={'C:\\Users\\retro\\Desktop\\important.txt\nC:\\Users\\retro\\Documents\\workbook.xlsx'}
-              disabled={!!busyKey}
-              rows={4}
-              style={{ ...inputStyle, marginTop: '7px', resize: 'vertical', minHeight: '88px', lineHeight: 1.45 }}
-            />
-            <div style={{ marginTop: '7px', color: 'var(--text-muted)', fontSize: '11.5px', lineHeight: 1.45 }}>
-              Leave this empty if every VM should show a file picker. Use paths here when every VM has the same file location.
+            <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.14)', border: '1px solid rgba(255, 255, 255, 0.04)', color: 'var(--text-secondary)', fontSize: '12px', lineHeight: 1.55 }}>
+              Paths are selected inside each VM, where they can be browsed safely. The agent watches changes immediately, reconciles periodically, batches small files, and resumes interrupted large files.
             </div>
           </div>
         </section>
 
         {helperResult && (
           <section style={{ ...cardStyle, padding: '16px 18px', borderColor: 'rgba(176, 228, 204, 0.18)' }}>
-            <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 750 }}>Portable helper for {helperResult.vmName}</div>
+            <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 750 }}>Portable VM agent for {helperResult.vmName}</div>
             <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
               {helperResult.method === 'bulk'
-                ? 'Run this same helper inside each VM. Each VM gets its own secure pairing automatically while the bulk invitation is active.'
-                : 'Copy this helper into the VM and run it. LabSuite will guide you through the one-time pairing confirmation.'}
+                ? 'Run this same agent inside each VM. Each VM receives its own secure pairing and local folder/file picker while the invitation is active.'
+                : 'Copy this agent into the VM and run it. LabSuite will guide you through one-time pairing and then install a per-user background agent.'}
             </div>
             {helperResult.path && (
               <div title={helperResult.path} style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '7px', background: 'rgba(0, 0, 0, 0.24)', color: 'var(--text-primary)', fontFamily: 'Consolas, monospace', fontSize: '11.5px', overflowWrap: 'anywhere', userSelect: 'text' }}>
                 {helperResult.path}
-              </div>
-            )}
-            {helperResult.method === 'bulk' && helperResult.selectedFiles?.length > 0 && (
-              <div title={helperResult.selectedFiles.join('\n')} style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Preselected paths: {helperResult.selectedFiles.join(', ')}
               </div>
             )}
             {formatExpiry(helperResult.expiresAt) && (
@@ -734,7 +714,7 @@ export default function VMProtect() {
               </div>
             </div>
             <div style={{ maxWidth: '500px', color: 'var(--text-secondary)', fontSize: '11.8px', lineHeight: 1.5 }}>
-              A running Windows VM can receive the helper directly when VMware Tools is available. LabSuite asks for guest credentials once and never stores them. After pairing, credentials are not needed again.
+              A running Windows VM can receive the agent directly when VMware Tools is available. LabSuite asks for guest credentials once and never stores them. After pairing, credentials are not needed again.
             </div>
           </div>
 
@@ -748,8 +728,8 @@ export default function VMProtect() {
               </div>
               <div style={{ margin: '7px auto 0', maxWidth: '520px', color: 'var(--text-muted)', fontSize: '12.5px', lineHeight: 1.55 }}>
                 {discovery.vmwareInstalled
-                  ? 'Start or open a registered VM, then refresh this page. You can still use a portable helper if the VM is stored elsewhere.'
-                  : 'Install VMware Workstation to enable automatic discovery and direct deployment. Portable helpers can still pair over the network.'}
+                  ? 'Start or open a registered VM, then refresh this page. You can still use a portable VM agent if the VM is stored elsewhere.'
+                  : 'Install VMware Workstation to enable automatic discovery and direct deployment. Portable VM agents can still pair over the network.'}
               </div>
               <button
                 className="btn btn-primary"
@@ -758,7 +738,7 @@ export default function VMProtect() {
                 disabled={!!busyKey}
                 style={{ marginTop: '16px', padding: '8px 13px', fontSize: '12px' }}
               >
-                {busyKey === 'create:manual' ? 'Creating…' : 'Create portable helper'}
+                {busyKey === 'create:manual' ? 'Creating…' : 'Create portable agent'}
               </button>
             </div>
           ) : (
@@ -771,12 +751,13 @@ export default function VMProtect() {
                 const guest = guests.find(item => sameMachine(vm, item));
                 const enrollment = enrollments.find(item => sameMachine(vm, item));
                 const enrollmentState = String(enrollment?.state || 'pending').toLowerCase();
-                const enrollmentFiles = asArray(enrollment?.selectedFiles);
                 const paired = !!guest;
                 const guestOnline = !!(guest && (guest.connected || guest.online || String(guest.status || '').toLowerCase() === 'online'));
                 const selectedFileCount = guest
                   ? Number(guest.selectedFileCount) || asArray(guest.selectedFiles || guest.files).length
                   : 0;
+                const protectedRootCount = guest ? Number(guest.protectedRootCount || guest.rootCount) || asArray(guest.policy?.roots).length : 0;
+                const agentV2 = Number(guest?.protocolVersion) >= 2;
                 const backupStatus = guest?.backupStatus || 'waiting';
                 const canDirectDeploy = running && isWindowsGuest(vm) && discovery.directDeployAvailable && vm.directDeployAvailable !== false;
                 const actionKey = canDirectDeploy ? `deploy:${id}` : `create:${id}`;
@@ -802,7 +783,7 @@ export default function VMProtect() {
                             <Badge tone={backupStatus === 'protected' ? 'good' : backupStatus === 'error' ? 'warning' : 'neutral'}>
                               {backupStatus === 'protected'
                                 ? `${selectedFileCount} file${selectedFileCount === 1 ? '' : 's'} protected`
-                                : backupStatus === 'error' ? 'Backup needs attention' : selectedFileCount > 0 ? `${selectedFileCount} selected` : 'Paired'}
+                                : backupStatus === 'error' ? 'Backup needs attention' : selectedFileCount > 0 ? `${selectedFileCount} tracked` : 'Paired'}
                             </Badge>
                             <span style={{ color: guestOnline ? '#86efac' : 'var(--text-muted)', fontSize: '11px', fontWeight: 700 }}>{guestOnline ? 'Connected' : 'Offline'}</span>
                           </div>
@@ -812,20 +793,18 @@ export default function VMProtect() {
                               : backupStatus === 'protected'
                                 ? `Encrypted backup completed ${formatRelativeTime(guest.lastBackupAt)}`
                                 : selectedFileCount === 0
-                              ? 'Choose files in the VM helper to begin protection.'
-                              : guest.lastUploadAt ? 'Verified file received; encrypted backup is queued.' : 'Waiting for the first verified file upload.'}
+                              ? 'Choose folders or files inside the VM agent to begin protection.'
+                              : guest.lastCommitAt ? 'A manifest batch was committed; encrypted backup is queued.' : 'Waiting for the first manifest batch.'}
                           </div>
-                          {enrollmentState !== 'invited' && (
-                            <div title={enrollmentFiles.join('\n')} style={{ marginTop: '5px', color: 'var(--text-secondary)', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              Requests {enrollmentFiles.length} file{enrollmentFiles.length === 1 ? '' : 's'}{enrollmentFiles[0] ? ` — ${enrollmentFiles[0]}` : ''}
-                            </div>
-                          )}
+                          <div style={{ marginTop: '5px', color: 'var(--text-secondary)', fontSize: '11px' }}>
+                            {agentV2 ? `${protectedRootCount} protected root${protectedRootCount === 1 ? '' : 's'} · ${guest.pendingFiles || 0} item${guest.pendingFiles === 1 ? '' : 's'} queued` : 'Legacy helper — create a v2 agent to protect folders and batch files.'}
+                          </div>
                         </>
                       ) : enrollment ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                             <Badge tone={enrollmentState === 'approved' ? 'good' : 'warning'}>
-                              {enrollmentState === 'invited' ? 'Helper ready' : enrollmentState === 'approved' ? 'Approved' : 'Approval required'}
+                              {enrollmentState === 'invited' ? 'Agent ready' : enrollmentState === 'approved' ? 'Approved' : 'Approval required'}
                             </Badge>
                             <span style={{ color: '#fbbf24', fontFamily: 'Consolas, monospace', fontSize: '16px', fontWeight: 800, letterSpacing: '2px' }}>
                               {enrollment.pairingCode || '------'}
@@ -833,8 +812,8 @@ export default function VMProtect() {
                           </div>
                           <div style={{ marginTop: '7px', color: 'var(--text-muted)', fontSize: '11.5px' }}>
                             {enrollmentState === 'invited'
-                              ? 'Run the helper inside this VM. The same code will appear there.'
-                              : enrollmentState === 'approved' ? 'The helper is finishing secure enrollment.' : 'Approve only if this code matches the helper inside the VM.'}
+                              ? 'Run the VM agent inside this VM. The same code will appear there.'
+                              : enrollmentState === 'approved' ? 'The agent is finishing secure enrollment.' : 'Approve only if this code matches the VM agent.'}
                           </div>
                         </>
                       ) : (
@@ -842,8 +821,8 @@ export default function VMProtect() {
                           <div style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 650 }}>Not protected yet</div>
                           <div style={{ marginTop: '5px', color: 'var(--text-muted)', fontSize: '11.5px', lineHeight: 1.4 }}>
                             {canDirectDeploy
-                              ? 'VMware Tools can deliver the helper to this running VM.'
-                              : running ? 'Create a portable helper and run it inside this VM.' : 'Start the VM for direct install, or create a portable helper now.'}
+                              ? 'VMware Tools can deliver the VM agent to this running VM.'
+                              : running ? 'Create a portable VM agent and run it inside this VM.' : 'Start the VM for direct install, or create a portable VM agent now.'}
                           </div>
                         </>
                       )}
@@ -852,7 +831,7 @@ export default function VMProtect() {
                     <div style={{ marginTop: '13px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                       <div style={{ color: 'var(--text-muted)', fontSize: '10.8px' }}>
                         {paired
-                          ? `${formatBytes(guest.stagingBytes)} in protected version staging`
+                          ? `${formatBytes(guest.stagingBytes)} current data · ${agentV2 ? 'manifest batching' : 'legacy per-file mode'}`
                           : adapterCount > 0 ? `${adapterCount} VMware network adapter${adapterCount === 1 ? '' : 's'} available` : 'Secure outbound pairing'}
                       </div>
                       {paired ? (
@@ -898,9 +877,9 @@ export default function VMProtect() {
                               onClick={() => createPortableHelper(vm)}
                               disabled={!!busyKey}
                               style={{ padding: '7px 10px', fontSize: '11.5px' }}
-                              aria-label={`Create portable helper for ${name}`}
+                              aria-label={`Create portable VM agent for ${name}`}
                             >
-                              Portable instead
+                              Portable agent instead
                             </button>
                           )}
                           <button
@@ -910,7 +889,7 @@ export default function VMProtect() {
                             disabled={!!busyKey}
                             style={{ padding: '8px 12px', fontSize: '12px' }}
                           >
-                            {busyKey === actionKey ? 'Working…' : canDirectDeploy ? 'Install helper' : 'Create portable helper'}
+                            {busyKey === actionKey ? 'Working…' : canDirectDeploy ? 'Install agent' : 'Create portable agent'}
                           </button>
                         </div>
                       )}
@@ -925,9 +904,9 @@ export default function VMProtect() {
         {(unmatchedGuests.length > 0 || unmatchedEnrollments.length > 0) && (
           <section style={{ ...cardStyle, overflow: 'hidden' }}>
             <div style={{ padding: '16px 19px', borderBottom: '1px solid var(--border-color)' }}>
-              <h2 style={{ margin: 0, fontSize: '16px' }}>Other guest helpers</h2>
+              <h2 style={{ margin: 0, fontSize: '16px' }}>Other VM agents</h2>
               <div style={{ marginTop: '5px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                Portable helpers and VMs whose configuration file has moved remain manageable here.
+                Portable agents and VMs whose configuration file has moved remain manageable here.
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px', padding: '14px' }}>
@@ -939,10 +918,10 @@ export default function VMProtect() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                       <div>
                         <div style={{ color: 'var(--text-primary)', fontSize: '13.5px', fontWeight: 750 }}>{enrollment.name || enrollment.vmName || 'Windows VM'}</div>
-                        <div style={{ marginTop: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>{enrollment.machineName || 'Portable helper'}</div>
+                        <div style={{ marginTop: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>{enrollment.machineName || 'Portable agent'}</div>
                       </div>
                       <Badge tone={enrollmentState === 'approved' ? 'good' : 'warning'}>
-                        {enrollmentState === 'invited' ? 'Waiting for helper' : enrollmentState === 'approved' ? 'Approved' : 'Approval required'}
+                        {enrollmentState === 'invited' ? 'Waiting for agent' : enrollmentState === 'approved' ? 'Approved' : 'Approval required'}
                       </Badge>
                     </div>
                     <div style={{ marginTop: '13px', padding: '10px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.07)', border: '1px solid rgba(245, 158, 11, 0.16)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
@@ -967,18 +946,23 @@ export default function VMProtect() {
                 const guestId = guest.guestId || guest.id;
                 const online = guest.connected || guest.online || guest.status === 'online';
                 const selectedCount = Number(guest.selectedFileCount) || asArray(guest.selectedFiles || guest.files).length;
+                const rootCount = Number(guest.protectedRootCount || guest.rootCount) || asArray(guest.policy?.roots).length;
+                const agentV2 = Number(guest.protocolVersion) >= 2;
                 return (
                   <article key={`guest:${guestId}`} style={{ ...cardStyle, padding: '15px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                       <div>
                         <div style={{ color: 'var(--text-primary)', fontSize: '13.5px', fontWeight: 750 }}>{guest.vmName || guest.name || 'Windows VM'}</div>
-                        <div style={{ marginTop: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>{guest.machineName || 'Portable helper'}</div>
+                        <div style={{ marginTop: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>{guest.machineName || 'Portable agent'}</div>
                       </div>
                       <Badge tone={online ? 'good' : 'quiet'}><StatusDot good={online} />{online ? 'Connected' : 'Offline'}</Badge>
                     </div>
                     <div style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '12px' }}>
                       {selectedCount > 0 ? `${selectedCount} file${selectedCount === 1 ? '' : 's'} selected` : 'Paired — waiting for file selection'}
                     </div>
+                    {agentV2 && (
+                      <div style={{ marginTop: '5px', color: 'var(--text-muted)', fontSize: '11px' }}>{rootCount} protected root{rootCount === 1 ? '' : 's'} · manifest batches enabled</div>
+                    )}
                     <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{guest.lastUploadAt ? `Last file ${formatRelativeTime(guest.lastUploadAt)}` : 'No file received yet'}</span>
                       <button className="btn btn-secondary" type="button" onClick={() => forgetGuest(guest)} disabled={!!busyKey} style={{ padding: '7px 10px', fontSize: '11.5px' }}>Forget</button>
@@ -997,8 +981,8 @@ export default function VMProtect() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(110px, 1fr))', gap: '10px' }}>
             {[
-              ['1', 'Select files', 'Choose exactly what to protect inside the VM.'],
-              ['2', 'Changes stream', 'Each verified revision is safely journaled on the host.'],
+              ['1', 'Select roots', 'Choose folders, files, and exclusions inside the VM.'],
+              ['2', 'Manifest batches', 'The agent groups changes, resumes large files, and mirrors deletes.'],
               ['3', 'Host encrypts', 'LabSuite encrypts and sends them to your backup destinations.']
             ].map(([number, title, copy]) => (
               <div key={number} style={{ padding: '10px', borderLeft: '2px solid rgba(176, 228, 204, 0.18)' }}>
@@ -1032,7 +1016,7 @@ export default function VMProtect() {
             <div style={{ padding: '19px 20px 16px', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
                 <div>
-                  <h2 id="vm-protect-credential-title" style={{ margin: 0, fontSize: '17px' }}>Install helper in {getVmName(credentialVm)}</h2>
+                  <h2 id="vm-protect-credential-title" style={{ margin: 0, fontSize: '17px' }}>Install agent in {getVmName(credentialVm)}</h2>
                   <div style={{ marginTop: '6px', color: 'var(--text-muted)', fontSize: '12px', lineHeight: 1.5 }}>VMware Tools must be running inside this Windows VM.</div>
                 </div>
                 <button className="btn btn-secondary" type="button" onClick={closeCredentialModal} disabled={!!busyKey} aria-label="Close install helper dialog" style={{ width: '30px', height: '30px', padding: 0 }}>×</button>
@@ -1042,7 +1026,7 @@ export default function VMProtect() {
             <div style={{ padding: '18px 20px' }}>
               <div style={{ padding: '11px 12px', borderRadius: '8px', background: 'rgba(64, 138, 113, 0.11)', border: '1px solid rgba(176, 228, 204, 0.12)', color: 'var(--text-secondary)', fontSize: '11.8px', lineHeight: 1.5 }}>
                 Enter the Windows account for this VM. LabSuite passes it directly to VMware Tools for this installation only. The username and password are never saved or sent to Google Drive.
-                VMware's command-line tool temporarily carries the password as a process argument; choose the portable helper if you do not want that tradeoff.
+                VMware's command-line tool temporarily carries the password as a process argument; choose the portable agent if you do not want that tradeoff.
               </div>
 
               <label htmlFor="vm-protect-username" style={{ display: 'block', marginTop: '16px', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 750, letterSpacing: '0.3px' }}>WINDOWS USERNAME</label>
@@ -1078,7 +1062,7 @@ export default function VMProtect() {
             <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'flex-end', gap: '9px' }}>
               <button className="btn btn-secondary" type="button" onClick={closeCredentialModal} disabled={!!busyKey}>Cancel</button>
               <button className="btn btn-primary" type="submit" disabled={!!busyKey || !credentials.username.trim() || !credentials.password}>
-                {busyKey ? 'Installing…' : 'Install helper'}
+                {busyKey ? 'Installing…' : 'Install agent'}
               </button>
             </div>
           </form>

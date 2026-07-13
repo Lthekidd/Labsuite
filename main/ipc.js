@@ -2087,12 +2087,13 @@ function setupIpc(mainWindowArg, getMainWindow) {
         transport: rawState.transport || 'https',
         addresses: Array.isArray(rawState.addresses) ? rawState.addresses : [],
         activeUploads: Number(rawState.activeUploads) || 0,
+        agentProtocolVersion: 2,
         guestQuotaBytes: Number(rawState.guestQuotaBytes) || 0,
         firewall: vmProtectFirewall || windowsFirewall.getLastVmProtectFirewallResult()
       },
       guests: (rawState.guests || []).map(guest => {
         const source = backupSources.find(folder => String(folder.vm_guest_id || '') === String(guest.id));
-        const uploadTime = Date.parse(guest.lastUploadAt || '') || 0;
+        const uploadTime = Date.parse(guest.lastCommitAt || guest.lastUploadAt || '') || 0;
         const backupTime = Date.parse(source && source.last_success_at || '') || 0;
         const failed = Number(source && source.consecutive_failures) > 0;
         const backupStatus = failed
@@ -2106,7 +2107,8 @@ function setupIpc(mainWindowArg, getMainWindow) {
           vmName: guest.name,
           connected: guest.status === 'online',
           online: guest.status === 'online',
-          selectedFileCount: Array.isArray(guest.selectedFiles) ? guest.selectedFiles.length : 0,
+          selectedFileCount: Number(guest.manifestFileCount) || (Array.isArray(guest.selectedFiles) ? guest.selectedFiles.length : 0),
+          protectedRootCount: Number(guest.rootCount) || (Array.isArray(guest.policy?.roots) ? guest.policy.roots.length : 0),
           backupStatus,
           lastBackupAt: source && source.last_success_at || '',
           backupError: source && source.last_error || ''
@@ -2144,6 +2146,14 @@ function setupIpc(mainWindowArg, getMainWindow) {
     .replace(/[. ]+$/g, '')
     .trim()
     .slice(0, 80) || 'Windows VM';
+
+  const getVmProtectGuestRoot = (guest, state = vmProtect.getState(), explicitRoot = '') => {
+    if (explicitRoot) return path.resolve(explicitRoot);
+    if (Number(guest && guest.protocolVersion) >= 2) {
+      return path.resolve(state.v2StagingRoot || path.join(app.getPath('userData'), 'vm-protect-staging-v2'), String(guest.id), 'current');
+    }
+    return path.resolve(state.stagingRoot, String(guest.id));
+  };
 
   const markVmTreeDirty = async (rootPath, folder, maxFiles = 5000) => {
     const manifestEntries = folder
@@ -2187,7 +2197,7 @@ function setupIpc(mainWindowArg, getMainWindow) {
     const guest = upload && upload.guest;
     if (!guest || !guest.id) throw new Error('VM Protect upload did not include a guest identity.');
     const state = vmProtect.getState();
-    const guestRoot = path.resolve(state.stagingRoot, guest.id);
+    const guestRoot = getVmProtectGuestRoot(guest, state, upload.guestRoot || upload.stagingRoot);
     fs.mkdirSync(guestRoot, { recursive: true });
     const normalizedRoot = guestRoot.toLowerCase();
     let folder = db.getFolders().find(candidate => (
@@ -2209,7 +2219,9 @@ function setupIpc(mainWindowArg, getMainWindow) {
         share_on_lan: false
       });
       folder = db.getFolders().find(candidate => String(candidate.id) === String(result.lastInsertRowid));
-      if (!backupsArePaused()) watcher.addPath(guestRoot);
+      // V2 has an explicit committed-manifest event. Avoid a second storm of local watcher
+      // notifications for the same batch; legacy uploads still use the normal watcher path.
+      if (!backupsArePaused() && Number(guest.protocolVersion) < 2) watcher.addPath(guestRoot);
       remoteCatalog.publish().catch(error => {
         console.warn('VM Protect catalog publish failed:', error.message);
       });
@@ -2217,9 +2229,19 @@ function setupIpc(mainWindowArg, getMainWindow) {
 
     if (folder) {
       let marked = false;
-      for (const changedPath of [upload.stagingPath, upload.revisionPath]) {
+      const changedPaths = Array.isArray(upload.changedPaths)
+        ? upload.changedPaths
+        : [upload.stagingPath, upload.revisionPath];
+      for (const changedPath of changedPaths) {
         if (changedPath && fs.existsSync(changedPath)) {
           marked = backupWorker.markDirtyForPath(changedPath, 'changed') || marked;
+        }
+      }
+      for (const relativePath of Array.isArray(upload.deletedRelativePaths) ? upload.deletedRelativePaths : []) {
+        const deletedPath = path.resolve(guestRoot, String(relativePath || '').replace(/\//g, path.sep));
+        const relative = path.relative(guestRoot, deletedPath);
+        if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+          marked = backupWorker.markDirtyForPath(deletedPath, 'deleted') || marked;
         }
       }
       if (!marked) await markVmTreeDirty(guestRoot, folder);
@@ -2229,7 +2251,7 @@ function setupIpc(mainWindowArg, getMainWindow) {
   const reconcileVmProtectBackupSources = rawState => {
     const state = rawState && rawState.stagingRoot ? rawState : vmProtect.getState();
     for (const guest of state.guests || []) {
-      const guestRoot = path.resolve(state.stagingRoot, guest.id);
+      const guestRoot = getVmProtectGuestRoot(guest, state);
       if (!fs.existsSync(guestRoot)) continue;
       const registeredSource = db.getFolders().find(candidate => (
         candidate.local_path && path.resolve(candidate.local_path).toLowerCase() === guestRoot.toLowerCase()
@@ -2248,6 +2270,36 @@ function setupIpc(mainWindowArg, getMainWindow) {
   };
 
   let vmProtectWasEnabled = false;
+  const pendingVmBatchBackups = new Map();
+  const queueVmBatchBackup = batch => {
+    const guest = batch && batch.guest;
+    if (!guest || !guest.id) return;
+    const key = String(guest.id);
+    const existing = pendingVmBatchBackups.get(key) || {
+      guest,
+      guestRoot: batch.guestRoot || batch.stagingRoot || '',
+      changedPaths: new Set(),
+      deletedRelativePaths: new Set(),
+      timer: null
+    };
+    existing.guest = guest;
+    existing.guestRoot = batch.guestRoot || batch.stagingRoot || existing.guestRoot;
+    for (const filePath of Array.isArray(batch.changedPaths) ? batch.changedPaths : []) existing.changedPaths.add(filePath);
+    for (const relativePath of Array.isArray(batch.deletedRelativePaths) ? batch.deletedRelativePaths : []) existing.deletedRelativePaths.add(relativePath);
+    if (existing.timer) clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => {
+      pendingVmBatchBackups.delete(key);
+      registerVmUploadForBackup({
+        guest: existing.guest,
+        guestRoot: existing.guestRoot,
+        changedPaths: [...existing.changedPaths],
+        deletedRelativePaths: [...existing.deletedRelativePaths]
+      }).catch(error => {
+        console.error('VM Protect v2 batch backup registration failed:', error.message);
+      });
+    }, 2500);
+    pendingVmBatchBackups.set(key, existing);
+  };
   vmProtect.events.on('state', state => {
     emitVmProtectState(state);
     const becameEnabled = !!(state && state.enabled) && !vmProtectWasEnabled;
@@ -2335,7 +2387,8 @@ function setupIpc(mainWindowArg, getMainWindow) {
       vmId: String(options.vmId || ''),
       vmxPath: String(options.vmxPath || ''),
       vmwareUuid: String(options.vmwareUuid || ''),
-      alwaysProtect: true
+      alwaysProtect: true,
+      protocolVersion: 2
     });
     return {
       success: true,
@@ -2343,6 +2396,9 @@ function setupIpc(mainWindowArg, getMainWindow) {
       expiresAt: helper.enrollment && helper.enrollment.expiresAt,
       method: 'portable'
     };
+  });
+  vmProtect.events.on('batchCommitted', batch => {
+    queueVmBatchBackup(batch);
   });
 
   ipcMain.handle('vmProtect:createBulkHelper', async (_event, options = {}) => {
@@ -2354,24 +2410,21 @@ function setupIpc(mainWindowArg, getMainWindow) {
     if (saveResult.canceled || !saveResult.filePath) return { success: true, canceled: true };
     const outputPath = saveResult.filePath.toLowerCase().endsWith('.ps1') ? saveResult.filePath : `${saveResult.filePath}.ps1`;
     await ensureVmProtectServer();
-    const selectedFiles = Array.isArray(options.selectedFiles)
-      ? options.selectedFiles
-      : String(options.selectedFiles || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
     const helper = await vmProtect.writePortableHelper({
       outputPath,
-      name: 'Bulk VM Protect helper',
-      selectedFiles,
+      name: 'Bulk VM Protect agent',
       alwaysProtect: true,
       ttlMs: 24 * 60 * 60 * 1000,
       multiUse: true,
       autoApprove: true,
-      maxGuests: 10000
+      maxGuests: 10000,
+      protocolVersion: 2
     });
     return {
       success: true,
       path: helper.path,
       expiresAt: helper.enrollment && helper.enrollment.expiresAt,
-      selectedFiles,
+      selectedFiles: [],
       method: 'bulk'
     };
   });
@@ -2400,7 +2453,8 @@ function setupIpc(mainWindowArg, getMainWindow) {
       vmId: vm.id,
       vmxPath: vm.vmxPath,
       vmwareUuid: vm.vmwareUuid || '',
-      alwaysProtect: true
+      alwaysProtect: true,
+      protocolVersion: 2
     });
     const helperPath = path.join(app.getPath('temp'), `labsuite-vm-protect-${nodeCrypto.randomBytes(12).toString('hex')}.ps1`);
     try {
@@ -2408,7 +2462,8 @@ function setupIpc(mainWindowArg, getMainWindow) {
         outputPath: helperPath,
         enrollment,
         name: vm.name || 'Windows VM',
-        alwaysProtect: true
+        alwaysProtect: true,
+        protocolVersion: 2
       });
       await vmProtect.deployHelper({
         vmxPath: vm.vmxPath,

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.27 — 2026-07-14
+
+### Added
+
+- Rebuilt VM Protect as a manifest-based VM agent that protects multiple folders and files, keeps a durable local queue, installs per-user startup, and provides copyable diagnostics.
+- VM agents now batch small files, resume large files in chunks, and can transfer up to four large files in parallel.
+
+### Changed
+
+- VM Protect commits a verified batch into one current staging tree and passes one coalesced job to the encrypted backup engine; deleted files now mirror to the current backup while normal retention keeps history recoverable.
+- The VM Protect page now creates portable and bulk VM agents. Each VM chooses its own folders and files instead of relying on a shared per-file helper list.
+
+### Compatibility
+
+- Existing VM Protect v1 helpers remain supported and are labeled as legacy until they are replaced with a v2 agent.
+
 ## 2.2.26 — 2026-07-13
 
 ### Fixed

@@ -57,9 +57,9 @@
 ### VM Protect
 
 - Discovers common VMware Workstation and Player installations.
-- Protects selected guest files without copying an entire virtual disk.
-- Uses an approved portable PowerShell helper with authenticated uploads and immutable retained revisions.
-- Supports direct helper delivery through VMware `vmrun`/VIX or a one-time manual copy.
+- Protects selected guest folders and files without copying an entire virtual disk.
+- Uses a portable per-user VM agent with authenticated manifest batches, resumable large-file uploads, local diagnostics, and no cloud credentials inside the VM.
+- Supports direct agent delivery through VMware `vmrun`/VIX or a one-time manual copy.
 
 ### Private productivity tools
 
