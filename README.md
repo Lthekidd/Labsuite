@@ -158,6 +158,7 @@ When an update finishes downloading, fully quit LabSuite from its system-tray me
 | Disk Mount fails | Install WinFsp, let active backup work finish, and allow up to 45 seconds for the mount. |
 | Another PC is missing | Confirm it used the same Google Drive vault, then refresh the Restore computer list. |
 | Network Drive says firewall approval is needed | Select **Allow Through Firewall**, approve the Windows UAC prompt, then refresh the other PC. LabSuite itself does not need to run as administrator. |
+| VM Protect says Firewall check needed | Select **Allow Through Firewall** on the Secure Receiver card and approve the Windows UAC prompt. The rule is limited to local and VMware networks. |
 | Update is not detected | Confirm the release is published, its version is newer, and all three update assets are present. |
 
 Use **Backup Engine → Health → Export Diagnostics** when investigating a repeatable backup or restore failure.

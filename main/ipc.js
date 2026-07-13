@@ -1986,7 +1986,7 @@ function setupIpc(mainWindowArg, getMainWindow) {
         addresses: Array.isArray(rawState.addresses) ? rawState.addresses : [],
         activeUploads: Number(rawState.activeUploads) || 0,
         guestQuotaBytes: Number(rawState.guestQuotaBytes) || 0,
-        firewall: vmProtectFirewall
+        firewall: vmProtectFirewall || windowsFirewall.getLastVmProtectFirewallResult()
       },
       guests: (rawState.guests || []).map(guest => {
         const source = backupSources.find(folder => String(folder.vm_guest_id || '') === String(guest.id));
@@ -2205,6 +2205,16 @@ function setupIpc(mainWindowArg, getMainWindow) {
     const state = await vmProtect.stop();
     db.setSetting('vm_protect_enabled', '0');
     return { success: true, ...formatVmProtectState(state) };
+  });
+
+  ipcMain.handle('vmProtect:configureFirewall', async () => {
+    const current = vmProtect.getState();
+    if (!current.enabled) {
+      throw new Error('Start the Secure Receiver before configuring its firewall rule.');
+    }
+    vmProtectFirewall = await windowsFirewall.configureVmProtectFirewallRuleElevated(current.port || current.defaultPort);
+    emitVmProtectState(current);
+    return { success: true, ...formatVmProtectState(current) };
   });
 
   ipcMain.handle('vmProtect:createHelper', async (_event, options = {}) => {

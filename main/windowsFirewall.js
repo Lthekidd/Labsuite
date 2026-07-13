@@ -1,6 +1,7 @@
 const { execFile, spawnSync } = require('child_process');
 
 const DISCOVERY_PORT = 41234;
+let lastVmProtectFirewall = null;
 
 function runNetsh(args) {
   const result = spawnSync('netsh.exe', args, {
@@ -16,27 +17,10 @@ function runNetsh(args) {
   };
 }
 
-function runNetshAsync(args) {
-  return new Promise(resolve => {
-    execFile('netsh.exe', args, {
-      encoding: 'utf8',
-      windowsHide: true,
-      timeout: 10000,
-      maxBuffer: 1024 * 1024
-    }, (error, stdout, stderr) => {
-      resolve({
-        ok: !error,
-        status: error && error.code,
-        output: `${stdout || ''}${stderr || ''}`.trim()
-      });
-    });
-  });
-}
-
 function normalizeFirewallPort(value) {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('The Network Drive port must be a whole number between 1 and 65535.');
+    throw new Error('The firewall port must be a whole number between 1 and 65535.');
   }
   return port;
 }
@@ -52,8 +36,13 @@ function getLanRuleDefinitions(filePort) {
   ];
 }
 
-function buildElevatedLanFirewallScript(filePort) {
-  const rules = getLanRuleDefinitions(filePort);
+function getVmProtectRuleDefinitions(receiverPort) {
+  return [
+    { name: 'LabSuite VM Protect TCP', protocol: 'TCP', port: normalizeFirewallPort(receiverPort) }
+  ];
+}
+
+function buildElevatedFirewallScript(rules) {
   const ruleBlocks = rules.map(rule => `@{ Name = '${rule.name}'; Protocol = '${rule.protocol}'; Port = ${rule.port} }`).join(",\n  ");
   return `$ErrorActionPreference = 'Stop'
 $netsh = Join-Path $env:SystemRoot 'System32\\netsh.exe'
@@ -66,6 +55,14 @@ foreach ($rule in $rules) {
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 exit 0`;
+}
+
+function buildElevatedLanFirewallScript(filePort) {
+  return buildElevatedFirewallScript(getLanRuleDefinitions(filePort));
+}
+
+function buildElevatedVmProtectFirewallScript(receiverPort) {
+  return buildElevatedFirewallScript(getVmProtectRuleDefinitions(receiverPort));
 }
 
 function runElevatedPowerShell(script, options = {}) {
@@ -137,59 +134,69 @@ function ensureVmProtectFirewallRule(port) {
     return { attempted: false, ok: true, message: 'Firewall rule is only needed on Windows.' };
   }
 
-  const tcp = addRule('LabSuite VM Protect TCP', 'TCP', port, {
+  const normalizedPort = normalizeFirewallPort(port);
+  const tcp = addRule('LabSuite VM Protect TCP', 'TCP', normalizedPort, {
     remoteIp: 'LocalSubnet',
     profile: 'private,public'
   });
-  return {
+  const result = {
     attempted: true,
     ok: tcp.ok,
     tcp,
+    needsElevation: !tcp.ok,
     message: tcp.ok
       ? 'The VM Protect receiver is allowed from local and VMware networks.'
-      : 'Windows Firewall could not be configured automatically. Allow LabSuite on VMware networks or run it once as administrator.'
+      : 'Windows needs approval for the VM Protect receiver rule. Select Allow Through Firewall and approve the Windows prompt.'
   };
+  lastVmProtectFirewall = result;
+  return result;
 }
 
 async function ensureVmProtectFirewallRuleAsync(port) {
+  return ensureVmProtectFirewallRule(port);
+}
+
+async function configureVmProtectFirewallRuleElevated(port, options = {}) {
   if (process.platform !== 'win32') {
-    return { attempted: false, ok: true, message: 'Firewall rule is only needed on Windows.' };
+    return { attempted: false, elevated: false, ok: true, message: 'Firewall rules are only needed on Windows.' };
   }
 
-  const name = 'LabSuite VM Protect TCP';
-  let tcp = await runNetshAsync([
-    'advfirewall', 'firewall', 'set', 'rule',
-    `name=${name}`,
-    'new',
-    'enable=yes',
-    'dir=in',
-    'action=allow',
-    'protocol=TCP',
-    `localport=${port}`,
-    'remoteip=LocalSubnet',
-    'profile=private,public'
-  ]);
-  if (!tcp.ok) {
-    await runNetshAsync(['advfirewall', 'firewall', 'delete', 'rule', `name=${name}`]);
-    tcp = await runNetshAsync([
-      'advfirewall', 'firewall', 'add', 'rule',
-      `name=${name}`,
-      'dir=in',
-      'action=allow',
-      'protocol=TCP',
-      `localport=${port}`,
-      'remoteip=LocalSubnet',
-      'profile=private,public'
-    ]);
+  const normalizedPort = normalizeFirewallPort(port);
+  const runner = options.runner || runElevatedPowerShell;
+  const elevated = await runner(buildElevatedVmProtectFirewallScript(normalizedPort));
+  if (!elevated.ok) {
+    const canceled = String(elevated.status) === '1223' || /canceled|cancelled|operation was canceled/i.test(elevated.output || '');
+    const result = {
+      attempted: true,
+      elevated: true,
+      ok: false,
+      canceled,
+      needsElevation: true,
+      message: canceled
+        ? 'Windows firewall approval was canceled. Select Allow Through Firewall when you are ready to approve it.'
+        : 'Windows could not add the VM Protect receiver rule. Check Windows Security or your administrator policy.'
+    };
+    lastVmProtectFirewall = result;
+    return result;
   }
-  return {
+
+  const tcp = showRule('LabSuite VM Protect TCP');
+  const result = {
     attempted: true,
+    elevated: true,
     ok: tcp.ok,
     tcp,
+    needsElevation: !tcp.ok,
     message: tcp.ok
-      ? 'The VM Protect receiver is allowed from local and VMware networks.'
-      : 'Windows Firewall could not be configured automatically. Allow LabSuite on VMware networks or run it once as administrator.'
+      ? 'Windows firewall now allows the VM Protect receiver from local and VMware networks.'
+      : 'Windows reported success, but LabSuite could not verify the VM Protect receiver rule.'
   };
+  lastVmProtectFirewall = result;
+  return result;
+}
+
+function getLastVmProtectFirewallResult() {
+  return lastVmProtectFirewall;
 }
 
 function ensureLanFirewallRules(filePort) {
@@ -263,11 +270,16 @@ module.exports = {
   configureLanFirewallRulesElevated,
   ensureVmProtectFirewallRule,
   ensureVmProtectFirewallRuleAsync,
+  configureVmProtectFirewallRuleElevated,
+  getLastVmProtectFirewallResult,
   DISCOVERY_PORT,
   __private: {
     normalizeFirewallPort,
     getLanRuleDefinitions,
+    getVmProtectRuleDefinitions,
+    buildElevatedFirewallScript,
     buildElevatedLanFirewallScript,
+    buildElevatedVmProtectFirewallScript,
     encodePowerShell
   }
 };
