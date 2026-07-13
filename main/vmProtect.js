@@ -471,7 +471,7 @@ function createVmProtectService(dependencies = {}) {
     }
   }
 
-  function authenticate(req, url) {
+  function authenticate(req, url, canonicalPathAndQuery = getPathAndQuery(url)) {
     cleanupTransientCaches();
     const guestId = String(req.headers['x-labsuite-guest-id'] || '');
     const timestamp = String(req.headers['x-labsuite-timestamp'] || '');
@@ -502,7 +502,7 @@ function createVmProtectService(dependencies = {}) {
     const expected = makeSignature(
       guest.token,
       req.method,
-      getPathAndQuery(url),
+      canonicalPathAndQuery,
       timestamp,
       nonce,
       contentLength,
@@ -601,6 +601,7 @@ function createVmProtectService(dependencies = {}) {
       emitState();
       sendJson(res, 200, {
         success: true,
+        serverTimeMs: now(),
         guestId: guest.id,
         token: guest.token,
         guest: {
@@ -630,6 +631,7 @@ function createVmProtectService(dependencies = {}) {
       emitState();
       sendJson(res, 202, {
         success: true,
+        serverTimeMs: now(),
         pending: true,
         pairingCode: enrollment.pairingCode,
         expiresAt: enrollment.expiresAt,
@@ -641,6 +643,7 @@ function createVmProtectService(dependencies = {}) {
     if (enrollment.state !== 'approved') {
       sendJson(res, 202, {
         success: true,
+        serverTimeMs: now(),
         pending: true,
         pairingCode: enrollment.pairingCode,
         expiresAt: enrollment.expiresAt,
@@ -753,8 +756,23 @@ function createVmProtectService(dependencies = {}) {
       req.resume();
       return;
     }
-    const auth = authenticate(req, url);
-    const guestPath = url.searchParams.get('path') || String(req.headers['x-labsuite-file-path'] || '');
+    const encodedGuestPath = String(req.headers['x-labsuite-file-path-base64'] || '');
+    let guestPath = '';
+    let canonicalPathAndQuery = getPathAndQuery(url);
+    if (encodedGuestPath) {
+      if (!/^[A-Za-z0-9_-]{1,65536}$/.test(encodedGuestPath)) {
+        throw Object.assign(new Error('The encoded guest file path header is invalid.'), { statusCode: 400 });
+      }
+      const decoded = Buffer.from(encodedGuestPath, 'base64url');
+      if (decoded.toString('base64url') !== encodedGuestPath) {
+        throw Object.assign(new Error('The encoded guest file path header is malformed.'), { statusCode: 400 });
+      }
+      guestPath = decoded.toString('utf8');
+      canonicalPathAndQuery = `/upload?path64=${encodedGuestPath}`;
+    } else {
+      guestPath = url.searchParams.get('path') || String(req.headers['x-labsuite-file-path'] || '');
+    }
+    const auth = authenticate(req, url, canonicalPathAndQuery);
     const target = resolveStagingTarget(getStagingRoot(), auth.guest.id, guestPath);
     const fileKey = target.normalizedGuestPath.toLowerCase();
     if (!auth.guest.selectedFiles.some(item => item.toLowerCase() === fileKey)) {
@@ -1436,6 +1454,27 @@ function Invoke-PinnedJson([string]$Method, [string]$Uri, $Body) {
   return Invoke-RestMethod @parameters
 }
 
+function Get-WebFailureDetail($Failure) {
+  $detail = $Failure.Exception.Message
+  $response = $Failure.Exception.Response
+  if ($null -eq $response) { return $detail }
+  try {
+    $reader = New-Object IO.StreamReader($response.GetResponseStream())
+    try { $text = $reader.ReadToEnd() } finally { $reader.Dispose() }
+    if (-not [string]::IsNullOrWhiteSpace($text)) {
+      try {
+        $payload = $text | ConvertFrom-Json
+        if (-not [string]::IsNullOrWhiteSpace([string]$payload.error)) {
+          return ($detail + ' Host reason: ' + [string]$payload.error)
+        }
+      } catch {}
+      return ($detail + ' Host response: ' + $text)
+    }
+  } catch {}
+  finally { try { $response.Dispose() } catch {} }
+  return $detail
+}
+
 function Connect-LabSuite([string[]]$SelectedFiles) {
   $lastError = $null
   $announced = $false
@@ -1459,7 +1498,7 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
         }
       } catch {
         $lastError = $_
-        Write-RunLog ('Connection failed for ' + [string]$server + ': ' + $_.Exception.Message)
+        Write-RunLog ('Connection failed for ' + [string]$server + ': ' + (Get-WebFailureDetail $_))
         continue
       }
       if ($response.pending) {
@@ -1479,6 +1518,7 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
         tokenProtected = Protect-Token ([string]$response.token)
         serverUrl = $server.TrimEnd('/')
         tlsFingerprint = [string]$Bootstrap.tlsFingerprint
+        clockOffsetMs = if ($null -ne $response.serverTimeMs) { [int64]$response.serverTimeMs - (Get-UnixMilliseconds) } else { [int64]0 }
         files = @($SelectedFiles)
         fileStamps = @{}
         alwaysProtect = [bool]($AlwaysProtect -or $Bootstrap.alwaysProtect)
@@ -1525,7 +1565,7 @@ function Get-Sha256Hex([IO.Stream]$Stream) {
 }
 
 function New-SignedHeaders($State, [string]$Method, [string]$PathAndQuery, [int64]$Length, [string]$Sha256) {
-  $timestamp = [string](Get-UnixMilliseconds)
+  $timestamp = [string]((Get-UnixMilliseconds) + [int64]$State.clockOffsetMs)
   $nonce = New-Nonce
   $lf = [string][char]10
   $canonical = $Method.ToUpperInvariant() + $lf + $PathAndQuery + $lf + $timestamp + $lf + $nonce + $lf + [string]$Length + $lf + $Sha256.ToLowerInvariant()
@@ -1552,10 +1592,12 @@ function Send-ProtectedFile($State, [string]$FilePath, [int]$MaxAttempts = 3) {
       $length = $stream.Length
       $sha256 = Get-Sha256Hex $stream
       $stream.Position = 0
-      $escapedPath = [Uri]::EscapeDataString([IO.Path]::GetFullPath($FilePath))
-      $pathAndQuery = '/upload?path=' + $escapedPath
+      $fullPath = [IO.Path]::GetFullPath($FilePath)
+      $pathBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($fullPath)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+      $pathAndQuery = '/upload?path64=' + $pathBase64
       $headers = New-SignedHeaders $State 'POST' $pathAndQuery $length $sha256
-      $request = [Net.HttpWebRequest]::Create(([string]$State.serverUrl).TrimEnd('/') + $pathAndQuery)
+      $headers['x-labsuite-file-path-base64'] = $pathBase64
+      $request = [Net.HttpWebRequest]::Create(([string]$State.serverUrl).TrimEnd('/') + '/upload')
       $request.Method = 'POST'
       $request.ContentType = 'application/octet-stream'
       $request.ContentLength = $length
@@ -1574,7 +1616,7 @@ function Send-ProtectedFile($State, [string]$FilePath, [int]$MaxAttempts = 3) {
         return $true
       } finally { $response.Dispose() }
     } catch {
-      $detail = $_.Exception.Message
+      $detail = Get-WebFailureDetail $_
       if ($attempt -lt $attemptLimit) {
         Write-Warning ("Upload attempt " + $attempt + ' of ' + $attemptLimit + " failed for " + $FilePath + ': ' + $detail + '. Retrying...')
         Start-Sleep -Milliseconds (500 * $attempt)
@@ -1711,6 +1753,9 @@ foreach ($file in @($state.files)) {
 Save-State $state
 
 if ([bool]$state.alwaysProtect) {
+  if ($failedFiles.Count -gt 0) {
+    throw ('Setup could not verify the initial upload for ' + $failedFiles.Count + ' selected file(s): ' + ($failedFiles -join ', '))
+  }
   $installed = Install-AlwaysProtect
   Start-HiddenWatcher $installed
   Write-Host 'Always Protect is enabled. LabSuite will catch up whenever this VM and the host are available.' -ForegroundColor Green

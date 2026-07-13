@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.26 — 2026-07-13
+
+### Fixed
+
+- VM Protect uploads now sign a path-safe Base64URL representation, preventing HTTP 401 signature failures for VM file paths containing spaces or special characters.
+- Helpers correct for host/VM clock differences using the receiver’s enrollment time.
+- Upload and enrollment failures now include the receiver’s structured error reason in the helper output and diagnostics.
+
 ## 2.2.25 — 2026-07-13
 
 ### Added

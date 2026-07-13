@@ -142,6 +142,7 @@ async function main() {
     const enrolled = await requestJson(port, '/enroll', { body: enrollBody });
     assert.strictEqual(enrolled.statusCode, 200);
     assert.strictEqual(enrolled.payload.success, true);
+    assert.ok(Number.isSafeInteger(enrolled.payload.serverTimeMs), 'Enrollment must return host time for clock-skew correction.');
     assert.ok(enrolled.payload.guestId);
     assert.ok(enrolled.payload.token);
 
@@ -283,9 +284,10 @@ async function main() {
 
     if (process.platform === 'win32') {
       const guestProfile = path.join(tempDir, 'guest-profile');
-      const runtimeFile = path.join(tempDir, 'runtime-file.txt');
+      const runtimeFile = path.join(tempDir, 'nasa.dream17', 'Other computers', 'octo', 'Documents', 'paula.txt');
       const runtimeHelper = path.join(tempDir, 'Runtime-VM-Protect.ps1');
       fs.mkdirSync(guestProfile, { recursive: true });
+      fs.mkdirSync(path.dirname(runtimeFile), { recursive: true });
       fs.writeFileSync(runtimeFile, 'runtime helper test\n', 'utf8');
       const runtimeInvitation = await service.createEnrollment({
         name: 'PowerShell Runtime VM',
@@ -418,6 +420,63 @@ async function main() {
       diagnosticRun.stderr.on('data', chunk => { diagnosticRunOutput += chunk.toString(); });
       assert.strictEqual(await waitForProcess(diagnosticRun), 0, `Manual diagnostic mode should succeed.\n${diagnosticRunOutput.trim()}`);
       assert.match(diagnosticRunOutput, /manual diagnostic run/i);
+
+      const skewHostDir = path.join(tempDir, 'clock-skew-host');
+      const skewGuestProfile = path.join(tempDir, 'clock-skew-guest');
+      const skewRuntimeFile = path.join(tempDir, 'clock skew files', 'protected file.txt');
+      const skewRuntimeHelper = path.join(tempDir, 'Clock-Skew-VM-Protect.ps1');
+      fs.mkdirSync(path.dirname(skewRuntimeFile), { recursive: true });
+      fs.mkdirSync(skewGuestProfile, { recursive: true });
+      fs.writeFileSync(skewRuntimeFile, 'clock skew upload test\n', 'utf8');
+      const skewSettings = new Map();
+      const skewService = vmProtect.createVmProtectService({
+        userDataDir: skewHostDir,
+        db: {
+          getSetting: key => skewSettings.get(key),
+          setSetting: (key, value) => skewSettings.set(key, String(value))
+        },
+        bindAddress: '127.0.0.1',
+        networkInterfaces: () => ({
+          'VMware Network Adapter VMnet1': [{ family: 'IPv4', internal: false, address: '127.0.0.1' }]
+        }),
+        now: () => Date.now() + 10 * 60 * 1000,
+        maxFileBytes: 1024 * 1024
+      });
+      const skewPort = 24000 + crypto.randomInt(0, 1000);
+      let skewUploads = 0;
+      skewService.events.on('upload', () => { skewUploads += 1; });
+      try {
+        await skewService.start(skewPort);
+        const skewInvitation = await skewService.createEnrollment({
+          name: 'Clock Skew Runtime VM',
+          serverUrls: [`https://127.0.0.1:${skewPort}`],
+          selectedFiles: [skewRuntimeFile],
+          multiUse: true,
+          autoApprove: true,
+          maxGuests: 10
+        });
+        await skewService.writePortableHelper({
+          outputPath: skewRuntimeHelper,
+          enrollment: skewInvitation,
+          name: 'Clock Skew Runtime VM',
+          selectedFiles: [skewRuntimeFile],
+          alwaysProtect: false
+        });
+        const skewRun = spawn('powershell.exe', [
+          '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', skewRuntimeHelper, '-NoPicker', '-NoPause'
+        ], { env: { ...process.env, LOCALAPPDATA: skewGuestProfile }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        let skewRunOutput = '';
+        skewRun.stdout.on('data', chunk => { skewRunOutput += chunk.toString(); });
+        skewRun.stderr.on('data', chunk => { skewRunOutput += chunk.toString(); });
+        assert.strictEqual(
+          await waitForProcess(skewRun),
+          0,
+          `The helper must correct a ten-minute VM/host clock difference.\n${skewRunOutput.trim()}`
+        );
+        assert.strictEqual(skewUploads, 1, 'Clock correction must allow the signed upload.');
+      } finally {
+        await skewService.stop().catch(() => {});
+      }
     }
   } finally {
     await service.stop().catch(() => {});
