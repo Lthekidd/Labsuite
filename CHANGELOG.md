@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.17 — 2026-07-13
+
+### Fixed
+
+- Resolved directory mismatch errors during backup verification and safety checks for single-file sync folders.
+
 ## 2.2.16 — 2026-07-13
 
 ### Fixed
