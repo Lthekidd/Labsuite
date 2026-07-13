@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.18 — 2026-07-13
+
+### Added
+
+- Added a "Clear Activity" button to the dashboard header actions, allowing users to clear both live session sync queue and historical activity records.
+
 ## 2.2.17 — 2026-07-13
 
 ### Fixed

@@ -1383,6 +1383,7 @@ export default function LabSuiteBackup() {
 
   const handleClearActivity = async () => {
     await ipcRenderer.invoke('activity:clear');
+    setFileActivity({});
     loadAppConfigs();
   };
 
@@ -2933,6 +2934,15 @@ export default function LabSuiteBackup() {
                       : diagnosticsStatus === 'copied'
                         ? 'Failure Log Copied'
                         : 'Copy Failure Log'}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginLeft: '8px' }}
+                    onClick={handleClearActivity}
+                    disabled={unifiedActivityItems.length === 0}
+                    title="Clear live session queue and historical activity records"
+                  >
+                    Clear Activity
                   </button>
                   {syncStatus === 'paused' ? (
                     <button className="btn btn-primary" onClick={handleResumeSync}>Resume backup</button>
