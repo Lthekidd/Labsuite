@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.20 — 2026-07-13
+
+### Fixed
+
+- Resolved reference error in the local Space Analyzer directory scanner by exporting `SKIP_TREE_WINDOWS` from filesystem module.
+
 ## 2.2.19 — 2026-07-13
 
 ### Added

@@ -494,5 +494,6 @@ module.exports = {
   isPathIncluded,
   isPathInsideFolder,
   isWithinSharedPaths,
-  DEFAULT_EXCLUSIONS
+  DEFAULT_EXCLUSIONS,
+  SKIP_TREE_WINDOWS
 };
