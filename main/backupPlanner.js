@@ -74,6 +74,35 @@ function hasPreviousRemoteCopy(entry) {
   return !!(entry && entry.remote_path && entry.dirty_reason !== 'remote_missing');
 }
 
+function makeMissingFileDeleteItem(folder, relativePath, entry) {
+  if (!hasPreviousRemoteCopy(entry)) return null;
+  return {
+    type: 'delete_history',
+    folderId: folder.id,
+    relativePath,
+    size: Number(entry.size) || 0,
+    previousRemotePath: entry.remote_path || manifest.getRemoteFilePath(folder, relativePath),
+    previousStorage: entry.storage || 'file',
+    previousPackId: entry.pack_id || null,
+    previousPackRemotePath: entry.pack_remote_path || null,
+    previousPackMemberPath: entry.pack_member_path || null
+  };
+}
+
+function handleMissingFileDuringScan(folder, plan, entries, relativePath, error) {
+  if (!error || error.code !== 'ENOENT') return false;
+  const normalized = manifest.normalizeRelativePath(relativePath);
+  const entry = entries[normalized];
+  const deleteItem = makeMissingFileDeleteItem(folder, normalized, entry);
+  if (deleteItem) {
+    plan.workItems.push(deleteItem);
+  } else if (entry) {
+    db.removeManifestEntry(folder.id, normalized);
+  }
+  plan.skipped += 1;
+  return true;
+}
+
 function addManifestRepairs(folder, plan, entries) {
   for (const [relativePath, entry] of Object.entries(entries)) {
     if (entry.status !== 'active_repair_needed') continue;
@@ -123,6 +152,7 @@ function addDirtyManifestUploads(folder, plan, entries) {
         previousPackMemberPath: hasPreviousRemoteCopy(entry) ? entry.pack_member_path || null : null
       });
     } catch (error) {
+      if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
       plan.workItems.push({
         type: 'scan_error',
         folderId: folder.id,
@@ -158,24 +188,7 @@ function walkFolder(folder, plan, entries) {
         const fileInfo = toFileInfo(folder, filePath, stat);
         addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
       } catch (error) {
-        const entry = entries[normalized];
-        if (error && error.code === 'ENOENT' && entry && entry.status === 'backed_up') {
-          // The app may have been closed when the file was removed, so no
-          // watcher event marked it deleted.  Detect it on the next reconcile
-          // and preserve its remote copy as a recoverable version.
-          plan.workItems.push({
-            type: 'delete_history',
-            folderId: folder.id,
-            relativePath: normalized,
-            size: Number(entry.size) || 0,
-            previousRemotePath: entry.remote_path || manifest.getRemoteFilePath(folder, normalized),
-            previousStorage: entry.storage || 'file',
-            previousPackId: entry.pack_id || null,
-            previousPackRemotePath: entry.pack_remote_path || null,
-            previousPackMemberPath: entry.pack_member_path || null
-          });
-          continue;
-        }
+        if (handleMissingFileDuringScan(folder, plan, entries, normalized, error)) continue;
         plan.workItems.push({
           type: 'scan_error',
           folderId: folder.id,
@@ -195,6 +208,10 @@ function walkFolder(folder, plan, entries) {
     try {
       children = fs.readdirSync(current, { withFileTypes: true });
     } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        plan.skipped += 1;
+        continue;
+      }
       plan.workItems.push({
         type: 'scan_error',
         folderId: folder.id,
@@ -227,11 +244,13 @@ function walkFolder(folder, plan, entries) {
         const fileInfo = toFileInfo(folder, childPath, stat);
         addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
       } catch (error) {
+        const relativePath = manifest.getRelativePath(folder, childPath);
+        if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
         plan.workItems.push({
           type: 'scan_error',
           folderId: folder.id,
           localPath: childPath,
-          relativePath: manifest.getRelativePath(folder, childPath),
+          relativePath,
           error: error.message
         });
       }
@@ -258,6 +277,10 @@ async function walkFolderAsync(folder, plan, entries) {
     try {
       children = fs.readdirSync(current, { withFileTypes: true });
     } catch (error) {
+      if (error && error.code === 'ENOENT') {
+        plan.skipped += 1;
+        continue;
+      }
       plan.workItems.push({
         type: 'scan_error',
         folderId: folder.id,
@@ -293,11 +316,13 @@ async function walkFolderAsync(folder, plan, entries) {
         const fileInfo = toFileInfo(folder, childPath, stat);
         addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
       } catch (error) {
+        const relativePath = manifest.getRelativePath(folder, childPath);
+        if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
         plan.workItems.push({
           type: 'scan_error',
           folderId: folder.id,
           localPath: childPath,
-          relativePath: manifest.getRelativePath(folder, childPath),
+          relativePath,
           error: error.message
         });
       }
@@ -360,6 +385,7 @@ async function addDirtyManifestUploadsAsync(folder, plan, entries) {
         previousPackMemberPath: hasPreviousRemoteCopy(entry) ? entry.pack_member_path || null : null
       });
     } catch (error) {
+      if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
       plan.workItems.push({
         type: 'scan_error',
         folderId: folder.id,
@@ -522,5 +548,9 @@ module.exports = {
   planFolder,
   planFolderAsync,
   planDirtyFolder,
-  planDirtyFolderAsync
+  planDirtyFolderAsync,
+  __private: {
+    makeMissingFileDeleteItem,
+    handleMissingFileDuringScan
+  }
 };

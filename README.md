@@ -160,6 +160,7 @@ When an update finishes downloading, fully quit LabSuite from its system-tray me
 | Network Drive says firewall approval is needed | Select **Allow Through Firewall**, approve the Windows UAC prompt, then refresh the other PC. LabSuite itself does not need to run as administrator. |
 | VM Protect says Firewall check needed | Select **Allow Through Firewall** on the Secure Receiver card and approve the Windows UAC prompt. The rule is limited to local and VMware networks. |
 | Update is not detected | Confirm the release is published, its version is newer, and all three update assets are present. |
+| Sidebar shows an issue while backing up a development drive | Open Backup Engine → Activity to inspect the reason. Smart Exclusions ignore `dist-packaged`, `dist`, `node_modules`, and temporary build files; run **Back Up Now** once after updating to clear stale failures. |
 
 Use **Backup Engine → Health → Export Diagnostics** when investigating a repeatable backup or restore failure.
 

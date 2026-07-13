@@ -107,6 +107,7 @@ assert.throws(
 
 assert.ok(filesystem.matchesExclusionPattern('**/*.log', 'logs/app.log'));
 assert.ok(filesystem.matchesExclusionPattern('**/node_modules/**', 'project/node_modules/pkg/index.js'));
+assert.ok(filesystem.matchesExclusionPattern('**/dist-packaged/**', 'LabSuite/dist-packaged/win-unpacked.tmp/locales/en-US.pak'));
 assert.ok(filesystem.matchesExclusionPattern('/private/**', 'private/secret.txt'));
 assert.ok(!filesystem.matchesExclusionPattern('/private/**', 'public/private/secret.txt'));
 
@@ -191,6 +192,32 @@ assert.ok(backupPlanner.hasChanged({ status: 'dirty', size: 1, mtime_ms: 1000 },
 assert.ok(!backupPlanner.hasChanged({ status: 'active_repair_needed', size: 1, mtime_ms: 1000 }, { size: 2, mtimeMs: 2000 }));
 assert.ok(backupPlanner.shouldMigratePackedActiveEntry({ status: 'backed_up', storage: 'pack' }));
 assert.ok(backupPlanner.hasChanged({ status: 'backed_up', storage: 'pack', size: 1, mtime_ms: 1000 }, { size: 1, mtimeMs: 1000 }));
+assert.deepStrictEqual(
+  backupPlanner.__private.makeMissingFileDeleteItem(
+    { id: 5, remote_path: 'computers/PC/E' },
+    'temporary/file.tmp',
+    { remote_path: 'computers/PC/E/temporary/file.tmp', storage: 'file', size: 12 }
+  ),
+  {
+    type: 'delete_history',
+    folderId: 5,
+    relativePath: 'temporary/file.tmp',
+    size: 12,
+    previousRemotePath: 'computers/PC/E/temporary/file.tmp',
+    previousStorage: 'file',
+    previousPackId: null,
+    previousPackRemotePath: null,
+    previousPackMemberPath: null
+  }
+);
+assert.strictEqual(
+  backupPlanner.__private.makeMissingFileDeleteItem(
+    { id: 5, remote_path: 'computers/PC/E' },
+    'temporary/new-file.tmp',
+    { status: 'dirty' }
+  ),
+  null
+);
 
 const packSettings = { enabled: true, smallFileMaxBytes: 64, maxRawBytes: 100, maxFiles: 2 };
 assert.ok(packStore.shouldPackItem({ size: 64 }, packSettings));
