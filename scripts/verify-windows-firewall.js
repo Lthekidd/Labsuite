@@ -4,7 +4,9 @@ const windowsFirewall = require('../main/windowsFirewall');
 const {
   normalizeFirewallPort,
   getLanRuleDefinitions,
+  getVmProtectRuleDefinitions,
   buildElevatedLanFirewallScript,
+  buildElevatedVmProtectFirewallScript,
   encodePowerShell
 } = windowsFirewall.__private;
 
@@ -16,6 +18,9 @@ assert.throws(() => normalizeFirewallPort(65536), /between 1 and 65535/);
 assert.deepStrictEqual(getLanRuleDefinitions(41235), [
   { name: 'LabSuite Network Drive TCP', protocol: 'TCP', port: 41235 },
   { name: 'LabSuite Network Discovery UDP', protocol: 'UDP', port: windowsFirewall.DISCOVERY_PORT }
+]);
+assert.deepStrictEqual(getVmProtectRuleDefinitions(41443), [
+  { name: 'LabSuite VM Protect TCP', protocol: 'TCP', port: 41443 }
 ]);
 
 const script = buildElevatedLanFirewallScript(41235);
@@ -30,4 +35,11 @@ assert.ok(script.includes('add rule'));
 const encoded = encodePowerShell(script);
 assert.strictEqual(Buffer.from(encoded, 'base64').toString('utf16le'), script);
 
-console.log('Windows firewall verification passed (validated ports, scoped rules, and elevated script).');
+const vmScript = buildElevatedVmProtectFirewallScript(41443);
+assert.ok(vmScript.includes("Name = 'LabSuite VM Protect TCP'"));
+assert.ok(vmScript.includes('Port = 41443'));
+assert.ok(vmScript.includes('remoteip=LocalSubnet'));
+assert.ok(vmScript.includes('profile=private,public'));
+assert.ok(!vmScript.includes('Network Discovery'));
+
+console.log('Windows firewall verification passed (LAN and VM Protect validated ports, scoped rules, and elevated scripts).');

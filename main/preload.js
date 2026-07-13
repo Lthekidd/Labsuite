@@ -159,6 +159,7 @@ const INVOKE_CHANNELS = new Set([
   'vmProtect:getState',
   'vmProtect:startServer',
   'vmProtect:stopServer',
+  'vmProtect:configureFirewall',
   'vmProtect:createHelper',
   'vmProtect:deployHelper',
   'vmProtect:approveEnrollment',

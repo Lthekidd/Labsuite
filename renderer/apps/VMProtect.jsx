@@ -345,6 +345,31 @@ export default function VMProtect() {
     }
   };
 
+  const configureReceiverFirewall = async () => {
+    const key = 'firewall';
+    setBusyKey(key);
+    clearNotices();
+    try {
+      const result = await invoke('vmProtect:configureFirewall');
+      if (result?.success === false) throw new Error(result.error || 'Could not configure the VM Protect firewall rule.');
+      if (result?.server || result?.guests || result?.enrollments) {
+        setVmState(previous => ({ ...previous, ...result }));
+      } else {
+        await reloadState();
+      }
+      const firewall = result?.server?.firewall;
+      if (firewall?.ok) {
+        setMessage(firewall.message || 'Windows firewall now allows the Secure Receiver.');
+      } else {
+        setError(firewall?.message || 'Windows firewall approval did not complete.');
+      }
+    } catch (err) {
+      setError(err.message || 'Could not configure the VM Protect firewall rule.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
   const createPortableHelper = async vm => {
     const key = `create:${getVmId(vm)}`;
     setBusyKey(key);
@@ -525,16 +550,29 @@ export default function VMProtect() {
             detail={serverDetail}
             good={receiverHealthy}
             action={(
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={toggleReceiver}
-                disabled={!!busyKey || receiverRequired}
-                title={receiverRequired ? 'The receiver stays on while a VM is paired or awaiting approval so changes are not missed.' : ''}
-                style={{ alignSelf: 'flex-start', padding: '7px 11px', fontSize: '12px' }}
-              >
-                {busyKey === 'receiver' ? 'Working…' : receiverRequired ? 'Required by paired VMs' : serverRunning ? 'Stop receiver' : 'Start receiver'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {serverRunning && vmState.server?.firewall?.ok === false && (
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={configureReceiverFirewall}
+                    disabled={!!busyKey}
+                    style={{ alignSelf: 'flex-start', padding: '7px 11px', fontSize: '12px' }}
+                  >
+                    {busyKey === 'firewall' ? 'Waiting for approval...' : 'Allow Through Firewall'}
+                  </button>
+                )}
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={toggleReceiver}
+                  disabled={!!busyKey || receiverRequired}
+                  title={receiverRequired ? 'The receiver stays on while a VM is paired or awaiting approval so changes are not missed.' : ''}
+                  style={{ alignSelf: 'flex-start', padding: '7px 11px', fontSize: '12px' }}
+                >
+                  {busyKey === 'receiver' ? 'Working...' : receiverRequired ? 'Required by paired VMs' : serverRunning ? 'Stop receiver' : 'Start receiver'}
+                </button>
+              </div>
             )}
           />
           <SummaryCard

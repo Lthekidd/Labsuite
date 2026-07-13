@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.6 — 2026-07-13
+
+### Fixed
+
+- VM Protect's Secure Receiver now offers **Allow Through Firewall** when its scoped Windows rule needs administrator approval.
+- The UAC prompt elevates only the firewall operation; LabSuite and the receiver continue running with normal user privileges.
+- Existing valid VM Protect rules are accepted without trying to modify them, avoiding false firewall warnings for standard users.
+- VM Protect firewall state is shared between automatic receiver startup and the UI, so the status card remains accurate after navigation or restart.
+
 ## 2.2.5 — 2026-07-13
 
 ### Fixed
