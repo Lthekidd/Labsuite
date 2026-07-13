@@ -1820,6 +1820,21 @@ export default function LabSuiteBackup() {
     }
   };
 
+  const handleCopyFailureLog = async () => {
+    setDiagnosticsStatus('exporting');
+    try {
+      const text = await ipcRenderer.invoke('diagnostics:getFailureLog');
+      await navigator.clipboard.writeText(String(text || ''));
+      setDiagnosticsStatus('copied');
+      setTimeout(() => setDiagnosticsStatus(''), 2500);
+    } catch (error) {
+      console.error('Failed to copy failure log:', error);
+      setDiagnosticsStatus('error');
+      alert(error.message || 'Failed to copy the failure log.');
+      setTimeout(() => setDiagnosticsStatus(''), 2500);
+    }
+  };
+
   // Rendering Helper: Step Wizard
   if (setupComplete === false) {
     const onboardingStepCount = setupMode === 'backup' ? 4 : 3;
@@ -2902,15 +2917,15 @@ export default function LabSuiteBackup() {
                 <div className="activity-actions">
                   <button
                     className="btn btn-secondary"
-                    onClick={handleExportDiagnostics}
+                    onClick={handleCopyFailureLog}
                     disabled={diagnosticsStatus === 'exporting'}
-                    title="Export paths, file checks, failed manifest entries, and sanitized LabSuite/rclone logs"
+                    title="Copy paths, file checks, failed manifest entries, and sanitized LabSuite/rclone logs"
                   >
                     {diagnosticsStatus === 'exporting'
-                      ? 'Exporting...'
-                      : diagnosticsStatus === 'exported'
-                        ? 'Failure Log Saved'
-                        : 'Export Failure Log'}
+                      ? 'Preparing Log...'
+                      : diagnosticsStatus === 'copied'
+                        ? 'Failure Log Copied'
+                        : 'Copy Failure Log'}
                   </button>
                   {syncStatus === 'paused' ? (
                     <button className="btn btn-primary" onClick={handleResumeSync}>Resume backup</button>

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.13 — 2026-07-13
+
+### Fixed
+
+- Standalone-file backups no longer append the filename twice to their Google Drive destination.
+- A selection such as `Desktop/oldpctext.txt` now uploads to that exact remote file instead of incorrectly targeting `Desktop/oldpctext.txt/oldpctext.txt`.
+- Standalone file creation, modification, packed migration, and deletion now use file-aware operations rather than folder batch commands.
+
+### Changed
+
+- Activity's failure diagnostic action is now **Copy Failure Log** and writes the sanitized report directly to the clipboard without creating a JSON file.
+
 ## 2.2.12 — 2026-07-13
 
 ### Fixed

@@ -14,6 +14,9 @@ function getRelativePath(folder, filePath) {
 
 function getRemoteFilePath(folder, relativePath) {
   const rel = normalizeRelativePath(relativePath);
+  if (folder && folder.source_type === 'file') {
+    return String(folder.remote_path || '').replace(/\\/g, '/');
+  }
   return rel ? `${folder.remote_path}/${rel}`.replace(/\\/g, '/') : folder.remote_path;
 }
 
