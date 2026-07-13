@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.11 — 2026-07-13
+
+### Added
+
+- Downloaded updates now show a **Restart & Install** button in Suite Settings.
+- LabSuite safely stops background services, flushes its database, installs the downloaded update silently, and relaunches itself automatically.
+- Restart installation is deferred when a backup is actively running to avoid interrupting protected data transfers.
+
 ## 2.2.10 — 2026-07-13
 
 ### Fixed

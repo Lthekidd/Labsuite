@@ -25,6 +25,7 @@ export default function LabSuiteSettings() {
     currentVersion: '',
     message: 'Loading update status...'
   });
+  const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
   const [googleClientStatus, setGoogleClientStatus] = useState({
     hasRemote: false,
     usesOwnClientId: false,
@@ -144,6 +145,25 @@ export default function LabSuiteSettings() {
         ...current,
         status: 'error',
         message: `Update check failed: ${error.message}`
+      }));
+    }
+  };
+
+  const restartAndInstallUpdate = async () => {
+    setIsInstallingUpdate(true);
+    setUpdateStatus((current) => ({
+      ...current,
+      status: 'installing',
+      message: 'Preparing to restart and install the update...'
+    }));
+    try {
+      await ipcRenderer.invoke('updates:install');
+    } catch (error) {
+      setIsInstallingUpdate(false);
+      setUpdateStatus((current) => ({
+        ...current,
+        status: 'error',
+        message: error.message || 'LabSuite could not restart to install the update.'
       }));
     }
   };
@@ -605,15 +625,16 @@ export default function LabSuiteSettings() {
             <button
               className="btn btn-primary"
               type="button"
-              onClick={checkForUpdates}
-              disabled={!updateStatus.supported || ['checking', 'available', 'downloading', 'downloaded'].includes(updateStatus.status)}
+              onClick={updateStatus.status === 'downloaded' ? restartAndInstallUpdate : checkForUpdates}
+              disabled={!updateStatus.supported || isInstallingUpdate || ['checking', 'available', 'downloading', 'installing'].includes(updateStatus.status)}
               style={{ minWidth: '170px', padding: '10px 16px' }}
             >
               {updateStatus.status === 'checking' && 'Checking...'}
               {updateStatus.status === 'available' && 'Starting Download...'}
               {updateStatus.status === 'downloading' && `Downloading ${Math.round(updateStatus.progress || 0)}%`}
-              {updateStatus.status === 'downloaded' && 'Update Ready'}
-              {!['checking', 'available', 'downloading', 'downloaded'].includes(updateStatus.status) && 'Check for Updates'}
+              {updateStatus.status === 'downloaded' && 'Restart & Install'}
+              {updateStatus.status === 'installing' && 'Restarting...'}
+              {!['checking', 'available', 'downloading', 'downloaded', 'installing'].includes(updateStatus.status) && 'Check for Updates'}
             </button>
             <div
               role="status"
@@ -634,7 +655,7 @@ export default function LabSuiteSettings() {
           </div>
           {updateStatus.status === 'downloaded' && (
             <p style={{ margin: '14px 0 0', color: 'var(--text-muted)', fontSize: '12px' }}>
-              The window close button only hides LabSuite. Use Quit from the system-tray icon, then reopen LabSuite to install the update.
+              LabSuite will safely close its background services, install the update, and reopen automatically.
             </p>
           )}
         </section>
