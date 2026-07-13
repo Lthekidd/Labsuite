@@ -79,9 +79,12 @@ async function verifyFolder(folder, onLog) {
 
   if (directEntries.length > 0) {
     if (onLog) onLog(`Crypt-checking ${directEntries.length} direct backup file(s).\n`);
+    const remoteDir = folder.source_type === 'file'
+      ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+      : folder.remote_path;
     await rclone.cryptCheckFiles(
       folder.local_path,
-      folder.remote_path,
+      remoteDir,
       directEntries.map(entry => entry.relative_path),
       onLog,
       filesystem.buildFolderExcludePatterns(folder)

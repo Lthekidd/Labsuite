@@ -299,7 +299,10 @@ function joinRemotePath(root, relativePath) {
 }
 
 function makePackRemoteRoot(folder) {
-  return rclone.getVaultPath('packs', folder.remote_path).replace(/\\/g, '/');
+  const remoteDir = folder.source_type === 'file'
+    ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+    : folder.remote_path;
+  return rclone.getVaultPath('packs', remoteDir).replace(/\\/g, '/');
 }
 
 function stripRemoteRoot(remotePath, remoteRoot) {
@@ -416,10 +419,15 @@ async function findMissingActiveCopiesForFolder(folder) {
   const packRoot = makePackRemoteRoot(folder);
 
   if (directEntries.length > 0) {
-    directObjects = await listRemoteObjectSet(folder.remote_path);
+    const remoteDir = folder.source_type === 'file'
+      ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+      : folder.remote_path;
+    directObjects = await listRemoteObjectSet(remoteDir);
     for (const entry of directEntries) {
       const expected = getExpectedDirectPath(entry, folder);
-      const fullExpected = joinRemotePath(folder.remote_path, expected);
+      const fullExpected = folder.source_type === 'file'
+        ? folder.remote_path
+        : joinRemotePath(folder.remote_path, expected);
       if (!directObjects.has(expected) && !directObjects.has(fullExpected)) {
         missing.push({
           entry,

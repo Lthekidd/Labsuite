@@ -538,11 +538,17 @@ class BackupWorker extends EventEmitter {
   }
 
   makeStagingRoot(folder, runId) {
-    return rclone.getVaultPath('staging', `${runId}/${folder.remote_path}`).replace(/\\/g, '/');
+    const remoteDir = folder.source_type === 'file'
+      ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+      : folder.remote_path;
+    return rclone.getVaultPath('staging', `${runId}/${remoteDir}`).replace(/\\/g, '/');
   }
 
   makeHistoryRoot(folder, stamp = this.makeRunId()) {
-    return rclone.getVaultPath('history', `${stamp}/${folder.remote_path}`).replace(/\\/g, '/');
+    const remoteDir = folder.source_type === 'file'
+      ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+      : folder.remote_path;
+    return rclone.getVaultPath('history', `${stamp}/${remoteDir}`).replace(/\\/g, '/');
   }
 
   joinRemote(root, relativePath) {

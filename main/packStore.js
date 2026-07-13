@@ -78,7 +78,10 @@ function makePackId(folder, runId, index, items) {
 
 function makePackRemoteRoot(folder) {
   const rclone = require('./rclone');
-  return rclone.getVaultPath('packs', folder.remote_path).replace(/\\/g, '/');
+  const remoteDir = folder.source_type === 'file'
+    ? folder.remote_path.substring(0, folder.remote_path.lastIndexOf('/'))
+    : folder.remote_path;
+  return rclone.getVaultPath('packs', remoteDir).replace(/\\/g, '/');
 }
 
 function makePackRemotePath(folder, packId) {
