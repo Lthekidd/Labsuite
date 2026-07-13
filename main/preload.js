@@ -94,6 +94,7 @@ const INVOKE_CHANNELS = new Set([
   'app:openExternal',
   'updates:getStatus',
   'updates:check',
+  'updates:install',
 
   // Advanced Features API (1, 3, 5, 7)
   'restore:browseSnapshot',

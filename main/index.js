@@ -249,7 +249,7 @@ function initializeAutoUpdater() {
         availableVersion: info.version,
         progress: 100,
         lastCheckedAt: new Date().toISOString(),
-        message: `LabSuite v${info.version} is ready. Quit LabSuite from the system tray, then reopen it to finish installing.`
+        message: `LabSuite v${info.version} is ready. Restart LabSuite to install it automatically.`
       });
     });
     autoUpdater.on('error', (err) => {
@@ -314,6 +314,52 @@ async function checkForLabSuiteUpdates({ notify = false } = {}) {
 
   await updateCheckPromise;
   return getUpdateStatus();
+}
+
+async function restartAndInstallUpdate() {
+  initializeAutoUpdater();
+  if (!autoUpdater || !updateStatus.supported) {
+    throw new Error('Automatic updates are not available in this LabSuite build.');
+  }
+  if (updateStatus.status !== 'downloaded') {
+    throw new Error('The update has not finished downloading yet.');
+  }
+
+  const backupWorker = require('./backupWorker');
+  if (backupWorker.isRunning) {
+    throw new Error('Wait for the current backup to finish, then choose Restart & Install again.');
+  }
+
+  isQuitting = true;
+  beginQuitCleanup();
+  await Promise.race([
+    db.flushWritesAsync().catch(error => {
+      console.error('LabSuite: Failed to flush database before update install:', error.message);
+    }),
+    new Promise(resolve => setTimeout(resolve, 5000))
+  ]);
+  quitDatabaseFlushComplete = true;
+
+  publishUpdateStatus({
+    status: 'installing',
+    progress: 100,
+    message: 'Restarting LabSuite to install the update...'
+  });
+
+  setTimeout(() => {
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (error) {
+      isQuitting = false;
+      console.error('LabSuite: Could not restart for update installation:', error.message);
+      publishUpdateStatus({
+        status: 'error',
+        message: `Could not restart for update installation: ${error.message}`
+      });
+    }
+  }, 250);
+
+  return { started: true };
 }
 
 // ── Window factory ───────────────────────────────────────────────────────────
@@ -463,6 +509,7 @@ function createWindow() {
   ipcMain.handle('app:getVersion', () => app.getVersion());
   ipcMain.handle('updates:getStatus', () => getUpdateStatus());
   ipcMain.handle('updates:check', () => checkForLabSuiteUpdates({ notify: false }));
+  ipcMain.handle('updates:install', () => restartAndInstallUpdate());
   ipcMain.handle('app:openExternal', async (_event, { url } = {}) => {
     const target = new URL(String(url || '').trim());
     if (!['http:', 'https:'].includes(target.protocol)) {
@@ -585,12 +632,16 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', (event) => {
-  isQuitting = true;
+function beginQuitCleanup() {
   if (!quitCleanupStarted) {
     quitCleanupStarted = true;
     watcher.stopWatcher();
     scheduler.stopScheduler();
+    try {
+      require('./backupWorker').cancelScheduledBackup();
+    } catch (err) {
+      console.error('LabSuite: Failed to cancel scheduled backup before quit:', err.message);
+    }
     try {
       require('./lanRuntime').stopNetworkDrive();
     } catch (err) {
@@ -604,6 +655,11 @@ app.on('before-quit', (event) => {
       console.error('LabSuite: Failed to stop VM Protect before quit:', err.message);
     }
   }
+}
+
+app.on('before-quit', (event) => {
+  isQuitting = true;
+  beginQuitCleanup();
 
   if (!quitDatabaseFlushComplete) {
     event.preventDefault();

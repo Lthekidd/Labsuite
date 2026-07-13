@@ -34,5 +34,14 @@ assert.ok(
   mainSources.includes("'--read-only'"),
   'Restore disk mounts must not permit writes to the encrypted backup vault.'
 );
+assert.ok(allowed.has('updates:install'), 'The renderer must be allowed to request restart-and-install.');
+assert.ok(
+  mainSources.includes('autoUpdater.quitAndInstall(true, true)'),
+  'Downloaded updates must support silent installation followed by automatic relaunch.'
+);
+assert.ok(
+  fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteSettings.jsx'), 'utf8').includes('Restart & Install'),
+  'Software Updates must expose the restart-and-install action.'
+);
 
 console.log(`IPC contract verification passed (${allowed.size} invoke channels).`);
