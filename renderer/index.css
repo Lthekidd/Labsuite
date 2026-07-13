@@ -1284,6 +1284,54 @@ input:checked + .slider:before {
   background: rgba(239, 68, 68, 0.12);
 }
 
+.suite-device-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 7px;
+  border: 1px solid rgba(176, 228, 204, 0.13);
+  border-radius: 6px;
+  background: rgba(176, 228, 204, 0.045);
+}
+
+.suite-device-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-secondary);
+}
+
+.suite-device-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.suite-device-label {
+  color: var(--text-muted);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.65px;
+  text-transform: uppercase;
+}
+
+.suite-device-name {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 10.5px;
+  font-weight: 750;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .suite-storage {
   min-width: 0;
   display: flex;

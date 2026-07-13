@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.9 — 2026-07-13
+
+### Added
+
+- The sidebar connection card now identifies the current Windows PC by hostname with a compact computer icon and **This PC** label.
+- The PC identity remains visible when Google Drive is disconnected, making multiple LabSuite installations easier to distinguish.
+
 ## 2.2.8 — 2026-07-13
 
 ### Fixed

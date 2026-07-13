@@ -1126,6 +1126,10 @@ function setupIpc(mainWindowArg, getMainWindow) {
     return settings;
   });
 
+  ipcMain.handle('device:getIdentity', () => ({
+    computerName: folderIdentity.getLocalComputerName()
+  }));
+
   ipcMain.handle('logs:export', async (event, { logsText }) => {
     const win = getWin() || null;
     const result = await dialog.showSaveDialog(win, {

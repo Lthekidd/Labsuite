@@ -88,6 +88,7 @@ const INVOKE_CHANNELS = new Set([
   'serve:stop',
 
   // App API
+  'device:getIdentity',
   'app:getVersion',
   'app:getLogPath',
   'app:openExternal',

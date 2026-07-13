@@ -82,6 +82,14 @@ async function run() {
     await wait(100);
   }
   assert.strictEqual(await evaluate(`!!document.querySelector('.app-body')`), true, 'Main UI did not render.');
+  assert.strictEqual(
+    await evaluate(`(() => {
+      const name = document.querySelector('.suite-device-name')?.textContent.trim();
+      return !!name && name !== 'This PC';
+    })()`),
+    true,
+    'Sidebar did not render the Windows PC name.'
+  );
 
   const labels = ['Network Drive', 'VM Protect', 'Encrypted Tables', 'Secure Notebook', 'Task Board', 'Crypto Portfolio', 'Suite Settings'];
   for (const label of labels) {
