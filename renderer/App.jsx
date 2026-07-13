@@ -9,6 +9,7 @@ const LabSuiteNotebook = lazy(() => import('./apps/LabSuiteNotebook'));
 const LabSuiteTodo = lazy(() => import('./apps/LabSuiteTodo'));
 const LabSuiteSettings = lazy(() => import('./apps/LabSuiteSettings'));
 const CryptoPortfolioTracker = lazy(() => import('./apps/CryptoPortfolioTracker'));
+const DiskAnalyzer = lazy(() => import('./apps/DiskAnalyzer'));
 
 function LtcIcon({ size = 16 }) {
   return (
@@ -231,6 +232,8 @@ export default function App() {
         return <LabSuiteTodo />;
       case 'crypto':
         return <CryptoPortfolioTracker />;
+      case 'disk-analyzer':
+        return <DiskAnalyzer />;
       case 'settings':
         return <LabSuiteSettings />;
       default:
@@ -278,6 +281,7 @@ export default function App() {
             <NavItem id="notebook" icon="📓" label="Secure Notebook" activeTab={activeTab} setTab={setActiveTab} />
             <NavItem id="todo" icon="📋" label="Task Board" activeTab={activeTab} setTab={setActiveTab} />
             <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />
+            <NavItem id="disk-analyzer" icon="💾" label="Space Analyzer" activeTab={activeTab} setTab={setActiveTab} />
           </div>
 
           <div style={{ flex: 1 }}></div>

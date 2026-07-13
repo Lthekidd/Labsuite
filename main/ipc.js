@@ -1803,6 +1803,30 @@ function setupIpc(mainWindowArg, getMainWindow) {
   ipcMain.handle('filesystem:listDir', async (event, { dirPath }) => {
     return filesystem.listDir(dirPath);
   });
+
+  // Disk Analyzer API
+  ipcMain.handle('disk-analyzer:getDrives', async () => {
+    return filesystem.listDrives();
+  });
+
+  ipcMain.handle('disk-analyzer:startScan', async (event, { rootPath }) => {
+    const diskAnalyzer = require('./diskAnalyzer');
+    try {
+      const result = await diskAnalyzer.startDiskScan(rootPath, (progressData) => {
+        sendToRenderer('disk-analyzer:progress', progressData);
+      });
+      return { success: true, ...result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('disk-analyzer:cancelScan', async () => {
+    const diskAnalyzer = require('./diskAnalyzer');
+    diskAnalyzer.cancelDiskScan();
+    return true;
+  });
+
   // Health API
   ipcMain.handle('health:get', async () => {
     let version = db.getCache('rclone_version', 10 * 60 * 1000);

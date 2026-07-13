@@ -176,7 +176,12 @@ const INVOKE_CHANNELS = new Set([
   'notepad:save',
   'notepad:getVersions',
   'notepad:restoreVersion',
-  'notepad:readFile'
+  'notepad:readFile',
+
+  // Disk Analyzer API
+  'disk-analyzer:getDrives',
+  'disk-analyzer:startScan',
+  'disk-analyzer:cancelScan'
 ]);
 
 const LISTEN_CHANNELS = new Set([
@@ -209,7 +214,8 @@ const LISTEN_CHANNELS = new Set([
   'lan:transfer-queue',
   'vmProtect:state',
   'updates:status',
-  'notepad:open-file'
+  'notepad:open-file',
+  'disk-analyzer:progress'
 ]);
 
 const SEND_CHANNELS = new Set([

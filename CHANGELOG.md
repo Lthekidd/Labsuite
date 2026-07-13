@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.19 — 2026-07-13
+
+### Added
+
+- Added a Space Analyzer app under the Productivity section, allowing users to visualize and navigate local folder/disk space usage.
+
 ## 2.2.18 — 2026-07-13
 
 ### Added
