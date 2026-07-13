@@ -61,6 +61,17 @@ try {
 
   const effective = backupWorker.getEffectiveFolders([firstFolder, secondFolder]).effective;
   assert.strictEqual(effective.length, 2, 'Two selected files in one parent directory must stay independent backups.');
+  const partitioned = backupWorker.partitionUploadItems([{ size: 9, relativePath: 'protected.txt' }], {
+    enabled: true,
+    smallFileMaxBytes: 65536
+  });
+  assert.strictEqual(partitioned.packed.length, 0, 'A lone small file must not use a temporary bundle.');
+  assert.strictEqual(partitioned.direct.length, 1, 'A lone small file must upload directly.');
+  const batchPartition = backupWorker.partitionUploadItems([
+    { size: 9, relativePath: 'one.txt' },
+    { size: 12, relativePath: 'two.txt' }
+  ], { enabled: true, smallFileMaxBytes: 65536 });
+  assert.strictEqual(batchPartition.packed.length, 2, 'Multiple small files should retain the batching optimization.');
 
   fs.unlinkSync(siblingFile);
   fs.mkdirSync(siblingFile);
