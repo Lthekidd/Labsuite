@@ -41,6 +41,15 @@ function VmIcon({ size = 16 }) {
   );
 }
 
+function PcIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const ipcRenderer = window.electron.ipcRenderer;
 
 async function safeInvoke(channel, ...args) {
@@ -77,6 +86,7 @@ export default function App() {
   const [appVersion, setAppVersion] = useState('2.2.0');
   const [externalFilePath, setExternalFilePath] = useState(null);
   const [globalGDriveInfo, setGlobalGDriveInfo] = useState({ email: 'Disconnected', used: 0, total: 0 });
+  const [deviceName, setDeviceName] = useState('This PC');
   const [healthStatus, setHealthStatus] = useState('Checking...');
   const [backupSubTab, setBackupSubTab] = useState('dashboard');
   const [globalStatus, setGlobalStatus] = useState('Protected');
@@ -151,6 +161,10 @@ export default function App() {
 
     safeInvoke('app:getVersion').then(v => {
       if (v) setAppVersion(v);
+    });
+
+    safeInvoke('device:getIdentity').then(identity => {
+      if (identity && identity.computerName) setDeviceName(identity.computerName);
     });
 
     ipcRenderer.on('notepad:open-file', (event, filePath) => {
@@ -278,6 +292,13 @@ export default function App() {
                 </span>
                 <span title={globalStatusDetail} className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}>
                   {compactStatus}
+                </span>
+              </div>
+              <div className="suite-device-identity" title={`This PC: ${deviceName}`}>
+                <span className="suite-device-icon"><PcIcon /></span>
+                <span className="suite-device-copy">
+                  <span className="suite-device-label">This PC</span>
+                  <strong className="suite-device-name">{deviceName}</strong>
                 </span>
               </div>
               {isConnected ? (
