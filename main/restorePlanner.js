@@ -49,12 +49,13 @@ function planPointInTimeRestore(folderId, restoreTime) {
     throw new Error('Invalid restore time');
   }
 
-  let folder = db.getFolders().find(item => item.id === folderId);
+  const requestedFolderId = String(folderId);
+  let folder = db.getFolders().find(item => String(item.id) === requestedFolderId);
   let manifestFolderId = folderId;
 
   if (!folder) {
     const points = db.getRestorePoints();
-    const point = points.find(p => p.folder_id === folderId);
+    const point = points.find(p => String(p.folder_id) === requestedFolderId);
     if (!point) throw new Error('Folder not found');
     
     folder = { id: folderId, local_path: point.folder_path };
