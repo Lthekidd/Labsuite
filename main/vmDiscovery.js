@@ -199,8 +199,12 @@ function extractVmxPathsFromCommandLine(commandLine = '') {
 }
 
 function parsePowerShellProcessOutput(output = '') {
+  return parsePowerShellProcessSnapshot(output).paths;
+}
+
+function parsePowerShellProcessSnapshot(output = '') {
   const trimmed = String(output || '').replace(/^\uFEFF/, '').trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { paths: [], processCount: 0 };
   const parsed = JSON.parse(trimmed);
   const rows = Array.isArray(parsed) ? parsed : [parsed];
   const paths = [];
@@ -208,7 +212,10 @@ function parsePowerShellProcessOutput(output = '') {
     const commandLine = row && (row.CommandLine || row.commandLine || row.commandline);
     paths.push(...extractVmxPathsFromCommandLine(commandLine));
   }
-  return unique(paths, canonicalVmPath);
+  return {
+    paths: unique(paths, canonicalVmPath),
+    processCount: rows.filter(Boolean).length
+  };
 }
 
 function parseVmrunListOutput(output = '') {
@@ -338,6 +345,17 @@ function execFileAsync(file, args = [], options = {}) {
 async function isFile(filePath) {
   try {
     return (await fsp.stat(filePath)).isFile();
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function hasVmxRuntimeLock(vmxPath) {
+  const normalized = normalizeVmxPath(vmxPath);
+  if (!normalized) return false;
+  try {
+    await fsp.stat(`${normalized}.lck`);
+    return true;
   } catch (_error) {
     return false;
   }
@@ -544,13 +562,14 @@ async function scanVmRoots(roots = [], options = {}) {
 async function queryRunningVmProcesses(options = {}) {
   const platform = options.platform || process.platform;
   if (platform !== 'win32' || options.skip === true) {
-    return { paths: [], available: false, attempted: false, method: null, errors: [] };
+    return { paths: [], processCount: 0, available: false, attempted: false, method: null, errors: [] };
   }
 
   if (options.output !== undefined) {
     try {
+      const snapshot = parsePowerShellProcessSnapshot(options.output);
       return {
-        paths: parsePowerShellProcessOutput(options.output),
+        ...snapshot,
         available: true,
         attempted: true,
         method: 'powershell-cim',
@@ -558,7 +577,7 @@ async function queryRunningVmProcesses(options = {}) {
       };
     } catch (error) {
       return {
-        paths: [], available: false, attempted: true, method: 'powershell-cim',
+        paths: [], processCount: 0, available: false, attempted: true, method: 'powershell-cim',
         errors: [compactError('running-processes', error, 'INVALID_PROCESS_OUTPUT')]
       };
     }
@@ -581,13 +600,14 @@ async function queryRunningVmProcesses(options = {}) {
 
   if (!result.ok) {
     return {
-      paths: [], available: false, attempted: true, method: 'powershell-cim',
+      paths: [], processCount: 0, available: false, attempted: true, method: 'powershell-cim',
       errors: [compactError('running-processes', result, result.timedOut ? 'TIMEOUT' : 'PROCESS_QUERY_FAILED')]
     };
   }
   try {
+    const snapshot = parsePowerShellProcessSnapshot(result.stdout);
     return {
-      paths: parsePowerShellProcessOutput(result.stdout),
+      ...snapshot,
       available: true,
       attempted: true,
       method: 'powershell-cim',
@@ -595,7 +615,7 @@ async function queryRunningVmProcesses(options = {}) {
     };
   } catch (error) {
     return {
-      paths: [], available: false, attempted: true, method: 'powershell-cim',
+      paths: [], processCount: 0, available: false, attempted: true, method: 'powershell-cim',
       errors: [compactError('running-processes', error, 'INVALID_PROCESS_OUTPUT')]
     };
   }
@@ -606,20 +626,27 @@ async function queryVmrunList(vmrunPath, options = {}) {
     return { paths: [], available: false, attempted: false, method: null, errors: [] };
   }
   const runner = options.runner || execFileAsync;
-  const result = await runner(vmrunPath, ['-T', 'ws', 'list'], {
-    timeoutMs: options.timeoutMs || DEFAULT_PROCESS_TIMEOUT_MS
-  });
-  if (!result.ok) {
+  const vmwareTypes = unique(options.vmwareTypes || ['ws', 'player'], value => String(value).toLowerCase());
+  const results = await Promise.all(vmwareTypes.map(async vmwareType => {
+    const result = await runner(vmrunPath, ['-T', vmwareType, 'list'], {
+      timeoutMs: options.timeoutMs || DEFAULT_PROCESS_TIMEOUT_MS
+    });
+    return { vmwareType, result };
+  }));
+  const successful = results.filter(item => item.result.ok);
+  if (!successful.length) {
+    const failure = results[0] && results[0].result || {};
     return {
       paths: [], available: false, attempted: true, method: 'vmrun',
-      errors: [compactError('vmrun-list', result, result.timedOut ? 'TIMEOUT' : 'VMRUN_LIST_FAILED')]
+      errors: [compactError('vmrun-list', failure, failure.timedOut ? 'TIMEOUT' : 'VMRUN_LIST_FAILED')]
     };
   }
   return {
-    paths: parseVmrunListOutput(result.stdout),
+    paths: unique(successful.flatMap(item => parseVmrunListOutput(item.result.stdout)), canonicalVmPath),
     available: true,
     attempted: true,
     method: 'vmrun',
+    vmwareTypes: successful.map(item => item.vmwareType),
     errors: []
   };
 }
@@ -723,6 +750,7 @@ async function discoverVMs(options = {}) {
   const processPromise = options.runningVmxPaths !== undefined
     ? Promise.resolve({
       paths: options.runningVmxPaths.map(item => normalizeVmxPath(item)).filter(Boolean),
+      processCount: options.runningVmxPaths.length,
       available: true,
       attempted: false,
       method: 'provided',
@@ -760,11 +788,26 @@ async function discoverVMs(options = {}) {
     ...scanResult.paths.map(vmxPath => ({ vmxPath, source: 'scan' }))
   ];
   const normalized = normalizeVmCandidates(candidates);
-  const vms = await mapLimit(normalized, options.metadataConcurrency || 12, vm => hydrateVm(vm, options));
+  const hiddenRunningProcesses = Math.max(0, Number(processResult.processCount || 0) - processResult.paths.length);
+  let lockFallbackUsed = false;
+  const vms = await mapLimit(normalized, options.metadataConcurrency || 12, async vm => {
+    let resolved = vm;
+    if (!vm.running && options.detectVmxLocks !== false && hiddenRunningProcesses > 0 && await hasVmxRuntimeLock(vm.vmxPath)) {
+      lockFallbackUsed = true;
+      resolved = {
+        ...vm,
+        running: true,
+        source: 'running',
+        sources: unique(['running', ...(vm.sources || [])])
+      };
+    }
+    return hydrateVm(resolved, options);
+  });
   const errors = [...processResult.errors, ...vmrunResult.errors, ...inventoryResult.errors, ...scanResult.errors];
   const runningDetectionMethods = unique([
     processResult.available && processResult.method,
-    vmrunResult.available && vmrunResult.method
+    vmrunResult.available && vmrunResult.method,
+    lockFallbackUsed && 'vmx-lock'
   ]);
   const capabilities = {
     platform,
@@ -819,7 +862,9 @@ module.exports = {
   parseVmxMetadata,
   extractVmxPathsFromCommandLine,
   parsePowerShellProcessOutput,
+  parsePowerShellProcessSnapshot,
   parseVmrunListOutput,
+  hasVmxRuntimeLock,
   normalizeVmxPath,
   canonicalVmPath,
   stableVmId,

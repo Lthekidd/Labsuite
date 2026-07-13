@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.23 — 2026-07-13
+
+### Fixed
+
+- VM Protect now refreshes running states automatically, detects both VMware Workstation and Player guests, and falls back to VMware runtime locks when Windows hides a VM process command line.
+
 ## 2.2.22 — 2026-07-13
 
 ### Changed

@@ -63,6 +63,14 @@ async function main() {
     ['C:\\Users\\Test\\Virtual Machines\\Demo VM\\Demo VM.vmx']
   );
   assert.deepStrictEqual(
+    vmDiscovery.parsePowerShellProcessSnapshot(JSON.stringify([
+      { ProcessId: 41, CommandLine: quotedCommand },
+      { ProcessId: 42, CommandLine: null }
+    ])),
+    { paths: ['C:\\Users\\Test\\Virtual Machines\\Demo VM\\Demo VM.vmx'], processCount: 2 },
+    'Process discovery must retain the count when Windows hides a VM command line'
+  );
+  assert.deepStrictEqual(
     vmDiscovery.parseVmrunListOutput('Total running VMs: 1\r\nC:\\VMs\\Demo VM\\Demo VM.vmx\r\n'),
     ['C:\\VMs\\Demo VM\\Demo VM.vmx']
   );
@@ -103,6 +111,18 @@ async function main() {
     assert.strictEqual(vmrun.path, fakeVmrun);
     assert.strictEqual(vmrun.source, 'path');
 
+    const vmrunCalls = [];
+    const playerList = await vmDiscovery.queryVmrunList(fakeVmrun, {
+      runner: async (_file, args) => {
+        vmrunCalls.push(args);
+        return args[1] === 'player'
+          ? { ok: true, stdout: `Total running VMs: 1\n${vmxPath}\n`, stderr: '' }
+          : { ok: false, stdout: '', stderr: 'Unsupported host type', code: 1 };
+      }
+    });
+    assert.deepStrictEqual(playerList.paths, [vmxPath], 'VMware Player VMs must be detected when the Workstation target fails');
+    assert.deepStrictEqual(vmrunCalls.map(args => args[1]), ['ws', 'player']);
+
     const inventoryFile = path.join(temporaryRoot, 'inventory.vmls');
     await fsp.writeFile(inventoryFile, `vmlist0.config = "${vmxPath}"\n`, 'utf8');
     const result = await vmDiscovery.discoverVMs({
@@ -120,6 +140,17 @@ async function main() {
     assert.strictEqual(result.vms[0].available, true);
     assert.strictEqual(result.status.code, 'limited');
     assert.strictEqual(result.capabilities.canAttemptDirectHelperPush, false);
+
+    await fsp.mkdir(`${vmxPath}.lck`);
+    const hiddenCommandLineResult = await vmDiscovery.discoverVMs({
+      platform: 'win32',
+      vmrunPath: null,
+      runningProcessOutput: JSON.stringify([{ ProcessId: 77, CommandLine: null }]),
+      inventoryFiles: [inventoryFile],
+      commonRoots: []
+    });
+    assert.strictEqual(hiddenCommandLineResult.vms[0].running, true, 'A live VMware process plus the VMX runtime lock must identify the running VM');
+    assert(hiddenCommandLineResult.capabilities.runningDetectionMethods.includes('vmx-lock'));
   } finally {
     await fsp.rm(temporaryRoot, { recursive: true, force: true });
   }

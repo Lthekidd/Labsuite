@@ -225,10 +225,10 @@ export default function VMProtect() {
   const receiverHealthy = serverRunning && vmState.server?.firewall?.ok !== false;
   const receiverRequired = serverRunning && (guests.length > 0 || enrollments.length > 0);
 
-  const loadEverything = useCallback(async ({ quiet = false } = {}) => {
+  const loadEverything = useCallback(async ({ quiet = false, background = false } = {}) => {
     if (quiet) setRefreshing(true);
-    else setLoading(true);
-    setError('');
+    else if (!background) setLoading(true);
+    if (!background) setError('');
     try {
       const [discoveryResult, stateResult] = await Promise.allSettled([
         invoke('vmProtect:discover'),
@@ -271,6 +271,32 @@ export default function VMProtect() {
 
   useEffect(() => {
     loadEverything();
+  }, [loadEverything]);
+
+  useEffect(() => {
+    let refreshInFlight = false;
+    let disposed = false;
+    const refreshDiscovery = async () => {
+      if (disposed || refreshInFlight || document.hidden) return;
+      refreshInFlight = true;
+      try {
+        await loadEverything({ background: true });
+      } finally {
+        refreshInFlight = false;
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshDiscovery();
+    };
+    const intervalId = window.setInterval(refreshDiscovery, 15000);
+    window.addEventListener('focus', refreshDiscovery);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshDiscovery);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [loadEverything]);
 
   useEffect(() => {
