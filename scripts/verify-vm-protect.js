@@ -211,6 +211,48 @@ async function main() {
     assert.ok(!JSON.stringify(service.getState()).includes(enrolled.payload.token), 'Public state must not expose guest tokens.');
     assert.throws(() => vmProtect.normalizeGuestAbsolutePath('..\\escape.txt'));
 
+    const bulkInvitation = await service.createEnrollment({
+      name: 'Bulk Passwordless Helper',
+      serverUrls: [`https://127.0.0.1:${port}`],
+      selectedFiles: ['C:\\Users\\Shared\\Desktop\\watched.txt'],
+      multiUse: true,
+      autoApprove: true,
+      maxGuests: 2
+    });
+    assert.strictEqual(bulkInvitation.multiUse, true);
+    assert.strictEqual(bulkInvitation.autoApprove, true);
+    const bulkOne = await requestJson(port, '/enroll', {
+      body: {
+        enrollmentId: bulkInvitation.enrollmentId,
+        secret: bulkInvitation.secret,
+        name: 'Bulk VM One',
+        machineName: 'BULK-ONE',
+        selectedFiles: ['C:\\Users\\Shared\\Desktop\\watched.txt']
+      }
+    });
+    const bulkTwo = await requestJson(port, '/enroll', {
+      body: {
+        enrollmentId: bulkInvitation.enrollmentId,
+        secret: bulkInvitation.secret,
+        name: 'Bulk VM Two',
+        machineName: 'BULK-TWO',
+        selectedFiles: ['C:\\Users\\Shared\\Desktop\\watched.txt']
+      }
+    });
+    assert.strictEqual(bulkOne.statusCode, 200, 'Bulk helpers should pair without per-VM approval.');
+    assert.strictEqual(bulkTwo.statusCode, 200, 'A multi-use helper should enroll more than one VM.');
+    assert.notStrictEqual(bulkOne.payload.guestId, bulkTwo.payload.guestId, 'Each bulk-enrolled VM must receive a separate guest identity.');
+    const bulkFull = await requestJson(port, '/enroll', {
+      body: {
+        enrollmentId: bulkInvitation.enrollmentId,
+        secret: bulkInvitation.secret,
+        name: 'Bulk VM Three',
+        machineName: 'BULK-THREE',
+        selectedFiles: ['C:\\Users\\Shared\\Desktop\\watched.txt']
+      }
+    });
+    assert.strictEqual(bulkFull.statusCode, 403, 'Bulk helpers must honor their configured VM limit.');
+
     const fakeVmx = path.join(tempDir, 'Direct Test.vmx');
     const directHelper = path.join(tempDir, 'Direct Helper.ps1');
     fs.writeFileSync(fakeVmx, 'displayName = "Direct Test"\n', 'utf8');
@@ -300,7 +342,7 @@ async function main() {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 
-  console.log('VM Protect verification passed (approval, authenticated upload, immutable revisions, allowlist, replay defense, PowerShell watcher).');
+  console.log('VM Protect verification passed (approval, bulk helper enrollment, authenticated upload, immutable revisions, allowlist, replay defense, PowerShell watcher).');
 }
 
 main().catch(error => {

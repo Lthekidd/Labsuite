@@ -525,6 +525,15 @@ async function handleRequest(req, res) {
         sendJson(res, 400, { success: false, error: 'Unsafe file name.' });
         return;
       }
+
+      // Quick Drop uses a dedicated inbox that may not exist until the first
+      // file arrives. Create only that approved destination automatically;
+      // regular uploads must still target an existing shared folder.
+      const resolvedDestDir = path.resolve(destDir);
+      const resolvedDropInbox = path.resolve(getDropInboxFolder());
+      if (resolvedDestDir === resolvedDropInbox) {
+        fs.mkdirSync(resolvedDropInbox, { recursive: true });
+      }
       const destStat = fs.statSync(destDir);
       if (!destStat.isDirectory()) {
         sendJson(res, 400, { success: false, error: 'Destination is not a folder.' });

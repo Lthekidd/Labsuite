@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.21 — 2026-07-13
+
+### Added
+
+- VM Protect can now create a passwordless bulk helper that auto-pairs multiple VMs for 24 hours without per-VM Windows credentials or approval prompts.
+
+### Fixed
+
+- Network Drive Quick Drop now creates the receiving inbox automatically before writing the first dropped file.
+
 ## 2.2.20 — 2026-07-13
 
 ### Fixed

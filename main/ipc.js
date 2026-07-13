@@ -2345,6 +2345,37 @@ function setupIpc(mainWindowArg, getMainWindow) {
     };
   });
 
+  ipcMain.handle('vmProtect:createBulkHelper', async (_event, options = {}) => {
+    const saveResult = await dialog.showSaveDialog(getWin(), {
+      title: 'Create passwordless VM Protect bulk helper',
+      defaultPath: path.join(app.getPath('documents'), 'LabSuite VM Protect - Bulk.ps1'),
+      filters: [{ name: 'PowerShell helper', extensions: ['ps1'] }]
+    });
+    if (saveResult.canceled || !saveResult.filePath) return { success: true, canceled: true };
+    const outputPath = saveResult.filePath.toLowerCase().endsWith('.ps1') ? saveResult.filePath : `${saveResult.filePath}.ps1`;
+    await ensureVmProtectServer();
+    const selectedFiles = Array.isArray(options.selectedFiles)
+      ? options.selectedFiles
+      : String(options.selectedFiles || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+    const helper = await vmProtect.writePortableHelper({
+      outputPath,
+      name: 'Bulk VM Protect helper',
+      selectedFiles,
+      alwaysProtect: true,
+      ttlMs: 24 * 60 * 60 * 1000,
+      multiUse: true,
+      autoApprove: true,
+      maxGuests: 10000
+    });
+    return {
+      success: true,
+      path: helper.path,
+      expiresAt: helper.enrollment && helper.enrollment.expiresAt,
+      selectedFiles,
+      method: 'bulk'
+    };
+  });
+
   ipcMain.handle('vmProtect:deployHelper', async (_event, options = {}) => {
     const username = String(options.username || '').trim();
     const password = String(options.password || '');

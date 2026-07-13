@@ -206,6 +206,7 @@ export default function VMProtect() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [helperResult, setHelperResult] = useState(null);
+  const [bulkPaths, setBulkPaths] = useState('');
   const [credentialVm, setCredentialVm] = useState(null);
   const [credentials, setCredentials] = useState({ username: '', password: '' });
 
@@ -394,6 +395,35 @@ export default function VMProtect() {
       await reloadState();
     } catch (err) {
       setError(err.message || 'Could not create the portable helper.');
+    } finally {
+      setBusyKey('');
+    }
+  };
+
+  const createBulkHelper = async () => {
+    const key = 'create:bulk';
+    setBusyKey(key);
+    clearNotices();
+    try {
+      await ensureReceiver();
+      const selectedFiles = bulkPaths
+        .split(/\r?\n/)
+        .map(item => item.trim())
+        .filter(Boolean);
+      const result = await invoke('vmProtect:createBulkHelper', { selectedFiles });
+      if (!result || result.success === false) throw new Error(result?.error || 'Could not create the bulk helper.');
+      if (result.canceled) return;
+      setHelperResult({
+        vmName: 'bulk VM batch',
+        path: result.path || '',
+        expiresAt: result.expiresAt || '',
+        method: result.method || 'bulk',
+        selectedFiles: asArray(result.selectedFiles)
+      });
+      setMessage('Bulk helper created. Run the same script inside each VM you want to protect.');
+      await reloadState();
+    } catch (err) {
+      setError(err.message || 'Could not create the bulk helper.');
     } finally {
       setBusyKey('');
     }
@@ -604,15 +634,55 @@ export default function VMProtect() {
           )}
         </div>
 
+        <section style={{ ...cardStyle, padding: '16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', alignItems: 'start' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '16px' }}>Passwordless bulk helper</h2>
+            <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
+              Create one reusable helper for many VMs. It auto-pairs each VM for the next 24 hours, so you do not need Windows passwords or one approval per VM.
+            </div>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={createBulkHelper}
+              disabled={!!busyKey}
+              style={{ marginTop: '13px', padding: '8px 13px', fontSize: '12px' }}
+            >
+              {busyKey === 'create:bulk' ? 'Creating...' : 'Create bulk helper'}
+            </button>
+          </div>
+          <div>
+            <label htmlFor="vm-protect-bulk-paths" style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '11px', fontWeight: 750, letterSpacing: '0.3px' }}>OPTIONAL FILE PATHS, ONE PER LINE</label>
+            <textarea
+              id="vm-protect-bulk-paths"
+              value={bulkPaths}
+              onChange={event => setBulkPaths(event.target.value)}
+              placeholder={'C:\\Users\\retro\\Desktop\\important.txt\nC:\\Users\\retro\\Documents\\workbook.xlsx'}
+              disabled={!!busyKey}
+              rows={4}
+              style={{ ...inputStyle, marginTop: '7px', resize: 'vertical', minHeight: '88px', lineHeight: 1.45 }}
+            />
+            <div style={{ marginTop: '7px', color: 'var(--text-muted)', fontSize: '11.5px', lineHeight: 1.45 }}>
+              Leave this empty if every VM should show a file picker. Use paths here when every VM has the same file location.
+            </div>
+          </div>
+        </section>
+
         {helperResult && (
           <section style={{ ...cardStyle, padding: '16px 18px', borderColor: 'rgba(176, 228, 204, 0.18)' }}>
             <div style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 750 }}>Portable helper for {helperResult.vmName}</div>
             <div style={{ marginTop: '6px', color: 'var(--text-secondary)', fontSize: '12.5px', lineHeight: 1.5 }}>
-              Copy this helper into the VM and run it. LabSuite will guide you through the one-time pairing confirmation.
+              {helperResult.method === 'bulk'
+                ? 'Run this same helper inside each VM. Each VM gets its own secure pairing automatically while the bulk invitation is active.'
+                : 'Copy this helper into the VM and run it. LabSuite will guide you through the one-time pairing confirmation.'}
             </div>
             {helperResult.path && (
               <div title={helperResult.path} style={{ marginTop: '10px', padding: '9px 11px', borderRadius: '7px', background: 'rgba(0, 0, 0, 0.24)', color: 'var(--text-primary)', fontFamily: 'Consolas, monospace', fontSize: '11.5px', overflowWrap: 'anywhere', userSelect: 'text' }}>
                 {helperResult.path}
+              </div>
+            )}
+            {helperResult.method === 'bulk' && helperResult.selectedFiles?.length > 0 && (
+              <div title={helperResult.selectedFiles.join('\n')} style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '11.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Preselected paths: {helperResult.selectedFiles.join(', ')}
               </div>
             )}
             {formatExpiry(helperResult.expiresAt) && (

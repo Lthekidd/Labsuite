@@ -16,6 +16,10 @@ try {
 
 const DEFAULT_PORT = 41238;
 const DEFAULT_ENROLLMENT_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_BULK_ENROLLMENT_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_SINGLE_ENROLLMENT_TTL_MS = 60 * 60 * 1000;
+const MAX_BULK_ENROLLMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_BULK_ENROLLMENT_GUESTS = 10000;
 const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_MAX_FILE_BYTES = 100 * 1024 * 1024 * 1024;
 const DEFAULT_GUEST_QUOTA_BYTES = 20 * 1024 * 1024 * 1024;
@@ -440,7 +444,7 @@ function createVmProtectService(dependencies = {}) {
   function cleanupTransientCaches() {
     const current = now();
     for (const [id, enrollment] of enrollments) {
-      if (enrollment.expiresAtMs <= current || enrollment.consumed) enrollments.delete(id);
+      if (enrollment.expiresAtMs <= current || (enrollment.consumed && !enrollment.multiUse)) enrollments.delete(id);
     }
     for (const [key, expiresAt] of usedNonces) {
       if (expiresAt <= current) usedNonces.delete(key);
@@ -521,7 +525,7 @@ function createVmProtectService(dependencies = {}) {
     const id = String(body.enrollmentId || '');
     const secret = String(body.secret || '');
     const enrollment = enrollments.get(id);
-    if (!enrollment || enrollment.expiresAtMs <= now() || enrollment.consumed) {
+    if (!enrollment || enrollment.expiresAtMs <= now() || (enrollment.consumed && !enrollment.multiUse)) {
       sendJson(res, 401, { success: false, error: 'Enrollment is invalid, expired, or already used.' });
       return;
     }
@@ -541,14 +545,88 @@ function createVmProtectService(dependencies = {}) {
       return;
     }
 
+    const request = {
+      name: cleanLabel(body.name || enrollment.name, 'Windows VM'),
+      machineName: cleanLabel(body.machineName, ''),
+      selectedFiles: normalizeSelectedFiles(body.selectedFiles || enrollment.selectedFiles)
+    };
+
+    const issueGuest = () => {
+      if (enrollment.multiUse) {
+        const maxGuests = Math.max(1, Math.min(Number(enrollment.maxGuests) || MAX_BULK_ENROLLMENT_GUESTS, MAX_BULK_ENROLLMENT_GUESTS));
+        if (Number(enrollment.createdGuests || 0) >= maxGuests) {
+          throw Object.assign(new Error('This bulk VM Protect helper has reached its VM limit.'), { statusCode: 403 });
+        }
+      } else {
+        enrollment.consumed = true;
+      }
+      const source = enrollment.multiUse ? request : (enrollment.request || request);
+      const guest = {
+        id: crypto.randomUUID(),
+        token: crypto.randomBytes(32).toString('base64url'),
+        name: cleanLabel(source.name || enrollment.name, 'Windows VM'),
+        machineName: cleanLabel(source.machineName, ''),
+        vmId: enrollment.vmId,
+        vmxPath: enrollment.vmxPath,
+        vmwareUuid: enrollment.vmwareUuid,
+        status: 'online',
+        createdAt: new Date(now()).toISOString(),
+        lastSeen: new Date(now()).toISOString(),
+        lastUploadAt: '',
+        lastUploadBytes: 0,
+        stagingBytes: 0,
+        selectedFiles: normalizeSelectedFiles(source.selectedFiles || enrollment.selectedFiles)
+      };
+      try {
+        loadGuests().push(guest);
+        persistGuests();
+        lastSeenPersistedAt.set(guest.id, now());
+        if (enrollment.multiUse) {
+          enrollment.createdGuests = Number(enrollment.createdGuests || 0) + 1;
+          enrollment.lastGuestAt = new Date(now()).toISOString();
+          enrollment.request = request;
+        } else {
+          enrollments.delete(id);
+        }
+        return guest;
+      } catch (error) {
+        const index = loadGuests().indexOf(guest);
+        if (index >= 0) loadGuests().splice(index, 1);
+        if (!enrollment.multiUse) enrollment.consumed = false;
+        throw error;
+      }
+    };
+
+    const sendGuest = guest => {
+      emitState();
+      sendJson(res, 200, {
+        success: true,
+        guestId: guest.id,
+        token: guest.token,
+        guest: {
+          id: guest.id,
+          name: guest.name,
+          status: 'online',
+          selectedFiles: [...guest.selectedFiles]
+        },
+        maxFileBytes: getMaxFileBytes(),
+        guestQuotaBytes: getGuestQuotaBytes()
+      });
+    };
+
+    if (enrollment.autoApprove) {
+      if (enrollment.state === 'invited') {
+        enrollment.state = 'approved';
+        enrollment.approvedAt = new Date(now()).toISOString();
+      }
+      sendGuest(issueGuest());
+      return;
+    }
+
     if (enrollment.state === 'invited') {
       enrollment.state = 'pending';
       enrollment.requestedAt = new Date(now()).toISOString();
-      enrollment.request = {
-        name: cleanLabel(body.name || enrollment.name, 'Windows VM'),
-        machineName: cleanLabel(body.machineName, ''),
-        selectedFiles: normalizeSelectedFiles(body.selectedFiles || enrollment.selectedFiles)
-      };
+      enrollment.request = request;
       emitState();
       sendJson(res, 202, {
         success: true,
@@ -571,49 +649,7 @@ function createVmProtectService(dependencies = {}) {
       return;
     }
 
-    enrollment.consumed = true;
-    const request = enrollment.request || {};
-    const guest = {
-      id: crypto.randomUUID(),
-      token: crypto.randomBytes(32).toString('base64url'),
-      name: cleanLabel(request.name || enrollment.name, 'Windows VM'),
-      machineName: cleanLabel(request.machineName, ''),
-      vmId: enrollment.vmId,
-      vmxPath: enrollment.vmxPath,
-      vmwareUuid: enrollment.vmwareUuid,
-      status: 'online',
-      createdAt: new Date(now()).toISOString(),
-      lastSeen: new Date(now()).toISOString(),
-      lastUploadAt: '',
-      lastUploadBytes: 0,
-      stagingBytes: 0,
-      selectedFiles: normalizeSelectedFiles(request.selectedFiles || enrollment.selectedFiles)
-    };
-    try {
-      loadGuests().push(guest);
-      persistGuests();
-      lastSeenPersistedAt.set(guest.id, now());
-      enrollments.delete(id);
-    } catch (error) {
-      const index = loadGuests().indexOf(guest);
-      if (index >= 0) loadGuests().splice(index, 1);
-      enrollment.consumed = false;
-      throw error;
-    }
-    emitState();
-    sendJson(res, 200, {
-      success: true,
-      guestId: guest.id,
-      token: guest.token,
-      guest: {
-        id: guest.id,
-        name: guest.name,
-        status: 'online',
-        selectedFiles: [...guest.selectedFiles]
-      },
-      maxFileBytes: getMaxFileBytes(),
-      guestQuotaBytes: getGuestQuotaBytes()
-    });
+    sendGuest(issueGuest());
   }
 
   async function atomicReplace(tempPath, destinationPath) {
@@ -892,7 +928,7 @@ function createVmProtectService(dependencies = {}) {
       addresses,
       guests: loadGuests().map(guest => publicGuest(guest, now())),
       pendingEnrollments: [...enrollments.values()]
-        .filter(item => ['invited', 'pending', 'approved'].includes(item.state) && !item.consumed && item.expiresAtMs > now())
+        .filter(item => ['invited', 'pending', 'approved'].includes(item.state) && (!item.consumed || item.multiUse) && item.expiresAtMs > now())
         .map(item => ({
           enrollmentId: item.id,
           state: item.state,
@@ -903,6 +939,11 @@ function createVmProtectService(dependencies = {}) {
           vmId: item.vmId,
           vmxPath: item.vmxPath,
           vmwareUuid: item.vmwareUuid,
+          multiUse: item.multiUse === true,
+          autoApprove: item.autoApprove === true,
+          maxGuests: Number(item.maxGuests) || 1,
+          createdGuests: Number(item.createdGuests) || 0,
+          lastGuestAt: item.lastGuestAt || '',
           requestedAt: item.requestedAt || '',
           expiresAt: item.expiresAt
         }))
@@ -912,7 +953,10 @@ function createVmProtectService(dependencies = {}) {
   async function createEnrollment(options = {}) {
     if (!server) await start(options.port || DEFAULT_PORT);
     cleanupTransientCaches();
-    const ttl = Math.max(60 * 1000, Math.min(Number(options.ttlMs) || DEFAULT_ENROLLMENT_TTL_MS, 60 * 60 * 1000));
+    const multiUse = options.multiUse === true;
+    const maxTtl = multiUse ? MAX_BULK_ENROLLMENT_TTL_MS : MAX_SINGLE_ENROLLMENT_TTL_MS;
+    const defaultTtl = multiUse ? DEFAULT_BULK_ENROLLMENT_TTL_MS : DEFAULT_ENROLLMENT_TTL_MS;
+    const ttl = Math.max(60 * 1000, Math.min(Number(options.ttlMs) || defaultTtl, maxTtl));
     const id = crypto.randomUUID();
     const secret = crypto.randomBytes(32).toString('base64url');
     const pairingCode = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -933,8 +977,14 @@ function createVmProtectService(dependencies = {}) {
       serverUrls,
       expiresAtMs,
       expiresAt: new Date(expiresAtMs).toISOString(),
+      multiUse,
+      autoApprove: multiUse && options.autoApprove === true,
+      maxGuests: multiUse ? Math.max(1, Math.min(Number(options.maxGuests) || MAX_BULK_ENROLLMENT_GUESTS, MAX_BULK_ENROLLMENT_GUESTS)) : 1,
+      createdGuests: 0,
+      lastGuestAt: '',
       consumed: false,
-      state: 'invited',
+      state: multiUse && options.autoApprove === true ? 'approved' : 'invited',
+      approvedAt: multiUse && options.autoApprove === true ? new Date(now()).toISOString() : '',
       failedAttempts: 0
     };
     enrollments.set(id, enrollment);
@@ -948,6 +998,9 @@ function createVmProtectService(dependencies = {}) {
       vmId: enrollment.vmId,
       vmxPath: enrollment.vmxPath,
       vmwareUuid: enrollment.vmwareUuid,
+      multiUse: enrollment.multiUse,
+      autoApprove: enrollment.autoApprove,
+      maxGuests: enrollment.maxGuests,
       serverUrls: [...serverUrls],
       tlsFingerprint: getTlsIdentity().fingerprint,
       expiresAt: enrollment.expiresAt,
