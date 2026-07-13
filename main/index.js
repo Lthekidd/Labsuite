@@ -148,7 +148,8 @@ function captureRendererConsole(level, message, line, sourceId) {
 // ── Single instance lock ─────────────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
-  app.quit();
+  console.warn('LabSuite: Another instance already owns the application lock; exiting duplicate process immediately.');
+  app.exit(0);
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -531,6 +532,10 @@ function createWindow() {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.on('ready', () => {
+  if (!gotTheLock) {
+    app.exit(0);
+    return;
+  }
   try {
     db.initDatabase();
   } catch (err) {

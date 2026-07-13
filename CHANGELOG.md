@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.14 — 2026-07-13
+
+### Fixed
+
+- Duplicate LabSuite processes now exit immediately before they can initialize watchers, schedulers, rclone transfers, or database writers.
+- Update relaunch races can no longer start several simultaneous backups against the same file and Google Drive destination.
+- Prevents the `EBUSY` backup-copy and `EPERM` database-rename errors revealed by the v2.2.12 failure report.
+
 ## 2.2.13 — 2026-07-13
 
 ### Fixed

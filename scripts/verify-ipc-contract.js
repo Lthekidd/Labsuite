@@ -43,5 +43,9 @@ assert.ok(
   fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteSettings.jsx'), 'utf8').includes('Restart & Install'),
   'Software Updates must expose the restart-and-install action.'
 );
+assert.ok(
+  mainSources.includes("app.exit(0);") && mainSources.includes("if (!gotTheLock)"),
+  'Duplicate LabSuite processes must exit immediately before starting backup services.'
+);
 
 console.log(`IPC contract verification passed (${allowed.size} invoke channels).`);
