@@ -1114,6 +1114,58 @@ export default function LabSuiteBackup() {
     }
   };
 
+  const renderGoogleClientFields = () => (
+    <details
+      open
+      style={{
+        margin: '0 0 14px',
+        padding: '10px 12px',
+        borderRadius: '7px',
+        border: '1px solid rgba(251, 191, 36, 0.25)',
+        background: 'rgba(251, 191, 36, 0.06)'
+      }}
+    >
+      <summary style={{ cursor: 'pointer', color: '#fbbf24', fontSize: '12px', fontWeight: 700 }}>
+        Personal Google OAuth client (recommended)
+      </summary>
+      <p style={{ margin: '9px 0', fontSize: '11.5px', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+        rclone's shared Google client is being retired during 2026. Create a Desktop OAuth client, then enter it here for reliable backups.
+      </p>
+      <button
+        type="button"
+        onClick={() => openExternal('https://rclone.org/drive/#making-your-own-client-id')}
+        style={{ background: 'none', border: 0, color: '#60a5fa', padding: '0 0 10px', cursor: 'pointer', fontSize: '11.5px', textDecoration: 'underline' }}
+      >
+        Open the official setup guide
+      </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        <input
+          type="text"
+          className="input-control"
+          autoComplete="off"
+          placeholder="OAuth Client ID"
+          value={clientId}
+          disabled={gdriveAuthStarted || gdriveConnected}
+          onChange={event => setClientId(event.target.value)}
+          style={{ padding: '8px 9px', fontSize: '12px' }}
+        />
+        <input
+          type="password"
+          className="input-control"
+          autoComplete="new-password"
+          placeholder="OAuth Client Secret"
+          value={clientSecret}
+          disabled={gdriveAuthStarted || gdriveConnected}
+          onChange={event => setClientSecret(event.target.value)}
+          style={{ padding: '8px 9px', fontSize: '12px' }}
+        />
+      </div>
+      <p style={{ margin: '8px 0 0', fontSize: '10.5px', color: 'var(--text-muted)' }}>
+        Both fields are required when using a personal client. They are stored only in LabSuite's protected rclone configuration on this PC.
+      </p>
+    </details>
+  );
+
   const handleContinueFromGoogle = async () => {
     if (isContinuingFromGoogle) return;
     setAuthError('');
@@ -1828,6 +1880,8 @@ export default function LabSuiteBackup() {
                   LabSuite needs Drive access before it can check for an existing vault or create a new one.
                 </p>
 
+                {!gdriveConnected && renderGoogleClientFields()}
+
                 {authError && <p style={{ color: 'var(--accent-error)', fontSize: '13px', margin: '8px 0 12px 0', textAlign: 'center' }}>{authError}</p>}
 
                 <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -2214,6 +2268,8 @@ export default function LabSuiteBackup() {
                   Authorize LabSuite to transfer encrypted backups directly to your Google Drive.
                 </p>
 
+                {!gdriveConnected && renderGoogleClientFields()}
+
                 {authError && <p style={{ color: 'var(--accent-error)', fontSize: '13px', margin: '8px 0 12px 0', textAlign: 'center' }}>{authError}</p>}
 
                 <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -2423,6 +2479,11 @@ export default function LabSuiteBackup() {
 
     const messages = [];
     let duplicateDirWarnings = 0;
+    const isSharedClientNotice = (message) => {
+      const normalized = String(message || '').toLowerCase();
+      return normalized.includes('shared google drive client_id') &&
+        (normalized.includes('retir') || normalized.includes('stop working during 2026'));
+    };
 
     for (const line of text.split(/\r?\n/)) {
       const trimmed = line.trim();
@@ -2435,6 +2496,7 @@ export default function LabSuiteBackup() {
           continue;
         }
         if (entry?.msg) {
+          if (isSharedClientNotice(entry.msg)) continue;
           messages.push(entry.object ? `${entry.object}: ${entry.msg}` : entry.msg);
           continue;
         }
@@ -2442,11 +2504,15 @@ export default function LabSuiteBackup() {
         // Keep plain text errors readable below.
       }
 
-      messages.push(trimmed);
+      messages.push(...trimmed.split(/\s*;\s*/).filter(message => message && !isSharedClientNotice(message)));
     }
 
     if (duplicateDirWarnings > 0 && messages.length === 0) {
       return `${duplicateDirWarnings} duplicate Google Drive destination folder warning${duplicateDirWarnings === 1 ? '' : 's'}. rclone ignored the duplicates; clean up duplicate folder names in Drive if this repeats.`;
+    }
+
+    if (messages.length === 0 && isSharedClientNotice(text)) {
+      return 'The last backup attempt failed, but an rclone retirement notice hid the cause. Retry with this LabSuite version to record the real error.';
     }
 
     const combined = [...new Set(messages)]
@@ -2610,8 +2676,8 @@ export default function LabSuiteBackup() {
                 </td>
                 {!compact && <td style={{ padding: '10px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatActivityTime(row)}</td>}
                 {!compact && (
-                  <td style={{ padding: '10px 12px', color: row.error ? '#fca5a5' : 'var(--text-muted)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.error || ''}>
-                    {row.error || '-'}
+                  <td style={{ padding: '10px 12px', color: row.error ? '#fca5a5' : 'var(--text-muted)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.error ? getReadableError(row.error) : ''}>
+                    {row.error ? getReadableError(row.error) : '-'}
                   </td>
                 )}
               </tr>
@@ -3083,7 +3149,7 @@ export default function LabSuiteBackup() {
                                   timeAgo(item.time)
                                 )}
                               </td>
-                              <td className="activity-issue-cell" title={item.issue || ''}>
+                              <td className="activity-issue-cell" title={item.issue ? getReadableError(item.issue) : ''}>
                                 {item.issue ? getReadableError(item.issue) : '-'}
                               </td>
                             </tr>

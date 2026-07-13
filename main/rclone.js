@@ -61,6 +61,98 @@ function getRawRemotePath(remotePath = '') {
   return `${getRawRemoteName()}:${remotePath || ''}`;
 }
 
+function getRemoteSectionBounds(lines, remoteName) {
+  const sectionName = `[${String(remoteName || '').trim()}]`.toLowerCase();
+  const start = lines.findIndex(line => String(line).trim().toLowerCase() === sectionName);
+  if (start < 0) return null;
+
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^\s*\[[^\]]+\]\s*$/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return { start, end };
+}
+
+function getRcloneRemoteConfigValue(configText, remoteName, key) {
+  const lines = String(configText || '').split(/\r?\n/);
+  const bounds = getRemoteSectionBounds(lines, remoteName);
+  if (!bounds) return '';
+  const escapedKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matcher = new RegExp(`^\\s*${escapedKey}\\s*=\\s*(.*?)\\s*$`, 'i');
+
+  for (let index = bounds.start + 1; index < bounds.end; index += 1) {
+    const match = lines[index].match(matcher);
+    if (match) return match[1];
+  }
+  return '';
+}
+
+function updateRcloneRemoteConfig(configText, remoteName, updates = {}) {
+  const text = String(configText || '');
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const bounds = getRemoteSectionBounds(lines, remoteName);
+  if (!bounds) {
+    throw new Error('The configured Google Drive account was not found. Reconnect the account from LabSuite setup.');
+  }
+
+  const pending = new Map(
+    Object.entries(updates).map(([key, value]) => [String(key).toLowerCase(), { key, value: String(value) }])
+  );
+  const output = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index > bounds.start && index < bounds.end) {
+      const keyMatch = lines[index].match(/^\s*([A-Za-z0-9_]+)\s*=/);
+      const normalizedKey = keyMatch ? keyMatch[1].toLowerCase() : '';
+      if (normalizedKey && pending.has(normalizedKey)) {
+        const replacement = pending.get(normalizedKey);
+        output.push(`${replacement.key} = ${replacement.value}`);
+        pending.delete(normalizedKey);
+        continue;
+      }
+    }
+
+    if (index === bounds.end) {
+      for (const replacement of pending.values()) {
+        output.push(`${replacement.key} = ${replacement.value}`);
+      }
+      pending.clear();
+    }
+    output.push(lines[index]);
+  }
+
+  if (bounds.end === lines.length) {
+    const insertionIndex = output.length > 0 && output[output.length - 1] === ''
+      ? output.length - 1
+      : output.length;
+    output.splice(insertionIndex, 0, ...[...pending.values()].map(({ key, value }) => `${key} = ${value}`));
+  }
+
+  return output.join(newline);
+}
+
+function validateGoogleClientCredentials(clientId, clientSecret) {
+  const normalizedClientId = String(clientId || '').trim();
+  const normalizedClientSecret = String(clientSecret || '').trim();
+  if (!normalizedClientId || !normalizedClientSecret) {
+    throw new Error('Both the Google OAuth Client ID and Client Secret are required.');
+  }
+  if (/\r|\n/.test(normalizedClientId) || /\r|\n/.test(normalizedClientSecret)) {
+    throw new Error('Google OAuth credentials contain invalid line breaks.');
+  }
+  if (!normalizedClientId.endsWith('.apps.googleusercontent.com')) {
+    throw new Error('Enter a Google OAuth Desktop app Client ID ending in .apps.googleusercontent.com.');
+  }
+  if (normalizedClientId.length > 512 || normalizedClientSecret.length > 512) {
+    throw new Error('Google OAuth credentials are longer than expected.');
+  }
+  return { clientId: normalizedClientId, clientSecret: normalizedClientSecret };
+}
+
 // Helper to get paths
 function getPaths() {
   let userDataDir;
@@ -228,6 +320,12 @@ function summarizeRcloneEntry(entry) {
   return redactRcloneOutput(object ? `${object}: ${message}` : message).replace(/\s+/g, ' ').trim();
 }
 
+function isSharedGoogleClientRetirementNotice(text) {
+  const normalized = String(text || '').toLowerCase();
+  return normalized.includes('shared google drive client_id') &&
+    (normalized.includes('retir') || normalized.includes('stop working during 2026'));
+}
+
 function uniqueMessages(messages, limit = 3) {
   const seen = new Set();
   const result = [];
@@ -281,8 +379,10 @@ function translateToHumanError(text) {
 
 function buildRcloneErrorMessage({ code, signal, stderr }) {
   const { entries, rawLines } = parseRcloneLogText(stderr);
-  const warnings = entries.filter(entry => String(entry.level || '').toLowerCase() === 'warning');
-  const errors = entries.filter(entry => {
+  const actionableEntries = entries.filter(entry => !isSharedGoogleClientRetirementNotice(summarizeRcloneEntry(entry)));
+  const actionableRawLines = rawLines.filter(line => !isSharedGoogleClientRetirementNotice(line));
+  const warnings = actionableEntries.filter(entry => String(entry.level || '').toLowerCase() === 'warning');
+  const errors = actionableEntries.filter(entry => {
     const level = String(entry.level || '').toLowerCase();
     return level === 'error' || level === 'fatal' || level === 'panic';
   });
@@ -290,7 +390,7 @@ function buildRcloneErrorMessage({ code, signal, stderr }) {
 
   const errorMessages = uniqueMessages([
     ...errors.map(summarizeRcloneEntry),
-    ...rawLines
+    ...actionableRawLines
   ]);
 
   const rawCombined = errorMessages.join('; ');
@@ -840,6 +940,10 @@ function startGoogleAuthForRemote(remoteName, clientId = '', clientSecret = '') 
   if (!isSafeRemoteName(remoteName)) {
     throw new Error('Invalid Google Drive destination name.');
   }
+  let credentials = null;
+  if (clientId || clientSecret) {
+    credentials = validateGoogleClientCredentials(clientId, clientSecret);
+  }
   const args = [
     'config',
     'create',
@@ -848,8 +952,8 @@ function startGoogleAuthForRemote(remoteName, clientId = '', clientSecret = '') 
     'scope=drive',
   ];
 
-  if (clientId) args.push(`client_id=${clientId}`);
-  if (clientSecret) args.push(`client_secret=${clientSecret}`);
+  if (credentials) args.push(`client_id=${credentials.clientId}`);
+  if (credentials) args.push(`client_secret=${credentials.clientSecret}`);
 
   // We let rclone spawn the default browser and run its local redirect server
   // WaitMsBeforeAsync is handled by Electron's IPC spawning the promise in the background
@@ -995,6 +1099,64 @@ async function checkConfig() {
     return { hasGDrive, hasCrypt };
   } catch (e) {
     return { hasGDrive: false, hasCrypt: false };
+  }
+}
+
+function getGoogleDriveClientStatus() {
+  const { configPath } = getPaths();
+  const remoteName = getRawRemoteName();
+  if (!fs.existsSync(configPath)) {
+    return { hasRemote: false, usesOwnClientId: false, clientIdHint: '' };
+  }
+
+  try {
+    const configText = fs.readFileSync(configPath, 'utf8');
+    const clientId = getRcloneRemoteConfigValue(configText, remoteName, 'client_id');
+    return {
+      hasRemote: !!getRemoteSectionBounds(configText.split(/\r?\n/), remoteName),
+      usesOwnClientId: !!clientId,
+      clientIdHint: clientId ? `${clientId.slice(0, 8)}...${clientId.slice(-24)}` : ''
+    };
+  } catch (_) {
+    return { hasRemote: false, usesOwnClientId: false, clientIdHint: '' };
+  }
+}
+
+async function reconnectGoogleDriveClient(clientId, clientSecret) {
+  if (activeRcloneProcesses.size > 0) {
+    throw new Error('Wait for the current backup or restore transfer to finish, then reconnect Google Drive.');
+  }
+  const credentials = validateGoogleClientCredentials(clientId, clientSecret);
+  const { configPath } = getPaths();
+  const remoteName = getRawRemoteName();
+  if (!fs.existsSync(configPath)) {
+    throw new Error('No Google Drive account is configured on this PC. Connect it from LabSuite setup first.');
+  }
+
+  const previousConfig = fs.readFileSync(configPath, 'utf8');
+  const updatedConfig = updateRcloneRemoteConfig(previousConfig, remoteName, {
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret
+  });
+
+  try {
+    fs.writeFileSync(configPath, updatedConfig, 'utf8');
+    hardenConfigFilePermissions(configPath);
+    await runRclone([
+      'config',
+      'reconnect',
+      `${remoteName}:`,
+      '--auto-confirm'
+    ], { timeoutMs: 10 * 60 * 1000, applyTransferControls: false });
+    return getGoogleDriveClientStatus();
+  } catch (error) {
+    try {
+      fs.writeFileSync(configPath, previousConfig, 'utf8');
+      hardenConfigFilePermissions(configPath);
+    } catch (restoreError) {
+      console.warn('rclone: Failed to restore Google Drive configuration after reconnect error:', restoreError.message);
+    }
+    throw error;
   }
 }
 
@@ -2089,6 +2251,8 @@ module.exports = {
   getRawRemoteName,
   startGoogleAuth,
   startGoogleAuthForRemote,
+  getGoogleDriveClientStatus,
+  reconnectGoogleDriveClient,
   createCryptRemote,
   createCryptRemoteFor,
   syncRawFile,
@@ -2139,6 +2303,10 @@ module.exports = {
     redactRcloneArg,
     parseRcloneLogText,
     buildRcloneErrorMessage,
+    isSharedGoogleClientRetirementNotice,
+    getRcloneRemoteConfigValue,
+    updateRcloneRemoteConfig,
+    validateGoogleClientCredentials,
     getTransferFlagArgs
   }
 };

@@ -13,7 +13,16 @@ const folderIdentity = require('../main/folderIdentity');
 const restorePaths = require('../main/restorePaths');
 const backupShortcuts = require('../main/backupShortcuts');
 
-const { getRemotePath, redactRcloneArg, isNotFoundError, normalizeFilesFromPaths } = rclone.__private;
+const {
+  getRemotePath,
+  redactRcloneArg,
+  isNotFoundError,
+  normalizeFilesFromPaths,
+  buildRcloneErrorMessage,
+  getRcloneRemoteConfigValue,
+  updateRcloneRemoteConfig,
+  validateGoogleClientCredentials
+} = rclone.__private;
 
 assert.strictEqual(getRemotePath('folder/file.txt'), 'gdrive-crypt:folder/file.txt');
 assert.strictEqual(getRemotePath(''), 'gdrive-crypt:');
@@ -55,6 +64,46 @@ assert.ok(shortcutItems.every(item => item.Shortcut && item.IsDir));
 assert.strictEqual(redactRcloneArg('password=super-secret'), 'password=***');
 assert.strictEqual(redactRcloneArg('client_secret=super-secret'), 'client_secret=***');
 assert.strictEqual(redactRcloneArg('remote=gdrive:LabSuite-Encrypted'), 'remote=gdrive:LabSuite-Encrypted');
+
+const sharedClientNotice = "2026/07/12 16:49:37 NOTICE: gdrive: This remote uses rclone's shared Google Drive client_id, which is being retired and will stop working during 2026.";
+const actionableBackupError = buildRcloneErrorMessage({
+  code: 1,
+  signal: null,
+  stderr: `${sharedClientNotice}\n2026/07/12 16:49:38 ERROR : oldpctext.txt: Failed to copy: unexpected EOF`
+});
+assert.ok(actionableBackupError.includes('unexpected EOF'));
+assert.ok(!actionableBackupError.includes('shared Google Drive client_id'));
+assert.strictEqual(
+  buildRcloneErrorMessage({ code: 1, signal: null, stderr: sharedClientNotice }),
+  'The backup process stopped (code 1).'
+);
+
+const sampleRcloneConfig = [
+  '[gdrive]',
+  'type = drive',
+  'scope = drive',
+  'token = {"access_token":"keep-me"}',
+  '',
+  '[gdrive-crypt]',
+  'type = crypt',
+  'remote = gdrive:LabSuite-Encrypted',
+  ''
+].join('\r\n');
+const updatedRcloneConfig = updateRcloneRemoteConfig(sampleRcloneConfig, 'gdrive', {
+  client_id: '123456789-example.apps.googleusercontent.com',
+  client_secret: 'GOCSPX-example'
+});
+assert.strictEqual(
+  getRcloneRemoteConfigValue(updatedRcloneConfig, 'gdrive', 'client_id'),
+  '123456789-example.apps.googleusercontent.com'
+);
+assert.strictEqual(getRcloneRemoteConfigValue(updatedRcloneConfig, 'gdrive', 'client_secret'), 'GOCSPX-example');
+assert.ok(updatedRcloneConfig.includes('token = {"access_token":"keep-me"}'));
+assert.ok(updatedRcloneConfig.includes('[gdrive-crypt]'));
+assert.throws(
+  () => validateGoogleClientCredentials('not-a-google-client', 'secret'),
+  /apps\.googleusercontent\.com/
+);
 
 assert.ok(filesystem.matchesExclusionPattern('**/*.log', 'logs/app.log'));
 assert.ok(filesystem.matchesExclusionPattern('**/node_modules/**', 'project/node_modules/pkg/index.js'));

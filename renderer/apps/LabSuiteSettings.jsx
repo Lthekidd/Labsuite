@@ -25,9 +25,20 @@ export default function LabSuiteSettings() {
     currentVersion: '',
     message: 'Loading update status...'
   });
+  const [googleClientStatus, setGoogleClientStatus] = useState({
+    hasRemote: false,
+    usesOwnClientId: false,
+    clientIdHint: ''
+  });
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [googleClientMessage, setGoogleClientMessage] = useState('');
+  const [googleClientError, setGoogleClientError] = useState('');
+  const [isReconnectingGoogle, setIsReconnectingGoogle] = useState(false);
 
   useEffect(() => {
     loadSettings();
+    loadGoogleClientStatus();
     ipcRenderer.invoke('updates:getStatus')
       .then((status) => setUpdateStatus(status || {}))
       .catch((error) => setUpdateStatus({
@@ -50,6 +61,35 @@ export default function LabSuiteSettings() {
       console.error('Failed to load settings:', e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadGoogleClientStatus = async () => {
+    try {
+      const status = await ipcRenderer.invoke('auth:getGDriveClientStatus');
+      setGoogleClientStatus(status || {});
+    } catch (error) {
+      console.error('Failed to load Google OAuth client status:', error);
+    }
+  };
+
+  const reconnectGoogleDriveClient = async () => {
+    setGoogleClientError('');
+    setGoogleClientMessage('');
+    setIsReconnectingGoogle(true);
+    try {
+      const status = await ipcRenderer.invoke('auth:reconnectGDriveClient', {
+        clientId: googleClientId,
+        clientSecret: googleClientSecret
+      });
+      setGoogleClientStatus(status || {});
+      setGoogleClientId('');
+      setGoogleClientSecret('');
+      setGoogleClientMessage('Google Drive was reauthorized with your personal OAuth client. Backups have resumed.');
+    } catch (error) {
+      setGoogleClientError(error.message || 'Google Drive could not be reauthorized.');
+    } finally {
+      setIsReconnectingGoogle(false);
     }
   };
 
@@ -474,6 +514,84 @@ export default function LabSuiteSettings() {
               placeholder="Enter a hint to help remember your password"
               style={inputStyle}
             />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '22px', paddingTop: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', margin: '0 0 6px', color: 'var(--text-primary)' }}>Google OAuth Client</h3>
+                <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  rclone's shared Google client is being retired during 2026. Use your own Desktop OAuth client on every LabSuite PC.
+                </p>
+              </div>
+              <span
+                style={{
+                  padding: '5px 9px',
+                  borderRadius: '999px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: googleClientStatus.usesOwnClientId ? 'var(--accent-secondary)' : '#fbbf24',
+                  background: googleClientStatus.usesOwnClientId ? 'rgba(52, 211, 153, 0.1)' : 'rgba(251, 191, 36, 0.1)',
+                  border: googleClientStatus.usesOwnClientId ? '1px solid rgba(52, 211, 153, 0.25)' : '1px solid rgba(251, 191, 36, 0.3)'
+                }}
+              >
+                {googleClientStatus.usesOwnClientId ? 'Personal client active' : 'Shared client needs migration'}
+              </span>
+            </div>
+
+            {googleClientStatus.clientIdHint && (
+              <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: '10px 0 0' }}>
+                Active Client ID: {googleClientStatus.clientIdHint}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={() => ipcRenderer.invoke('app:openExternal', { url: 'https://rclone.org/drive/#making-your-own-client-id' })}
+              style={{ background: 'none', border: 0, color: '#60a5fa', padding: '10px 0 0', cursor: 'pointer', fontSize: '12px', textDecoration: 'underline' }}
+            >
+              Open the official setup guide
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px' }}>OAuth Client ID</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={googleClientId}
+                  onChange={(event) => setGoogleClientId(event.target.value)}
+                  placeholder="...apps.googleusercontent.com"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '12px' }}>OAuth Client Secret</label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={googleClientSecret}
+                  onChange={(event) => setGoogleClientSecret(event.target.value)}
+                  placeholder="Enter the client secret"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: '10px 0 14px', lineHeight: 1.5 }}>
+              Save only when no backup is running. LabSuite briefly pauses new backup work, opens Google approval in your browser, and never sends these credentials to the renderer again.
+            </p>
+            {googleClientError && <p style={{ color: 'var(--accent-error)', fontSize: '12px', margin: '0 0 12px' }}>{googleClientError}</p>}
+            {googleClientMessage && <p style={{ color: 'var(--accent-secondary)', fontSize: '12px', margin: '0 0 12px' }}>{googleClientMessage}</p>}
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={isReconnectingGoogle || !googleClientId.trim() || !googleClientSecret.trim() || !googleClientStatus.hasRemote}
+              onClick={reconnectGoogleDriveClient}
+              style={{ padding: '9px 14px' }}
+            >
+              {isReconnectingGoogle ? 'Approve in Browser...' : 'Save Credentials & Reconnect'}
+            </button>
           </div>
         </section>
 

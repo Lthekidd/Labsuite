@@ -82,21 +82,29 @@
 | Windows 10 or Windows 11, 64-bit | LabSuite desktop application |
 | Google account with available Drive storage | Encrypted cloud backup and cross-PC restore |
 | Internet connection and a web browser | Google authorization, backups, restores, and updates |
+| Personal Google OAuth Desktop client | Reliable Drive access after rclone's shared client retirement during 2026 |
 | A master password you can retain safely | Encrypting and decrypting the vault |
 | [WinFsp](https://winfsp.dev/) (optional) | Mounting the restore vault as a Windows drive |
 | VMware Workstation/Player with `vmrun` or VIX (optional) | Automatic VM Protect helper deployment |
 
 LabSuite bundles its supported rclone executable. You do not need to install rclone separately for normal use.
 
+### Google OAuth client
+
+rclone's shared Google Drive client ID is being retired during 2026. Create your own Google OAuth **Desktop app** credentials by following [rclone's official client ID guide](https://rclone.org/drive/#making-your-own-client-id). Enter the Client ID and Client Secret during first-time setup.
+
+For a PC that is already connected, open **Suite Settings → Google OAuth Client**, enter the same credentials, and choose **Save Credentials & Reconnect**. LabSuite preserves the existing encrypted vault, master-password configuration, and Google token backup while refreshing authorization. Repeat this once on every LabSuite computer.
+
 ## Install and create a backup
 
 1. Open the [latest release](https://github.com/Lthekidd/Labsuite/releases/latest) and download `LabSuite-v*-Setup.exe`.
 2. Run the installer. For the unsigned build, select **More info → Run anyway** when Windows SmartScreen appears.
-3. Open LabSuite and connect the Google account that will hold the encrypted vault.
-4. Create a strong master password and store it somewhere safe. LabSuite cannot recover a lost master password.
-5. Select the folders you want to protect.
-6. Run **Back Up Now** and wait for the first backup to complete.
-7. Open **Health** and verify at least one folder, then test a small restore before relying on the backup.
+3. Create or obtain your personal Google OAuth Desktop Client ID and Client Secret.
+4. Open LabSuite, enter those credentials, and connect the Google account that will hold the encrypted vault.
+5. Create a strong master password and store it somewhere safe. LabSuite cannot recover a lost master password.
+6. Select the folders you want to protect.
+7. Run **Back Up Now** and wait for the first backup to complete.
+8. Open **Health** and verify at least one folder, then test a small restore before relying on the backup.
 
 Keep another independent copy of irreplaceable data. A sync or backup application should not be the only copy of important files until you have tested recovery.
 
@@ -144,6 +152,7 @@ When an update finishes downloading, fully quit LabSuite from its system-tray me
 | --- | --- |
 | Windows says Unknown publisher | Expected for the unsigned personal build. Confirm the download came from this repository. |
 | Google Drive shows disconnected | Check the internet connection, then reconnect the Google account if authorization expired. |
+| Activity shows a shared Google client warning | Install the latest LabSuite, then add a personal OAuth Desktop client in Suite Settings and reconnect Google Drive. |
 | Existing vault will not unlock | Confirm the Google account and use the exact original master password. |
 | Vault folder cannot be opened | Refresh the computer-backup catalog; the cloud folder and local catalog may be temporarily out of sync. |
 | Disk Mount fails | Install WinFsp, let active backup work finish, and allow up to 45 seconds for the mount. |

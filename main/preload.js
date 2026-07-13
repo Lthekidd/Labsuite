@@ -41,6 +41,8 @@ const INVOKE_CHANNELS = new Set([
   // Authentication API
   'auth:startGDrive',
   'auth:checkConfig',
+  'auth:getGDriveClientStatus',
+  'auth:reconnectGDriveClient',
   'auth:setCryptPassword',
   'auth:disconnect',
   'auth:getGDriveInfo',
