@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.2.12 — 2026-07-13
+
+### Fixed
+
+- rclone's `Source doesn't exist or is a directory` response is now recognized when the previous active Google Drive copy is already absent during version promotion.
+- A valid staged upload is promoted normally instead of being marked failed just because there was no older cloud copy to move into history.
+- LabSuite no longer records a nonexistent previous cloud copy as a backup-history version.
+- When Windows can read a local file but rclone rejects its path, LabSuite retries through a fresh local staging copy.
+
+### Added
+
+- Activity now includes **Export Failure Log**, producing a sanitized diagnostic report with failed manifest entries, recorded and current local-path checks, source sizes, retry counts, and LabSuite/rclone log tails.
+- Every new backup failure writes a structured `BACKUP_FAILURE` entry containing its local-versus-cloud context.
+
 ## 2.2.11 — 2026-07-13
 
 ### Added

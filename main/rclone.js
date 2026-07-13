@@ -1460,6 +1460,7 @@ function isNotFoundError(err) {
   return message.includes('object not found') ||
     message.includes('directory not found') ||
     message.includes('file not found') ||
+    message.includes("source doesn't exist or is a directory") ||
     message.includes('backup destination was not found') ||
     message.includes('not a regular file');
 }

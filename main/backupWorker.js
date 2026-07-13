@@ -1,6 +1,8 @@
 const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 const db = require('./database');
 const rclone = require('./rclone');
 const planner = require('./backupPlanner');
@@ -939,9 +941,90 @@ class BackupWorker extends EventEmitter {
     }
   }
 
+  async syncLocalFileWithStagingFallback(localPath, remotePath) {
+    try {
+      return await rclone.syncFile(localPath, remotePath);
+    } catch (originalError) {
+      const message = String(originalError && originalError.message ? originalError.message : originalError);
+      if (!/source doesn't exist or is a directory/i.test(message)) throw originalError;
+
+      let stat;
+      try {
+        stat = fs.statSync(localPath);
+      } catch (_) {
+        throw originalError;
+      }
+      if (!stat.isFile()) throw originalError;
+
+      const stagingDir = path.join(os.tmpdir(), 'labsuite-source-retry');
+      fs.mkdirSync(stagingDir, { recursive: true });
+      const extension = path.extname(localPath).slice(0, 16);
+      const stagingPath = path.join(stagingDir, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${extension}`);
+
+      try {
+        fs.copyFileSync(localPath, stagingPath);
+        const stagedStat = fs.statSync(stagingPath);
+        console.warn('BACKUP_LOCAL_STAGING_RETRY', JSON.stringify({
+          originalPath: localPath,
+          originalSize: stat.size,
+          stagingPath,
+          stagedSize: stagedStat.size,
+          remotePath,
+          originalError: message
+        }));
+        return await rclone.syncFile(stagingPath, remotePath);
+      } catch (stagingError) {
+        const combined = new Error(
+          `Local source retry failed. Node verified the original file at "${localPath}" (${stat.size} bytes), ` +
+          `but rclone also rejected the staged copy. Original: ${message} Staged: ${stagingError.message || stagingError}`
+        );
+        combined.cause = stagingError;
+        throw combined;
+      } finally {
+        try { fs.unlinkSync(stagingPath); } catch (_) {}
+      }
+    }
+  }
+
   failItem(folder, item, error, status = 'failed') {
     const failedAt = new Date().toISOString();
     const entry = db.getManifestEntry(folder.id, item.relativePath) || {};
+    const localSource = (() => {
+      try {
+        const stat = fs.statSync(item.localPath);
+        return {
+          path: item.localPath,
+          exists: true,
+          isFile: stat.isFile(),
+          isDirectory: stat.isDirectory(),
+          size: stat.size,
+          modifiedAt: stat.mtime.toISOString(),
+          realPath: fs.realpathSync(item.localPath)
+        };
+      } catch (sourceError) {
+        return {
+          path: item.localPath || '',
+          exists: false,
+          errorCode: sourceError.code || '',
+          error: sourceError.message
+        };
+      }
+    })();
+    console.error('BACKUP_FAILURE', JSON.stringify({
+      timestamp: failedAt,
+      folderId: folder.id,
+      folderPath: folder.local_path,
+      remoteRoot: folder.remote_path,
+      sourceType: folder.source_type || 'folder',
+      itemType: item.type,
+      relativePath: item.relativePath,
+      previousRemotePath: item.previousRemotePath || entry.remote_path || '',
+      previousStorage: item.previousStorage || entry.storage || '',
+      manifestStatus: entry.status || '',
+      retryCount: entry.retry_count || 0,
+      localSource,
+      error: error && error.message ? error.message : String(error)
+    }));
     if (this.currentRunStats) {
       this.currentRunStats.filesFailed += 1;
     }
@@ -1284,7 +1367,7 @@ class BackupWorker extends EventEmitter {
 
     try {
       const activePath = manifest.getRemoteFilePath(folder, item.relativePath);
-      await rclone.syncFile(item.localPath, activePath);
+      await this.syncLocalFileWithStagingFallback(item.localPath, activePath);
       this.recordPackedMigrationHistory(folder, item);
       manifest.recordBackedUp(folder, item, activePath);
       db.addSyncLog({
@@ -1404,11 +1487,14 @@ class BackupWorker extends EventEmitter {
     const activePath = manifest.getRemoteFilePath(folder, item.relativePath);
 
     try {
-      await rclone.moveRemoteFile(activePath, historyPath).catch(error => {
+      const previousMove = await rclone.moveRemoteFile(activePath, historyPath).catch(error => {
         if (!rclone.__private.isNotFoundError(error)) throw error;
+        console.warn(`BackupWorker: previous active copy was already absent; promoting staged file directly: ${activePath}`);
         return { skipped: true };
       });
-      manifest.recordHistory(folder, item.relativePath, historyPath, 'modified');
+      if (!previousMove || !previousMove.skipped) {
+        manifest.recordHistory(folder, item.relativePath, historyPath, 'modified');
+      }
       await rclone.moveRemoteFile(stagingPath, activePath);
       manifest.recordBackedUp(folder, item, activePath);
       db.addSyncLog({
@@ -1439,7 +1525,7 @@ class BackupWorker extends EventEmitter {
 
     if (!item.previousRemotePath) {
       try {
-        await rclone.syncFile(item.localPath, manifest.getRemoteFilePath(folder, item.relativePath));
+        await this.syncLocalFileWithStagingFallback(item.localPath, manifest.getRemoteFilePath(folder, item.relativePath));
         manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
         db.addSyncLog({
           folderId: folder.id,
@@ -1463,7 +1549,7 @@ class BackupWorker extends EventEmitter {
     const stagingPath = this.joinRemote(stagingRoot, item.relativePath);
 
     try {
-      await rclone.syncFile(item.localPath, stagingPath);
+      await this.syncLocalFileWithStagingFallback(item.localPath, stagingPath);
     } catch (error) {
       if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
       manifest.recordFailure(folder, item.relativePath, error);
