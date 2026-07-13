@@ -2441,6 +2441,10 @@ function setupIpc(mainWindowArg, getMainWindow) {
     return status;
   });
 
+  ipcMain.handle('lan:configureFirewall', async () => {
+    return lanRuntime.configureFirewall();
+  });
+
   ipcMain.handle('lan:getFileAccessStatus', () => {
     return lanRuntime.getStatus();
   });

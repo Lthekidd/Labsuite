@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.5 — 2026-07-13
+
+### Fixed
+
+- Network Drive now offers an **Allow Through Firewall** action when Windows rejects unelevated firewall changes.
+- LabSuite requests UAC only for the firewall operation; the main application continues running without administrator rights.
+- LAN file-access and discovery rules are validated, deduplicated, and restricted to the local subnet on Private and Public Windows network profiles.
+- Canceling the Windows approval prompt leaves Network Drive running locally and provides a retryable explanation instead of telling users to restart the entire app as administrator.
+
 ## 2.2.4 — 2026-07-13
 
 ### Added

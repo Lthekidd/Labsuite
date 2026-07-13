@@ -157,6 +157,7 @@ When an update finishes downloading, fully quit LabSuite from its system-tray me
 | Vault folder cannot be opened | Refresh the computer-backup catalog; the cloud folder and local catalog may be temporarily out of sync. |
 | Disk Mount fails | Install WinFsp, let active backup work finish, and allow up to 45 seconds for the mount. |
 | Another PC is missing | Confirm it used the same Google Drive vault, then refresh the Restore computer list. |
+| Network Drive says firewall approval is needed | Select **Allow Through Firewall**, approve the Windows UAC prompt, then refresh the other PC. LabSuite itself does not need to run as administrator. |
 | Update is not detected | Confirm the release is published, its version is newer, and all three update assets are present. |
 
 Use **Backup Engine → Health → Export Diagnostics** when investigating a repeatable backup or restore failure.

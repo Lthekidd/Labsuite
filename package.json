@@ -1,6 +1,6 @@
 {
   "name": "labsuite",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "description": "Encrypted suite of productivity tools",
   "main": "main/index.js",
   "author": "LabSuite Team",
@@ -19,7 +19,7 @@
     "build:prod": "npm run build && electron-builder && npm run verify:release",
     "download-rclone": "node scripts/download-rclone.js",
     "verify:release": "node scripts/verify-release-security.js",
-    "test": "node scripts/verify-backup-logic.js && node scripts/verify-runtime-paths.js && node scripts/verify-ipc-contract.js && node scripts/verify-database-cache.js && node scripts/verify-database-safety.js && node scripts/verify-database-large-async.js && node scripts/verify-remote-catalog.js && node scripts/verify-single-file-backup.js && node scripts/verify-vault-destinations.js && node scripts/verify-vm-discovery.js && node scripts/verify-vm-protect.js",
+    "test": "node scripts/verify-backup-logic.js && node scripts/verify-runtime-paths.js && node scripts/verify-ipc-contract.js && node scripts/verify-windows-firewall.js && node scripts/verify-database-cache.js && node scripts/verify-database-safety.js && node scripts/verify-database-large-async.js && node scripts/verify-remote-catalog.js && node scripts/verify-single-file-backup.js && node scripts/verify-vault-destinations.js && node scripts/verify-vm-discovery.js && node scripts/verify-vm-protect.js",
     "test:ui-smoke": "node scripts/smoke-electron-ui.js"
   },
   "dependencies": {

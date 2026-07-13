@@ -126,6 +126,7 @@ const INVOKE_CHANNELS = new Set([
   'lan:pingPeer',
   'lan:pingPeers',
   'lan:enableFileAccess',
+  'lan:configureFirewall',
   'lan:getFileAccessStatus',
   'lan:getSettings',
   'lan:setSettings',
