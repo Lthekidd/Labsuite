@@ -447,6 +447,7 @@ export default function LabSuiteBackup() {
   const [browseRestorePointId, setBrowseRestorePointId] = useState('');
   const [browseSnapshotFiles, setBrowseSnapshotFiles] = useState([]);
   const [browseSnapshotLoading, setBrowseSnapshotLoading] = useState(false);
+  const [browseSnapshotError, setBrowseSnapshotError] = useState('');
   const [browseSnapshotPath, setBrowseSnapshotPath] = useState(''); // Current folder path in browsed snapshot
 
   const [mountInfo, setMountInfo] = useState({ status: 'unmounted', drive: null, error: '' });
@@ -1049,6 +1050,8 @@ export default function LabSuiteBackup() {
   const handleLoadSnapshot = async (restorePointId) => {
     setBrowseRestorePointId(restorePointId);
     setBrowseSnapshotLoading(true);
+    setBrowseSnapshotError('');
+    setBrowseSnapshotFiles([]);
     setBrowseSnapshotPath('');
     try {
         const restorePoint = restorePoints.find(rp => String(rp.id) === String(restorePointId));
@@ -1058,9 +1061,12 @@ export default function LabSuiteBackup() {
           restoreTime: restorePoint.completed_at 
         });
         setBrowseSnapshotFiles(files);
+      } else if (restorePointId) {
+        setBrowseSnapshotError('This checkpoint record could not be found. Refresh the Restore page and try again.');
       }
     } catch (e) {
       console.error('Failed to load snapshot:', e);
+      setBrowseSnapshotError(e.message || 'This checkpoint could not be opened.');
     } finally {
       setBrowseSnapshotLoading(false);
     }
@@ -1083,7 +1089,7 @@ export default function LabSuiteBackup() {
         });
       } else {
         await ipcRenderer.invoke('restore:start', {
-          remotePath: item.fullPath,
+          remotePath: item.remotePath,
           localDestination: dest
         });
       }
@@ -2865,6 +2871,7 @@ export default function LabSuiteBackup() {
         fullPath: file.path,
         size: file.size,
         storage: file.storage,
+        remotePath: file.remotePath,
         packRemotePath: file.packRemotePath,
         packMemberPath: file.packMemberPath
       });
@@ -4473,9 +4480,13 @@ export default function LabSuiteBackup() {
                             <div className="tree-spinner" style={{ marginRight: '8px' }}></div>
                             Loading snapshot files...
                           </div>
+                        ) : browseSnapshotError ? (
+                          <div style={{ padding: '24px', textAlign: 'center', color: '#fca5a5', fontSize: '13px' }}>
+                            {browseSnapshotError}
+                          </div>
                         ) : currentSnapshotItems.length === 0 ? (
                           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                            This directory is empty.
+                            No recoverable files were recorded for this checkpoint.
                           </div>
                         ) : (
                           <ul className="snapshot-browser-list" style={{ margin: 0, borderRadius: 0, border: 'none', maxHeight: '280px' }}>

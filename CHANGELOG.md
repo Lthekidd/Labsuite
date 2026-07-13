@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.15 — 2026-07-13
+
+### Fixed
+
+- Restore Checkpoint now opens checkpoints imported from other PCs by matching folder identifiers consistently across numeric and string catalog formats.
+- Snapshot Explorer normalizes Windows path separators so nested folders display correctly.
+- Restoring one file from a checkpoint now uses its full encrypted Google Drive path instead of its browser-relative path.
+- Snapshot loading failures are shown explicitly instead of being presented as an empty directory.
+
+### Changed
+
+- Unchanged 15-minute quick scans no longer create duplicate zero-change checkpoint dates. Verified daily scans and successful backups with changes still create restore points.
+
 ## 2.2.14 — 2026-07-13
 
 ### Fixed

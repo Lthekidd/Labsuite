@@ -768,15 +768,21 @@ class BackupWorker extends EventEmitter {
     if (executableItems.length === 0 && scanErrors.length === 0) {
       if (!(await this.verifyFolderBeforeProtected(folder, base, coveredChildren, dirtyOnly))) return;
       db.updateFolderSyncStatus(folder.id, true);
-      db.addRestorePoint({
-        folderId: folder.id,
-        folderPath: folder.local_path,
-        remotePath: folder.remote_path,
-        filesTotal: plan.scannedFiles,
-        bytesTotal: plan.scannedBytes,
-        startedAt,
-        completedAt: new Date().toISOString()
-      });
+      // A dirty-only pass runs every 15 minutes. When it finds no changes it
+      // has not established a new point-in-time state, so do not flood the
+      // checkpoint picker with identical zero-item records. Full verified
+      // scans still establish a checkpoint even when nothing changed.
+      if (!dirtyOnly) {
+        db.addRestorePoint({
+          folderId: folder.id,
+          folderPath: folder.local_path,
+          remotePath: folder.remote_path,
+          filesTotal: plan.scannedFiles,
+          bytesTotal: plan.scannedBytes,
+          startedAt,
+          completedAt: new Date().toISOString()
+        });
+      }
       this.emitFolderProgress(folder, {
         ...base,
         stage: 'complete',

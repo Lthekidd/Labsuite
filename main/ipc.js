@@ -2922,12 +2922,11 @@ function setupIpc(mainWindowArg, getMainWindow) {
 
   // Feature 1: Restore Points Version Browser
   ipcMain.handle('restore:browseSnapshot', async (event, { folderId, restoreTime }) => {
-    const folder = db.getFolders().find(f => f.id === folderId);
-    if (!folder) return [];
     try {
       const plan = restorePlanner.planPointInTimeRestore(folderId, restoreTime);
       return plan.files.map(file => ({
-        path: file.relativePath,
+        path: String(file.relativePath || '').replace(/\\/g, '/').replace(/^\/+/, ''),
+        remotePath: file.remotePath,
         size: file.size,
         storage: file.storage,
         packRemotePath: file.packRemotePath,
@@ -2935,7 +2934,7 @@ function setupIpc(mainWindowArg, getMainWindow) {
       }));
     } catch (e) {
       console.error('restore:browseSnapshot failed:', e);
-      return [];
+      throw new Error(`Could not open this checkpoint: ${e.message}`);
     }
   });
 
