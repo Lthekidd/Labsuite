@@ -791,12 +791,7 @@ class BackupWorker extends EventEmitter {
 
     const counters = { filesDone: 0, bytesDone: 0, startedMs: Date.now() };
     const packSettings = packStore.getPackSettings(db);
-    const isPackableUpload = item => {
-      if (!packStore.shouldPackItem(item, packSettings)) return false;
-      return true;
-    };
-    const packedUploadItems = uploadItems.filter(isPackableUpload);
-    const directUploadItems = uploadItems.filter(item => !isPackableUpload(item));
+    const { packed: packedUploadItems, direct: directUploadItems } = this.partitionUploadItems(uploadItems, packSettings);
     const packedToDirectItems = directUploadItems.filter(item => item.previousStorage === 'pack' && item.previousPackRemotePath);
     const newDirectItems = directUploadItems.filter(item => !item.previousRemotePath);
     const modifiedDirectItems = directUploadItems.filter(item => item.previousRemotePath && !(item.previousStorage === 'pack' && item.previousPackRemotePath));
@@ -919,6 +914,29 @@ class BackupWorker extends EventEmitter {
       updatedAt: completedAt,
       error: ''
     });
+  }
+
+  partitionUploadItems(items, packSettings) {
+    const packed = items.filter(item => packStore.shouldPackItem(item, packSettings));
+    const direct = items.filter(item => !packStore.shouldPackItem(item, packSettings));
+
+    // A bundle containing one file adds a temporary source and metadata upload
+    // without providing any batching benefit. Upload it directly instead.
+    if (packed.length === 1) {
+      direct.push(packed[0]);
+      packed.length = 0;
+    }
+
+    return { packed, direct };
+  }
+
+  async retryPackedItemsDirect(folder, items, counters, reason, completedPackId = '') {
+    console.warn(`BackupWorker: packed upload unavailable; retrying ${items.length} original file(s) directly:`, reason && reason.message ? reason.message : reason);
+    for (const item of items) {
+      const entry = db.getManifestEntry(folder.id, item.relativePath);
+      if (completedPackId && entry && entry.status === 'backed_up' && entry.pack_id === completedPackId) continue;
+      await this.uploadSingleItem(folder, item, counters);
+    }
   }
 
   failItem(folder, item, error, status = 'failed') {
@@ -1076,10 +1094,7 @@ class BackupWorker extends EventEmitter {
           }
           continue;
         }
-        for (const item of group) {
-          manifest.recordFailure(folder, item.relativePath, error);
-          this.failItem(folder, item, error);
-        }
+        await this.retryPackedItemsDirect(folder, survivingItems, counters, error, packId);
         continue;
       }
 
@@ -1176,10 +1191,7 @@ class BackupWorker extends EventEmitter {
           });
         });
       } catch (error) {
-        for (const item of group) {
-          manifest.recordFailure(folder, item.relativePath, error);
-          this.failItem(folder, item, error);
-        }
+        await this.retryPackedItemsDirect(folder, group, counters, error, packId);
       } finally {
         if (packFile) {
           packStore.safeUnlink(packFile.tempPath);

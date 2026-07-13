@@ -138,7 +138,9 @@ function createPackFile(folder, packId, items) {
     files
   };
 
-  safeWriteFileSync(tempPath, JSON.stringify(payload), 'utf8');
+  if (!safeWriteFileSync(tempPath, JSON.stringify(payload), 'utf8')) {
+    throw new Error(`Could not create temporary small-file pack: ${tempPath}`);
+  }
 
   // Generate metadata-only payload
   const metaPayload = {
@@ -156,7 +158,10 @@ function createPackFile(folder, packId, items) {
     }))
   };
   const tempMetaPath = tempPath + '.meta';
-  safeWriteFileSync(tempMetaPath, JSON.stringify(metaPayload), 'utf8');
+  if (!safeWriteFileSync(tempMetaPath, JSON.stringify(metaPayload), 'utf8')) {
+    safeUnlinkSync(tempPath);
+    throw new Error(`Could not create temporary small-file pack metadata: ${tempMetaPath}`);
+  }
 
   return {
     tempPath,

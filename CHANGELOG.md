@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.10 — 2026-07-13
+
+### Fixed
+
+- A lone small backup item is now uploaded directly instead of creating a temporary one-file bundle that rclone could report as missing.
+- If creation or upload of a multi-file bundle fails, LabSuite automatically retries the original files directly instead of leaving them in a permanent retry loop.
+- Temporary small-file pack and metadata write failures are now detected before rclone starts, preserving the real failure reason and enabling the direct-upload fallback.
+
 ## 2.2.9 — 2026-07-13
 
 ### Added
