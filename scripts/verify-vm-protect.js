@@ -397,11 +397,27 @@ async function main() {
       assert.notStrictEqual(await waitForProcess(emptyRun), 0, 'A helper with no selected files must fail visibly.');
       assert.match(emptyRunOutput, /LabSuite VM Protect could not finish setup/i);
       assert.match(emptyRunOutput, /No files were selected/i);
+      assert.match(emptyRunOutput, /LabSuite VM Protect diagnostic/i);
+      assert.match(emptyRunOutput, /Network profiles:/i);
+      assert.ok(fs.existsSync(path.join(emptyProfile, 'LabSuiteVMProtect', 'diagnostic.txt')), 'Startup failures must create a copyable diagnostic report.');
+      const failureDiagnostic = fs.readFileSync(path.join(emptyProfile, 'LabSuiteVMProtect', 'diagnostic.txt'), 'utf8');
+      assert.match(failureDiagnostic, /Failure:[\s\S]*No files were selected/i);
+      assert.match(failureDiagnostic, /Receiver endpoints:[\s\S]*127\.0\.0\.1[\s\S]*REACHABLE/i);
+      assert.ok(!failureDiagnostic.includes(emptyInvitation.secret), 'Diagnostics must never expose the enrollment secret.');
       assert.match(
         fs.readFileSync(path.join(emptyProfile, 'LabSuiteVMProtect', 'last-run.log'), 'utf8'),
         /ERROR: No files were selected/i,
         'Startup failures must be written to the local diagnostic log'
       );
+
+      const diagnosticRun = spawn('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', emptyRuntimeHelper, '-Diagnostics', '-NoPause'
+      ], { env: { ...process.env, LOCALAPPDATA: emptyProfile }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      let diagnosticRunOutput = '';
+      diagnosticRun.stdout.on('data', chunk => { diagnosticRunOutput += chunk.toString(); });
+      diagnosticRun.stderr.on('data', chunk => { diagnosticRunOutput += chunk.toString(); });
+      assert.strictEqual(await waitForProcess(diagnosticRun), 0, `Manual diagnostic mode should succeed.\n${diagnosticRunOutput.trim()}`);
+      assert.match(diagnosticRunOutput, /manual diagnostic run/i);
     }
   } finally {
     await service.stop().catch(() => {});

@@ -1051,6 +1051,8 @@ function createVmProtectService(dependencies = {}) {
       name: cleanLabel(options.name || enrollment.name, 'Windows VM'),
       selectedFiles: normalizeSelectedFiles(options.selectedFiles || options.files || enrollment.selectedFiles),
       alwaysProtect: options.alwaysProtect === true,
+      multiUse: enrollment.multiUse === true,
+      autoApprove: enrollment.autoApprove === true,
       pollSeconds: Math.max(10, Math.min(Number(options.pollSeconds) || 20, 3600))
     };
     const helperText = buildPowerShellHelper(bootstrap);
@@ -1229,7 +1231,8 @@ param(
   [switch]$InstallStartup,
   [switch]$RunWatcher,
   [switch]$NoPicker,
-  [switch]$NoPause
+  [switch]$NoPause,
+  [switch]$Diagnostics
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1237,6 +1240,7 @@ $StateDir = Join-Path $env:LOCALAPPDATA 'LabSuiteVMProtect'
 $StatePath = Join-Path $StateDir 'state.json'
 $InstalledScript = Join-Path $StateDir 'LabSuite-VM-Protect.ps1'
 $RunLogPath = Join-Path $StateDir 'last-run.log'
+$DiagnosticPath = Join-Path $StateDir 'diagnostic.txt'
 $script:PauseBeforeExit = -not $NoPause -and -not $RunWatcher
 
 function Write-RunLog([string]$Message) {
@@ -1252,23 +1256,114 @@ function Wait-BeforeExit([string]$Prompt) {
   try { Read-Host $Prompt | Out-Null } catch {}
 }
 
+function Test-TcpEndpoint([Uri]$Endpoint) {
+  $client = $null
+  try {
+    $port = if ($Endpoint.Port -gt 0) { $Endpoint.Port } else { 443 }
+    $client = New-Object Net.Sockets.TcpClient
+    $pending = $client.BeginConnect($Endpoint.Host, $port, $null, $null)
+    if (-not $pending.AsyncWaitHandle.WaitOne(1500, $false)) { return 'UNREACHABLE (timeout)' }
+    $client.EndConnect($pending)
+    return 'REACHABLE'
+  } catch {
+    return ('UNREACHABLE (' + $_.Exception.Message + ')')
+  } finally {
+    if ($null -ne $client) { $client.Dispose() }
+  }
+}
+
+function New-DiagnosticReport($Failure) {
+  $lines = New-Object Collections.Generic.List[string]
+  $lines.Add('LabSuite VM Protect diagnostic')
+  $lines.Add(('Generated: ' + [DateTime]::Now.ToString('s')))
+  $lines.Add(('Computer: ' + [Environment]::MachineName))
+  $lines.Add(('Windows: ' + [Environment]::OSVersion.VersionString))
+  $lines.Add(('PowerShell: ' + [string]$PSVersionTable.PSVersion))
+  try {
+    $profiles = @(Get-NetConnectionProfile -ErrorAction Stop | ForEach-Object { [string]$_.InterfaceAlias + '=' + [string]$_.NetworkCategory })
+    $lines.Add(('Network profiles: ' + $(if ($profiles.Count) { $profiles -join ', ' } else { 'none reported' })))
+  } catch {
+    $lines.Add(('Network profiles: unavailable (' + $_.Exception.Message + ')'))
+  }
+  $lines.Add(('Saved pairing exists: ' + [string](Test-Path -LiteralPath $StatePath -PathType Leaf)))
+  $lines.Add(('Selected file count: ' + [string]@($requestedFiles).Count))
+  $endpoints = @($Bootstrap.serverUrls)
+  if ($endpoints.Count -eq 0) {
+    $lines.Add('Receiver endpoints: none')
+  } else {
+    $lines.Add('Receiver endpoints:')
+    foreach ($server in $endpoints) {
+      try {
+        $endpoint = [Uri][string]$server
+        $lines.Add(('  ' + $endpoint.Scheme + '://' + $endpoint.Host + ':' + $endpoint.Port + ' -> ' + (Test-TcpEndpoint $endpoint)))
+      } catch {
+        $lines.Add(('  invalid endpoint -> ' + $_.Exception.Message))
+      }
+    }
+  }
+  if ($null -ne $Failure) {
+    $lines.Add('Failure:')
+    $lines.Add(('  Message: ' + $Failure.Exception.Message))
+    $lines.Add(('  Type: ' + $Failure.Exception.GetType().FullName))
+    $lines.Add(('  Category: ' + [string]$Failure.CategoryInfo.Category))
+    $lines.Add(('  Error ID: ' + [string]$Failure.FullyQualifiedErrorId))
+    if (-not [string]::IsNullOrWhiteSpace([string]$Failure.ScriptStackTrace)) {
+      $lines.Add(('  Stack: ' + ([string]$Failure.ScriptStackTrace).Replace([Environment]::NewLine, ' | ')))
+    }
+  } else {
+    $lines.Add('Failure: none (manual diagnostic run)')
+  }
+  return ($lines -join [Environment]::NewLine)
+}
+
+function Save-AndCopyDiagnostics($Failure) {
+  $report = New-DiagnosticReport $Failure
+  try {
+    New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
+    Set-Content -LiteralPath $DiagnosticPath -Value $report -Encoding UTF8
+  } catch {}
+  $copied = $false
+  try {
+    $clip = Join-Path $env:SystemRoot 'System32\clip.exe'
+    if (Test-Path -LiteralPath $clip -PathType Leaf) {
+      $report | & $clip
+      $copied = $LASTEXITCODE -eq 0
+    }
+  } catch {}
+  return [PSCustomObject]@{ Report = $report; Copied = $copied }
+}
+
 trap {
   $detail = $_.Exception.Message
   Write-RunLog ('ERROR: ' + $detail)
+  $diagnostic = Save-AndCopyDiagnostics $_
   Write-Host ''
   Write-Host 'LabSuite VM Protect could not finish setup.' -ForegroundColor Red
-  Write-Host $detail -ForegroundColor Yellow
-  Write-Host ('Diagnostic log: ' + $RunLogPath) -ForegroundColor DarkGray
+  Write-Host $diagnostic.Report -ForegroundColor Yellow
+  if ($diagnostic.Copied) { Write-Host 'The diagnostic report was copied to your clipboard.' -ForegroundColor Green }
+  else { Write-Host 'Clipboard copy was unavailable; select and copy the report shown above.' -ForegroundColor Yellow }
+  Write-Host ('Diagnostic report: ' + $DiagnosticPath) -ForegroundColor DarkGray
+  Write-Host ('Run log: ' + $RunLogPath) -ForegroundColor DarkGray
   Wait-BeforeExit 'Press Enter to close'
   exit 1
 }
 
 Write-Host 'LabSuite VM Protect is starting...' -ForegroundColor Cyan
+Write-Host 'If setup fails, a safe diagnostic report will be copied to your clipboard.' -ForegroundColor DarkGray
 Write-RunLog 'Helper started.'
 $Bootstrap = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__LABSUITE_BOOTSTRAP_BASE64__')) | ConvertFrom-Json
 $EmptySha256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Add-Type -AssemblyName System.Security
+
+if ($Diagnostics) {
+  $diagnostic = Save-AndCopyDiagnostics $null
+  Write-Host $diagnostic.Report -ForegroundColor Cyan
+  if ($diagnostic.Copied) { Write-Host 'The diagnostic report was copied to your clipboard.' -ForegroundColor Green }
+  Write-Host ('Diagnostic report: ' + $DiagnosticPath) -ForegroundColor DarkGray
+  Wait-BeforeExit 'Diagnostics finished. Press Enter to close'
+  exit 0
+}
 
 function Get-CertificateSha256([System.Security.Cryptography.X509Certificates.X509Certificate]$Certificate) {
   $sha = [Security.Cryptography.SHA256]::Create()
@@ -1346,6 +1441,10 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
   $announced = $false
   $lastConnectionNotice = [DateTime]::MinValue
   $deadline = [DateTime]::Parse([string]$Bootstrap.expiresAt).ToUniversalTime()
+  if ([bool]$Bootstrap.autoApprove) {
+    $autoApproveDeadline = [DateTime]::UtcNow.AddSeconds(45)
+    if ($autoApproveDeadline -lt $deadline) { $deadline = $autoApproveDeadline }
+  }
   Write-Host 'Connecting this VM to the LabSuite Secure Receiver...' -ForegroundColor Cyan
   while ([DateTime]::UtcNow -lt $deadline) {
     foreach ($server in @($Bootstrap.serverUrls)) {
@@ -1360,6 +1459,7 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
         }
       } catch {
         $lastError = $_
+        Write-RunLog ('Connection failed for ' + [string]$server + ': ' + $_.Exception.Message)
         continue
       }
       if ($response.pending) {
@@ -1393,6 +1493,9 @@ function Connect-LabSuite([string[]]$SelectedFiles) {
       $lastConnectionNotice = [DateTime]::UtcNow
     }
     Start-Sleep -Seconds 2
+  }
+  if ([bool]$Bootstrap.autoApprove) {
+    throw "The bulk helper could not reach the LabSuite Secure Receiver within 45 seconds. $lastError"
   }
   throw "Pairing was not approved before the invitation expired. $lastError"
 }

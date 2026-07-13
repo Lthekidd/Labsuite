@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.25 — 2026-07-13
+
+### Added
+
+- VM Protect helpers now generate and automatically copy a safe diagnostic report with Windows, PowerShell, network-profile, and receiver reachability details when setup fails.
+- Helpers support a manual `-Diagnostics` mode and save the copyable report to `%LOCALAPPDATA%\LabSuiteVMProtect\diagnostic.txt`.
+
+### Changed
+
+- Auto-approved bulk helpers now surface unreachable-receiver failures after 45 seconds instead of waiting silently for the full invitation lifetime.
+
 ## 2.2.24 — 2026-07-13
 
 ### Fixed
