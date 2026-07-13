@@ -1001,6 +1001,24 @@ module.exports = {
     }
   },
 
+  deactivateMissingSource: (id) => {
+    loadDatabase();
+    const folder = data.folders.find(f => f.id === id);
+    if (!folder) return false;
+    folder.enabled = 0;
+    folder.sync_state = 'idle';
+    folder.sync_phase = 'inactive';
+    folder.sync_percent = 0;
+    folder.sync_current_item = '';
+    folder.sync_speed = 0;
+    folder.sync_eta = null;
+    folder.consecutive_failures = 0;
+    folder.last_error = '';
+    folder.missing_source_at = new Date().toISOString();
+    saveDatabase();
+    return true;
+  },
+
   updateFolderRemoteIntegrityScan: (id, timestamp = new Date().toISOString()) => {
     loadDatabase();
     const folder = data.folders.find(f => f.id === id);
