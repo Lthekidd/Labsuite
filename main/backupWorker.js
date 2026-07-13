@@ -747,6 +747,22 @@ class BackupWorker extends EventEmitter {
       error: ''
     });
 
+    if (plan.sourceUnavailable && executableItems.length === 0 && scanErrors.length === 0) {
+      this.emitFolderProgress(folder, {
+        ...base,
+        stage: 'complete',
+        stageLabel: 'Selected file is missing - backup disabled',
+        percent: 100,
+        filesDone: 0,
+        filesTotal: 0,
+        bytesDone: 0,
+        bytesTotal: 0,
+        completedAt: new Date().toISOString()
+      }, coveredChildren);
+      db.deactivateMissingSource(folder.id);
+      return;
+    }
+
     if (executableItems.length === 0 && scanErrors.length === 0) {
       if (!(await this.verifyFolderBeforeProtected(folder, base, coveredChildren, dirtyOnly))) return;
       db.updateFolderSyncStatus(folder.id, true);
@@ -831,6 +847,25 @@ class BackupWorker extends EventEmitter {
       return;
     }
 
+    if (plan.sourceUnavailable) {
+      this.emitFolderProgress(folder, {
+        ...base,
+        stage: 'complete',
+        stageLabel: 'Cloud copy preserved - missing file backup disabled',
+        percent: 100,
+        filesDone: counters.filesDone,
+        filesTotal: totals.filesTotal,
+        bytesDone: counters.bytesDone,
+        bytesTotal: totals.bytesTotal,
+        speed: 0,
+        etaSec: null,
+        completedAt: new Date().toISOString(),
+        currentItem: ''
+      }, coveredChildren);
+      db.deactivateMissingSource(folder.id);
+      return;
+    }
+
     if (!(await this.verifyFolderBeforeProtected(folder, base, coveredChildren, dirtyOnly))) return;
 
     db.updateFolderSyncStatus(folder.id, true);
@@ -911,7 +946,11 @@ class BackupWorker extends EventEmitter {
   }
 
   async handleDisappearedLocalItem(folder, item, counters) {
-    if (fs.existsSync(item.localPath)) return false;
+    try {
+      if (fs.statSync(item.localPath).isFile()) return false;
+    } catch (error) {
+      if (!error || !['ENOENT', 'ENOTDIR'].includes(error.code)) return false;
+    }
     const entry = db.getManifestEntry(folder.id, item.relativePath) || {};
     const previousRemotePath = item.previousRemotePath || entry.remote_path || null;
     const previousStorage = item.previousStorage || entry.storage || 'file';
@@ -927,11 +966,16 @@ class BackupWorker extends EventEmitter {
         previousRemotePath,
         previousStorage
       }, counters);
+      const result = db.getManifestEntry(folder.id, item.relativePath);
+      if (result && result.status !== 'deleted') return true;
+      if (folder.source_type === 'file') db.deactivateMissingSource(folder.id);
       return true;
     } else {
       db.removeManifestEntry(folder.id, item.relativePath);
       counters.filesDone += 1;
     }
+
+    if (folder.source_type === 'file') db.deactivateMissingSource(folder.id);
 
     const skippedAt = new Date().toISOString();
     this.emitFileActivity(folder, item, {

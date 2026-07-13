@@ -52,6 +52,7 @@ try {
   });
   fs.unlinkSync(protectedFile);
   const deletionPlan = planner.planFolder(firstFolder);
+  assert.strictEqual(deletionPlan.sourceUnavailable, true, 'A deleted standalone source must be marked unavailable.');
   assert.strictEqual(
     deletionPlan.workItems.filter(item => item.type === 'delete_history').length,
     1,
@@ -60,6 +61,20 @@ try {
 
   const effective = backupWorker.getEffectiveFolders([firstFolder, secondFolder]).effective;
   assert.strictEqual(effective.length, 2, 'Two selected files in one parent directory must stay independent backups.');
+
+  fs.unlinkSync(siblingFile);
+  fs.mkdirSync(siblingFile);
+  const replacedByDirectoryPlan = planner.planDirtyFolder(secondFolder);
+  assert.strictEqual(replacedByDirectoryPlan.sourceUnavailable, true, 'A standalone file replaced by a directory must be disabled safely.');
+  assert.strictEqual(replacedByDirectoryPlan.workItems.some(item => item.type === 'upload'), false);
+  assert.strictEqual(replacedByDirectoryPlan.workItems.some(item => item.type === 'scan_error'), false);
+
+  db.deactivateMissingSource(firstFolder.id);
+  const deactivated = db.getFolders().find(folder => folder.id === firstFolder.id);
+  assert.strictEqual(deactivated.enabled, 0, 'A missing standalone source must be disabled after its cloud copy is preserved.');
+  assert.strictEqual(deactivated.consecutive_failures, 0);
+  assert.strictEqual(deactivated.last_error, '');
+  assert.ok(deactivated.missing_source_at);
   assert.ok(first.lastInsertRowid && second.lastInsertRowid);
   console.log('Single-file backup verification passed.');
 } finally {

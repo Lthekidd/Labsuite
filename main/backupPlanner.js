@@ -16,6 +16,7 @@ function makeEmptyPlan(folder) {
     scannedBytes: 0,
     workItems: [],
     skipped: 0,
+    sourceUnavailable: false,
     startedAt: new Date().toISOString()
   };
 }
@@ -93,6 +94,7 @@ function handleMissingFileDuringScan(folder, plan, entries, relativePath, error)
   if (!error || error.code !== 'ENOENT') return false;
   const normalized = manifest.normalizeRelativePath(relativePath);
   const entry = entries[normalized];
+  if (folder.source_type === 'file') plan.sourceUnavailable = true;
   const deleteItem = makeMissingFileDeleteItem(folder, normalized, entry);
   if (deleteItem) {
     plan.workItems.push(deleteItem);
@@ -101,6 +103,30 @@ function handleMissingFileDuringScan(folder, plan, entries, relativePath, error)
   }
   plan.skipped += 1;
   return true;
+}
+
+function handleUnavailableStandaloneSource(folder, plan, entries) {
+  if (folder.source_type !== 'file') return false;
+  const includes = Array.isArray(folder.include_paths) ? folder.include_paths : [];
+  const selectionPath = folder.selection_path || (includes[0] ? path.join(folder.local_path, includes[0]) : '');
+  const relativePath = includes[0] || manifest.getRelativePath(folder, selectionPath);
+
+  try {
+    if (selectionPath && fs.statSync(selectionPath).isFile()) return false;
+  } catch (error) {
+    if (!error || !['ENOENT', 'ENOTDIR'].includes(error.code)) return false;
+  }
+
+  return handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
+}
+
+function finishPlan(plan) {
+  const uploadItems = plan.workItems.filter(item => item.type === 'upload');
+  plan.bytesToUpload = uploadItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
+  plan.filesToUpload = uploadItems.length;
+  plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
+  plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
+  return plan;
 }
 
 function addManifestRepairs(folder, plan, entries) {
@@ -133,7 +159,7 @@ function addDirtyManifestUploads(folder, plan, entries) {
     try {
       const stat = fs.statSync(localPath);
       if (!stat.isFile()) {
-        plan.skipped += 1;
+        handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
         continue;
       }
       plan.scannedFiles += 1;
@@ -184,7 +210,10 @@ function walkFolder(folder, plan, entries) {
       if (filesystem.isPathExcluded(filePath, folder)) continue;
       try {
         const stat = fs.statSync(filePath);
-        if (!stat.isFile()) continue;
+        if (!stat.isFile()) {
+          handleMissingFileDuringScan(folder, plan, entries, normalized, { code: 'ENOENT' });
+          continue;
+        }
         const fileInfo = toFileInfo(folder, filePath, stat);
         addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
       } catch (error) {
@@ -366,7 +395,7 @@ async function addDirtyManifestUploadsAsync(folder, plan, entries) {
     try {
       const stat = fs.statSync(localPath);
       if (!stat.isFile()) {
-        plan.skipped += 1;
+        handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
         continue;
       }
       plan.scannedFiles += 1;
@@ -438,6 +467,8 @@ function planFolder(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
 
+  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
+
   if (!fs.existsSync(folder.local_path)) {
     plan.workItems.push({
       type: 'folder_missing',
@@ -453,17 +484,14 @@ function planFolder(folder) {
   walkFolder(folder, plan, entries);
   addManifestDeletes(folder, plan, entries);
 
-  const uploadItems = plan.workItems.filter(item => item.type === 'upload');
-  plan.bytesToUpload = uploadItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
-  plan.filesToUpload = uploadItems.length;
-  plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
-  plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
-  return plan;
+  return finishPlan(plan);
 }
 
 async function planFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
+
+  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
 
   if (!fs.existsSync(folder.local_path)) {
     plan.workItems.push({
@@ -480,17 +508,14 @@ async function planFolderAsync(folder) {
   await walkFolderAsync(folder, plan, entries);
   await addManifestDeletesAsync(folder, plan, entries);
 
-  const uploadItems = plan.workItems.filter(item => item.type === 'upload');
-  plan.bytesToUpload = uploadItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
-  plan.filesToUpload = uploadItems.length;
-  plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
-  plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
-  return plan;
+  return finishPlan(plan);
 }
 
 function planDirtyFolder(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
+
+  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
 
   if (!fs.existsSync(folder.local_path)) {
     plan.workItems.push({
@@ -507,17 +532,14 @@ function planDirtyFolder(folder) {
   addDirtyManifestUploads(folder, plan, entries);
   addManifestDeletes(folder, plan, entries);
 
-  const uploadItems = plan.workItems.filter(item => item.type === 'upload');
-  plan.bytesToUpload = uploadItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
-  plan.filesToUpload = uploadItems.length;
-  plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
-  plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
-  return plan;
+  return finishPlan(plan);
 }
 
 async function planDirtyFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
+
+  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
 
   if (!fs.existsSync(folder.local_path)) {
     plan.workItems.push({
@@ -534,12 +556,7 @@ async function planDirtyFolderAsync(folder) {
   await addDirtyManifestUploadsAsync(folder, plan, entries);
   await addManifestDeletesAsync(folder, plan, entries);
 
-  const uploadItems = plan.workItems.filter(item => item.type === 'upload');
-  plan.bytesToUpload = uploadItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
-  plan.filesToUpload = uploadItems.length;
-  plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
-  plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
-  return plan;
+  return finishPlan(plan);
 }
 
 module.exports = {
@@ -551,6 +568,7 @@ module.exports = {
   planDirtyFolderAsync,
   __private: {
     makeMissingFileDeleteItem,
-    handleMissingFileDuringScan
+    handleMissingFileDuringScan,
+    handleUnavailableStandaloneSource
   }
 };

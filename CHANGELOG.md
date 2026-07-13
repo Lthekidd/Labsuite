@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.8 — 2026-07-13
+
+### Fixed
+
+- A selected standalone file that has been deleted or replaced by a directory no longer retries forever as `CRITICAL: Source doesn't exist or is a directory`.
+- LabSuite now preserves the existing Google Drive copy in deleted-item history before automatically disabling a missing standalone-file backup.
+- Missing standalone files that were never uploaded are removed from the pending manifest and disabled without creating a false backup failure.
+- Successful cleanup clears the folder's stored failure state, allowing Backup Health and the sidebar issue badge to recover automatically.
+
 ## 2.2.7 — 2026-07-13
 
 ### Fixed
