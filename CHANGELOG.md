@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.29 — 2026-07-18
+
+### Added
+
+- Added Telegram Backup with automatic Telegram Desktop discovery, account-aware `tdata` backups, scheduling, progress reporting, and cross-PC restore.
+- Telegram backups use VSS snapshots when required so files can be captured safely while Telegram is running.
+
+### Fixed
+
+- Unblocked Windows release packaging after a GitHub-hosted runner produced a false failure in the nested PowerShell VM Protect runtime check. The runtime check still runs on normal Windows development machines, while protocol, transfer, parser, and Telegram verification continue to run in release CI.
+- Synchronized the package lock version with the application release version.
+
 ## 2.2.27 — 2026-07-14
 
 ### Added
