@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.2.31 — 2026-07-18
+
+### Added
+
+- Added readable Telegram chat archives that detect signed-in Telegram Desktop accounts and their chat lists without Telegram API credentials.
+- Chats, including Saved Messages, can be selected individually; selected chats stay pinned at the top and are exported sequentially on a manual, hourly, six-hour, daily, or weekly schedule.
+- The first run exports chat history. Later runs use the previous run checkpoint with a one-day safety overlap, deduplicate by Telegram message ID and content, and retain only new or edited records.
+- Added a Telegram-style local archive viewer with sender-aware message bubbles, chat and message search, media counts, per-chat media controls, schedules, progress, and direct access to the archive folder.
+- Exported media is stored by content hash, and immutable message segments plus new media files are copied through the configured encrypted rclone remote.
+
+### Changed
+
+- The original encrypted `tdata` session backup remains available under **Session Backups**, while readable selected-chat archives are now the default Telegram view.
+- Telegram automation restores the previously focused window and mouse position after scans and exports.
+
 ## 2.2.30 — 2026-07-18
 
 ### Fixed

@@ -194,7 +194,14 @@ const INVOKE_CHANNELS = new Set([
   'telegram:getHistory',
   'telegram:listRemoteBackups',
   'telegram:restore',
-  'telegram:getStatus'
+  'telegram:getStatus',
+  'telegramArchive:getChats',
+  'telegramArchive:scan',
+  'telegramArchive:updateChat',
+  'telegramArchive:backupSelected',
+  'telegramArchive:backupChat',
+  'telegramArchive:getMessages',
+  'telegramArchive:openFolder'
 ]);
 
 const LISTEN_CHANNELS = new Set([
@@ -232,7 +239,9 @@ const LISTEN_CHANNELS = new Set([
 
   // Telegram Listen Channels
   'telegram:progress',
-  'telegram:backup-complete'
+  'telegram:backup-complete',
+  'telegramArchive:progress',
+  'telegramArchive:complete'
 ]);
 
 const SEND_CHANNELS = new Set([

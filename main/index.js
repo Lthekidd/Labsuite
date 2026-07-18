@@ -611,6 +611,11 @@ app.on('ready', () => {
       } catch (err) {
         console.error('Failed to start Telegram backup scheduler:', err);
       }
+      try {
+        require('./telegramArchive').startScheduler();
+      } catch (err) {
+        console.error('Failed to start Telegram chat archive scheduler:', err);
+      }
       updateTrayStatus('idle', '', mainWindow);
 
       // Trigger immediate sync on startup if any folder has never synced
@@ -649,6 +654,9 @@ function beginQuitCleanup() {
     scheduler.stopScheduler();
     try {
       require('./telegramBackup').stopTelegramScheduler();
+    } catch (_) {}
+    try {
+      require('./telegramArchive').stopScheduler();
     } catch (_) {}
     try {
       require('./backupWorker').cancelScheduledBackup();

@@ -50,6 +50,7 @@ const backupVerifier = require('./backupVerifier');
 const aliases = require('./aliases');
 const tray = require('./tray');
 const telegramBackup = require('./telegramBackup');
+const telegramArchive = require('./telegramArchive');
 
 let storageAnalyticsRefresh = null;
 let gDriveInfoRefresh = null;
@@ -3714,6 +3715,67 @@ ${configContent}
 
   ipcMain.handle('telegram:getStatus', async (event, id) => {
     return telegramBackup.isBackupRunning(id);
+  });
+
+  ipcMain.handle('telegramArchive:getChats', async () => {
+    return telegramArchive.getChats();
+  });
+
+  ipcMain.handle('telegramArchive:scan', async () => {
+    return await telegramArchive.scanChats();
+  });
+
+  ipcMain.handle('telegramArchive:updateChat', async (event, { id, updates }) => {
+    return telegramArchive.updateChat(id, updates || {});
+  });
+
+  const sendTelegramArchiveProgress = progress => {
+    const win = getWin();
+    if (win && !win.isDestroyed()) win.webContents.send('telegramArchive:progress', progress);
+  };
+
+  ipcMain.handle('telegramArchive:backupSelected', async () => {
+    const win = getWin();
+    telegramArchive.backupSelected(sendTelegramArchiveProgress).then(results => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegramArchive:complete', {
+          success: results.every(result => result.success),
+          results
+        });
+      }
+    }).catch(error => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegramArchive:complete', { success: false, error: error.message });
+      }
+    });
+    return true;
+  });
+
+  ipcMain.handle('telegramArchive:backupChat', async (event, id) => {
+    const win = getWin();
+    telegramArchive.backupChat(id, sendTelegramArchiveProgress).then(result => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegramArchive:complete', { success: true, chatId: id, result });
+      }
+    }).catch(error => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegramArchive:complete', { success: false, chatId: id, error: error.message });
+      }
+    });
+    return true;
+  });
+
+  ipcMain.handle('telegramArchive:getMessages', async (event, { id, query, limit, offset }) => {
+    return telegramArchive.getMessages(id, { query, limit, offset });
+  });
+
+  ipcMain.handle('telegramArchive:openFolder', async (event, id) => {
+    const { shell } = require('electron');
+    const folderPath = id ? telegramArchive.getChatArchiveDir(id) : telegramArchive.getArchiveRoot();
+    fs.mkdirSync(folderPath, { recursive: true });
+    const error = await shell.openPath(folderPath);
+    if (error) throw new Error(error);
+    return true;
   });
 
   app.on('will-quit', () => {

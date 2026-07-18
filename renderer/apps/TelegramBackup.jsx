@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TelegramChatArchive from './TelegramChatArchive';
 
 const ipcRenderer = window.electron.ipcRenderer;
 
@@ -6,7 +7,7 @@ export default function TelegramBackup() {
   const [installs, setInstalls] = useState([]);
   const [discovered, setDiscovered] = useState([]);
   const [remoteBackups, setRemoteBackups] = useState([]);
-  const [activeTab, setActiveTab] = useState('installs');
+  const [activeTab, setActiveTab] = useState('chat-archives');
   const [isScanning, setIsScanning] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -270,10 +271,10 @@ export default function TelegramBackup() {
             <span style={{ color: '#0088cc' }}>✈️</span> Telegram Backup
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13.5px', margin: 0 }}>
-            Safely back up your multi-account Telegram databases and media cache to Google Drive.
+            Build readable, searchable archives for selected chats, with optional encrypted session backups.
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        {activeTab === 'installs' && <div style={{ display: 'flex', gap: '10px' }}>
           <button 
             className="btn btn-secondary" 
             onClick={handleScan}
@@ -289,7 +290,7 @@ export default function TelegramBackup() {
           >
             ➕ Custom Path
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* Global Status Banner */}
@@ -310,6 +311,21 @@ export default function TelegramBackup() {
 
       {/* Tabs Menu */}
       <div className="tab-menu" style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', marginBottom: '24px', gap: '20px' }}>
+        <button
+          onClick={() => setActiveTab('chat-archives')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: activeTab === 'chat-archives' ? '#0088cc' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'chat-archives' ? '2px solid #0088cc' : '2px solid transparent',
+            padding: '10px 4px',
+            fontSize: '14px',
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          Chat Archives
+        </button>
         <button 
           onClick={() => setActiveTab('installs')} 
           style={{
@@ -323,7 +339,7 @@ export default function TelegramBackup() {
             cursor: 'pointer'
           }}
         >
-          Active Backups ({installs.length})
+          Session Backups ({installs.length})
         </button>
         <button 
           onClick={() => setActiveTab('cross-pc')} 
@@ -341,6 +357,10 @@ export default function TelegramBackup() {
           Cross-PC Restores ({remoteBackups.length})
         </button>
       </div>
+
+      {activeTab === 'chat-archives' && (
+        <TelegramChatArchive onStatus={showStatus} />
+      )}
 
       {/* Discovered Banner */}
       {discovered.length > 0 && activeTab === 'installs' && (

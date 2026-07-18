@@ -157,7 +157,9 @@ let data = {
   restore_points: [],
   sync_log: [],
   settings: { ...DEFAULT_SETTINGS },
-  cache: {}
+  cache: {},
+  telegramInstalls: [],
+  telegramArchiveChats: []
 };
 
 function normalizeStoredErrorMessage(errorMessage) {
@@ -346,11 +348,26 @@ function loadDatabase() {
       if (!data.settings) data.settings = {};
       if (!data.cache) data.cache = {};
       if (!data.telegramInstalls) data.telegramInstalls = [];
+      if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
 
       // ── Migrations ──────────────────────────────────────────────────────
       let migrated = databaseSource.path !== dbPath;
       if (migrated) {
         console.warn(`Database loaded from ${databaseSource.label}; saving migrated copy to ${dbPath}`);
+      }
+
+      // A pre-release Telegram archive scanner could mistake the main-menu
+      // "Set Emoji Status" label for an account name. It never represented a
+      // real account and is safe to discard only while it has no archive data.
+      const validTelegramArchiveChats = data.telegramArchiveChats.filter(chat => !(
+        chat &&
+        chat.account_name === 'Set Emoji Status' &&
+        !chat.last_backup_at &&
+        !(Number(chat.message_count) > 0)
+      ));
+      if (validTelegramArchiveChats.length !== data.telegramArchiveChats.length) {
+        data.telegramArchiveChats = validTelegramArchiveChats;
+        migrated = true;
       }
 
       // v1.1: Add encrypted field to existing folders (default: encrypted)
@@ -458,6 +475,8 @@ function loadDatabase() {
         if (!data.sync_log) data.sync_log = [];
         if (!data.settings) data.settings = {};
         if (!data.cache) data.cache = {};
+        if (!data.telegramInstalls) data.telegramInstalls = [];
+        if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
 
         console.warn('Database recovered from backup copy.');
         primaryIsKnownGood = false;
@@ -474,7 +493,9 @@ function loadDatabase() {
           restore_points: [],
           sync_log: [],
           settings: { ...DEFAULT_SETTINGS },
-          cache: {}
+          cache: {},
+          telegramInstalls: [],
+          telegramArchiveChats: []
         };
         saveDatabase();
         isLoaded = true;
@@ -1517,6 +1538,91 @@ module.exports = {
     data.telegramInstalls = data.telegramInstalls.filter(i => i.id !== id);
     saveDatabase();
     return true;
+  },
+
+  getTelegramArchiveChats: () => {
+    loadDatabase();
+    return data.telegramArchiveChats || [];
+  },
+
+  upsertTelegramArchiveChats: (discoveredChats = []) => {
+    loadDatabase();
+    if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
+    const now = new Date().toISOString();
+
+    for (const discovered of discoveredChats) {
+      if (!discovered || !discovered.id) continue;
+      const existing = data.telegramArchiveChats.find(chat => chat.id === discovered.id);
+      if (existing) {
+        existing.account_id = String(discovered.account_id || existing.account_id || 'default');
+        existing.account_name = String(discovered.account_name || existing.account_name || 'Telegram account');
+        existing.name = String(discovered.name || existing.name || 'Unnamed chat');
+        existing.type = String(discovered.type || existing.type || 'Chat');
+        existing.preview = String(discovered.preview || '');
+        existing.preview_time = String(discovered.preview_time || '');
+        existing.unread = String(discovered.unread || '');
+        existing.muted = String(discovered.muted || '');
+        existing.last_seen_at = now;
+      } else {
+        data.telegramArchiveChats.push({
+          id: String(discovered.id),
+          account_id: String(discovered.account_id || 'default'),
+          account_name: String(discovered.account_name || 'Telegram account'),
+          name: String(discovered.name || 'Unnamed chat'),
+          type: String(discovered.type || 'Chat'),
+          preview: String(discovered.preview || ''),
+          preview_time: String(discovered.preview_time || ''),
+          unread: String(discovered.unread || ''),
+          muted: String(discovered.muted || ''),
+          selected: false,
+          enabled: true,
+          include_media: true,
+          schedule: 'weekly',
+          schedule_time: '03:00',
+          message_count: 0,
+          media_count: 0,
+          last_backup_at: null,
+          last_backup_status: null,
+          last_error: null,
+          checkpoint_date: null,
+          telegram_chat_id: null,
+          remote_path: null,
+          discovered_at: now,
+          last_seen_at: now
+        });
+      }
+    }
+
+    saveDatabase();
+    return data.telegramArchiveChats;
+  },
+
+  updateTelegramArchiveChat: (id, updates = {}) => {
+    loadDatabase();
+    if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
+    const chat = data.telegramArchiveChats.find(item => item.id === id);
+    if (!chat) throw new Error(`Telegram archive chat not found: ${id}`);
+
+    const booleanFields = ['selected', 'enabled', 'include_media'];
+    const stringFields = [
+      'schedule', 'schedule_time', 'last_backup_at', 'last_backup_status',
+      'last_error', 'checkpoint_date', 'telegram_chat_id', 'remote_path',
+      'account_id', 'account_name', 'name', 'type', 'preview', 'preview_time'
+    ];
+    const numberFields = ['message_count', 'media_count'];
+
+    for (const field of booleanFields) {
+      if (updates[field] !== undefined) chat[field] = !!updates[field];
+    }
+    for (const field of stringFields) {
+      if (updates[field] !== undefined) chat[field] = updates[field] === null ? null : String(updates[field]);
+    }
+    for (const field of numberFields) {
+      if (updates[field] !== undefined) chat[field] = Math.max(0, Number(updates[field]) || 0);
+    }
+
+    saveDatabase();
+    return chat;
   },
 
   withWriteBatch,
