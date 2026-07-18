@@ -1500,3 +1500,37 @@ input:checked + .slider:before {
   color: var(--text-primary);
 }
 
+/* Telegram Backup UI Styles */
+.badge-progress {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+.badge-disabled {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+.badge-pending {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+}
+.badge-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.spinner-small {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin-small 0.8s linear infinite;
+  margin-right: 4px;
+}
+
+@keyframes spin-small {
+  to { transform: rotate(360deg); }
+}
+
+

@@ -10,6 +10,7 @@ const LabSuiteTodo = lazy(() => import('./apps/LabSuiteTodo'));
 const LabSuiteSettings = lazy(() => import('./apps/LabSuiteSettings'));
 const CryptoPortfolioTracker = lazy(() => import('./apps/CryptoPortfolioTracker'));
 const DiskAnalyzer = lazy(() => import('./apps/DiskAnalyzer'));
+const TelegramBackup = lazy(() => import('./apps/TelegramBackup'));
 
 function LtcIcon({ size = 16 }) {
   return (
@@ -224,6 +225,8 @@ export default function App() {
         return <LanPeerDrive />;
       case 'vm-protect':
         return <VMProtect />;
+      case 'telegram':
+        return <TelegramBackup />;
       case 'sheets':
         return <LabSuiteSheets />;
       case 'notebook':
@@ -273,6 +276,7 @@ export default function App() {
             <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={setActiveTab} />
             <NavItem id="lan" icon="📡" label="Network Drive" activeTab={activeTab} setTab={setActiveTab} />
             <NavItem id="vm-protect" icon={<VmIcon size={16} />} label="VM Protect" activeTab={activeTab} setTab={setActiveTab} />
+            <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />
           </div>
 
           <div style={{ marginBottom: '30px', padding: '0 10px' }}>
@@ -423,6 +427,13 @@ function Dashboard({ setActiveTab }) {
           description="Protect selected files inside VMware guests without backing up their entire virtual disks."
           onClick={() => setActiveTab('vm-protect')}
           color="#2dd4bf"
+        />
+        
+        <DashboardCard 
+          icon="✈️" title="Telegram Backup" 
+          description="Automatically back up your Telegram Desktop data including all messages, images, and videos to encrypted cloud storage."
+          onClick={() => setActiveTab('telegram')}
+          color="#0088cc"
         />
         
         <DashboardCard 

@@ -345,6 +345,7 @@ function loadDatabase() {
       if (!data.sync_log) data.sync_log = [];
       if (!data.settings) data.settings = {};
       if (!data.cache) data.cache = {};
+      if (!data.telegramInstalls) data.telegramInstalls = [];
 
       // ── Migrations ──────────────────────────────────────────────────────
       let migrated = databaseSource.path !== dbPath;
@@ -1444,6 +1445,76 @@ module.exports = {
     loadDatabase();
     if (!data.cache || !Object.prototype.hasOwnProperty.call(data.cache, key)) return false;
     delete data.cache[key];
+    saveDatabase();
+    return true;
+  },
+
+  // Telegram operations
+  getTelegramInstalls: () => {
+    loadDatabase();
+    return data.telegramInstalls || [];
+  },
+
+  addTelegramInstall: (label, tdata_path, account_count, remote_path, metadata = {}) => {
+    loadDatabase();
+    if (!data.telegramInstalls) data.telegramInstalls = [];
+    
+    // Check for duplicates
+    if (data.telegramInstalls.some(i => i.tdata_path.toLowerCase() === tdata_path.toLowerCase())) {
+      throw new Error(`Telegram installation already registered for path: ${tdata_path}`);
+    }
+
+    const newInstall = {
+      id: Date.now(),
+      label: String(label || 'Telegram Desktop').trim(),
+      tdata_path: String(tdata_path).trim(),
+      account_count: Number(account_count) || 1,
+      remote_path: String(remote_path).trim(),
+      enabled: metadata.enabled !== false,
+      schedule: metadata.schedule || 'daily',
+      schedule_time: metadata.schedule_time || '03:00',
+      last_backup_at: null,
+      last_backup_size_bytes: 0,
+      last_backup_duration_sec: 0,
+      last_backup_status: null,
+      last_error: null,
+      consecutive_failures: 0,
+      backup_history: []
+    };
+
+    data.telegramInstalls.push(newInstall);
+    saveDatabase();
+    return newInstall;
+  },
+
+  updateTelegramInstall: (id, updates = {}) => {
+    loadDatabase();
+    if (!data.telegramInstalls) data.telegramInstalls = [];
+    const install = data.telegramInstalls.find(i => i.id === id);
+    if (!install) {
+      throw new Error(`Telegram installation not found: ${id}`);
+    }
+
+    if (updates.label !== undefined) install.label = String(updates.label).trim();
+    if (updates.enabled !== undefined) install.enabled = !!updates.enabled;
+    if (updates.schedule !== undefined) install.schedule = String(updates.schedule);
+    if (updates.schedule_time !== undefined) install.schedule_time = String(updates.schedule_time);
+    if (updates.last_backup_at !== undefined) install.last_backup_at = updates.last_backup_at;
+    if (updates.last_backup_size_bytes !== undefined) install.last_backup_size_bytes = Number(updates.last_backup_size_bytes);
+    if (updates.last_backup_duration_sec !== undefined) install.last_backup_duration_sec = Number(updates.last_backup_duration_sec);
+    if (updates.last_backup_status !== undefined) install.last_backup_status = updates.last_backup_status;
+    if (updates.last_error !== undefined) install.last_error = updates.last_error;
+    if (updates.consecutive_failures !== undefined) install.consecutive_failures = Number(updates.consecutive_failures);
+    if (updates.backup_history !== undefined) install.backup_history = updates.backup_history;
+
+    saveDatabase();
+    return install;
+  },
+
+  removeTelegramInstall: (id) => {
+    loadDatabase();
+    if (!data.telegramInstalls) data.telegramInstalls = [];
+    data.telegramInstalls = data.telegramInstalls.filter(i => i.id !== id);
     saveDatabase();
     return true;
   },

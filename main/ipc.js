@@ -49,6 +49,7 @@ const vaultDestinations = require('./vaultDestinations');
 const backupVerifier = require('./backupVerifier');
 const aliases = require('./aliases');
 const tray = require('./tray');
+const telegramBackup = require('./telegramBackup');
 
 let storageAnalyticsRefresh = null;
 let gDriveInfoRefresh = null;
@@ -3638,6 +3639,81 @@ ${configContent}
       try { fs.unlinkSync(tempPath); } catch (_) {}
       return { success: false, error: error.message };
     }
+  });
+
+  // Telegram Backup IPC Handlers
+  ipcMain.handle('telegram:discover', async () => {
+    return await telegramBackup.discoverTelegramInstalls();
+  });
+
+  ipcMain.handle('telegram:getInstalls', async () => {
+    return db.getTelegramInstalls();
+  });
+
+  ipcMain.handle('telegram:addInstall', async (event, { label, path: tdataPath, remotePath }) => {
+    const accountCount = telegramBackup.detectAccounts(tdataPath);
+    const os = require('os');
+    const computerName = os.hostname();
+    const finalRemotePath = remotePath || `TelegramBackup/${computerName}/${Date.now()}`;
+    return db.addTelegramInstall(label, tdataPath, accountCount, finalRemotePath);
+  });
+
+  ipcMain.handle('telegram:removeInstall', async (event, id) => {
+    return db.removeTelegramInstall(id);
+  });
+
+  ipcMain.handle('telegram:updateInstall', async (event, { id, updates }) => {
+    return db.updateTelegramInstall(id, updates);
+  });
+
+  ipcMain.handle('telegram:backupNow', async (event, id) => {
+    const win = getWin();
+    telegramBackup.runTelegramBackup(id, (progress) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:progress', { id, progress });
+      }
+    }).then(() => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:backup-complete', { id, success: true });
+      }
+    }).catch(err => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:backup-complete', { id, success: false, error: err.message });
+      }
+    });
+    return true;
+  });
+
+  ipcMain.handle('telegram:getHistory', async (event, id) => {
+    const installs = db.getTelegramInstalls();
+    const install = installs.find(i => i.id === id);
+    return install ? install.backup_history || [] : [];
+  });
+
+  ipcMain.handle('telegram:listRemoteBackups', async () => {
+    return await telegramBackup.listRemoteTelegramBackups();
+  });
+
+  ipcMain.handle('telegram:restore', async (event, { device, remotePath, localDestination }) => {
+    const win = getWin();
+    telegramBackup.restoreTelegramBackup(device, remotePath, localDestination, (progress) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:progress', { remotePath, progress });
+      }
+    }).then(() => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:backup-complete', { remotePath, success: true });
+      }
+    }).catch(err => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('telegram:backup-complete', { remotePath, success: false, error: err.message });
+      }
+    });
+    return true;
+  });
+
+  ipcMain.handle('telegram:getStatus', async (event, id) => {
+    return telegramBackup.isBackupRunning(id);
   });
 
   app.on('will-quit', () => {

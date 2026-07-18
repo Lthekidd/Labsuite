@@ -182,7 +182,19 @@ const INVOKE_CHANNELS = new Set([
   // Disk Analyzer API
   'disk-analyzer:getDrives',
   'disk-analyzer:startScan',
-  'disk-analyzer:cancelScan'
+  'disk-analyzer:cancelScan',
+
+  // Telegram API
+  'telegram:discover',
+  'telegram:getInstalls',
+  'telegram:addInstall',
+  'telegram:removeInstall',
+  'telegram:updateInstall',
+  'telegram:backupNow',
+  'telegram:getHistory',
+  'telegram:listRemoteBackups',
+  'telegram:restore',
+  'telegram:getStatus'
 ]);
 
 const LISTEN_CHANNELS = new Set([
@@ -216,7 +228,11 @@ const LISTEN_CHANNELS = new Set([
   'vmProtect:state',
   'updates:status',
   'notepad:open-file',
-  'disk-analyzer:progress'
+  'disk-analyzer:progress',
+
+  // Telegram Listen Channels
+  'telegram:progress',
+  'telegram:backup-complete'
 ]);
 
 const SEND_CHANNELS = new Set([
