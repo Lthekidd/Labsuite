@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.30 — 2026-07-18
+
+### Fixed
+
+- Telegram Backup staging now uses the current PC's local Windows temp directory instead of deriving a drive from the first configured backup folder. This prevents `ENOENT` failures when a folder references a drive that is unavailable on another PC.
+
 ## 2.2.29 — 2026-07-18
 
 ### Added

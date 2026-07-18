@@ -8,6 +8,10 @@ const os = require('os');
 // Keep track of active backup runs
 const activeBackups = new Map();
 
+function getTelegramTempDestination(installId, systemTempDir = os.tmpdir()) {
+  return path.join(systemTempDir, 'LabSuite_Temp', `telegram_${installId}`);
+}
+
 /**
  * Detect accounts inside a given tdata folder.
  */
@@ -185,8 +189,9 @@ async function runTelegramBackup(installId, onProgress) {
     onProgress({ stage: 'preparing', percent: 0, message: 'Creating snapshot...' });
   }
 
-  const userDataDir = path.dirname(db.getDb()?.folders ? db.getFolders()[0]?.local_path || os.tmpdir() : os.tmpdir());
-  const tempDest = path.join(userDataDir, 'LabSuite_Temp', `telegram_${installId}`);
+  // Staging must be local to the PC running this backup. Database folder paths can
+  // refer to removable or other-PC drives (for example E:) that are unavailable here.
+  const tempDest = getTelegramTempDestination(installId);
   const startTime = Date.now();
 
   try {
@@ -527,5 +532,6 @@ module.exports = {
   startTelegramScheduler,
   stopTelegramScheduler,
   detectAccounts,
-  isBackupRunning
+  isBackupRunning,
+  getTelegramTempDestination
 };

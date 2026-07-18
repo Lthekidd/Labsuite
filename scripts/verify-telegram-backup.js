@@ -35,6 +35,19 @@ assert.strictEqual(install.account_count, 1);
 assert.strictEqual(install.enabled, true);
 assert.strictEqual(install.schedule, 'daily');
 
+const expectedTempDestination = path.join(os.tmpdir(), 'LabSuite_Temp', `telegram_${install.id}`);
+assert.strictEqual(
+  telegramBackup.getTelegramTempDestination(install.id),
+  expectedTempDestination,
+  'Telegram staging must use this PC\'s local temp directory, not a configured backup source drive'
+);
+
+const missingTempRoot = path.join(os.tmpdir(), `labsuite_missing_temp_root_${Date.now()}`);
+const nestedTempDestination = telegramBackup.getTelegramTempDestination(install.id, missingTempRoot);
+fs.mkdirSync(nestedTempDestination, { recursive: true });
+assert.ok(fs.existsSync(nestedTempDestination), 'Telegram staging must support a missing temp parent directory');
+fs.rmSync(missingTempRoot, { recursive: true, force: true });
+
 const updated = db.updateTelegramInstall(install.id, {
   label: 'Updated Label',
   enabled: false,
