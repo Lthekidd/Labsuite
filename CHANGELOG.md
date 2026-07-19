@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.2.36 — 2026-07-19
+
+### Added
+
+- Transitioned LabSuite to a modular **App Hub** architecture. Optional tools (Sheets, Network Drive, VM Protect, and Todo) are now installable on-demand from the App Hub.
+- Added multi-window support, allowing standalone apps (Sheets, Network Drive, VM Protect, and Todo) to open in their own separate, frameless windows with custom title bars.
+- Notebook is now a dual-mode app: it opens embedded in the LabSuite main UI but launches as a standalone window when opening `.txt` files from Windows Explorer.
+- Added database migration logic that preserves installed apps for existing users based on their previous sidebar visibility.
+
+### Removed
+
+- Removed the obsolete Disk Space Analyzer utility.
+
 ## 2.2.35 — 2026-07-19
 
 ### Fixed

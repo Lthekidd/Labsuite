@@ -1,6 +1,7 @@
-import React, { lazy, Suspense, useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import LabSuiteBackup from './apps/LabSuiteBackup';
 import ErrorBoundary from './ErrorBoundary';
+import AppHub, { HUB_APPS, renderSmallIcon } from './apps/AppHub';
 
 const LanPeerDrive = lazy(() => import('./apps/LanPeerDrive'));
 const VMProtect = lazy(() => import('./apps/VMProtect'));
@@ -9,7 +10,6 @@ const LabSuiteNotebook = lazy(() => import('./apps/LabSuiteNotebook'));
 const LabSuiteTodo = lazy(() => import('./apps/LabSuiteTodo'));
 const LabSuiteSettings = lazy(() => import('./apps/LabSuiteSettings'));
 const CryptoPortfolioTracker = lazy(() => import('./apps/CryptoPortfolioTracker'));
-const DiskAnalyzer = lazy(() => import('./apps/DiskAnalyzer'));
 const TelegramBackup = lazy(() => import('./apps/TelegramBackup'));
 
 function LtcIcon({ size = 16 }) {
@@ -72,14 +72,16 @@ const SHUTDOWN_PRESETS = [
   { label: '8 hrs', seconds: 8 * 60 * 60 }
 ];
 
-const SIDEBAR_FEATURE_IDS = new Set([
-  'lan', 'vm-protect', 'telegram', 'sheets', 'notebook', 'todo', 'crypto', 'disk-analyzer'
-]);
+// Core apps that are always available (cannot be uninstalled)
+const CORE_APP_IDS = new Set(['backup', 'telegram', 'crypto', 'settings']);
 
-function parseSidebarHiddenFeatures(value) {
+// Apps that open in standalone windows (not embedded in sidebar content area)
+const STANDALONE_APP_IDS = new Set(['sheets', 'lan', 'vm-protect', 'todo']);
+
+function parseInstalledApps(value) {
   try {
     const items = JSON.parse(String(value || '[]'));
-    return Array.isArray(items) ? items.filter(id => SIDEBAR_FEATURE_IDS.has(id)) : [];
+    return Array.isArray(items) ? items : [];
   } catch (_) {
     return [];
   }
@@ -107,7 +109,7 @@ export default function App() {
   const [globalStatus, setGlobalStatus] = useState('Protected');
   const [globalStatusDetail, setGlobalStatusDetail] = useState('All enabled backups on this PC are healthy.');
   const [globalFailureCount, setGlobalFailureCount] = useState(0);
-  const [hiddenSidebarFeatures, setHiddenSidebarFeatures] = useState([]);
+  const [installedApps, setInstalledApps] = useState([]);
 
   const refreshGlobalStatus = () => {
     Promise.all([
@@ -170,7 +172,7 @@ export default function App() {
 
   useEffect(() => {
     safeInvoke('settings:get').then(s => {
-      if (s) setHiddenSidebarFeatures(parseSidebarHiddenFeatures(s.sidebar_hidden_features));
+      if (s) setInstalledApps(parseInstalledApps(s.installed_apps));
       if (s && s.setup_complete !== '1') {
         setActiveTab('backup');
       }
@@ -229,39 +231,67 @@ export default function App() {
   const handleMinimize = () => ipcRenderer.send('window:minimize');
   const handleMaximize = () => ipcRenderer.send('window:maximize');
   const handleClose = () => ipcRenderer.send('window:close');
-  const handleSidebarFeaturesChange = (nextHiddenFeatures) => {
-    const next = Array.from(new Set(nextHiddenFeatures || [])).filter(id => SIDEBAR_FEATURE_IDS.has(id));
-    setHiddenSidebarFeatures(next);
-    if (next.includes(activeTab)) setActiveTab('dashboard');
-  };
-  const isSidebarFeatureVisible = id => !hiddenSidebarFeatures.includes(id);
+
+  const isAppInstalled = useCallback((id) => installedApps.includes(id), [installedApps]);
+
+  const updateInstalledApps = useCallback(async (nextInstalled) => {
+    setInstalledApps(nextInstalled);
+    try {
+      await safeInvoke('settings:set', { key: 'installed_apps', value: JSON.stringify(nextInstalled) });
+    } catch (err) {
+      console.error('Failed to save installed apps:', err);
+    }
+  }, []);
+
+  const handleInstallApp = useCallback((appId) => {
+    if (!installedApps.includes(appId)) {
+      updateInstalledApps([...installedApps, appId]);
+    }
+  }, [installedApps, updateInstalledApps]);
+
+  const handleUninstallApp = useCallback((appId) => {
+    if (CORE_APP_IDS.has(appId)) return;
+    const next = installedApps.filter(id => id !== appId);
+    updateInstalledApps(next);
+    if (activeTab === appId) setActiveTab('hub');
+  }, [installedApps, activeTab, updateInstalledApps]);
+
+  const handleLaunchStandalone = useCallback((appId) => {
+    safeInvoke('app:launchStandalone', { appId });
+  }, []);
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard setActiveTab={setActiveTab} />;
+      case 'hub':
+        return (
+          <AppHub
+            installedApps={installedApps}
+            onInstall={handleInstallApp}
+            onUninstall={handleUninstallApp}
+            onOpenApp={(id) => STANDALONE_APP_IDS.has(id) ? handleLaunchStandalone(id) : setActiveTab(id)}
+            onLaunchStandalone={handleLaunchStandalone}
+          />
+        );
       case 'backup':
         return <LabSuiteBackup />;
-      case 'lan':
-        return <LanPeerDrive />;
-      case 'vm-protect':
-        return <VMProtect />;
       case 'telegram':
         return <TelegramBackup />;
-      case 'sheets':
-        return <LabSuiteSheets />;
-      case 'notebook':
-        return <LabSuiteNotebook externalFilePath={externalFilePath} />;
-      case 'todo':
-        return <LabSuiteTodo />;
       case 'crypto':
         return <CryptoPortfolioTracker />;
-      case 'disk-analyzer':
-        return <DiskAnalyzer />;
+      case 'notebook':
+        return isAppInstalled('notebook') ? <LabSuiteNotebook externalFilePath={externalFilePath} /> : null;
       case 'settings':
-        return <LabSuiteSettings onSidebarFeaturesChange={handleSidebarFeaturesChange} />;
+        return <LabSuiteSettings />;
       default:
-        return <Dashboard setActiveTab={setActiveTab} />;
+        return (
+          <AppHub
+            installedApps={installedApps}
+            onInstall={handleInstallApp}
+            onUninstall={handleUninstallApp}
+            onOpenApp={(id) => STANDALONE_APP_IDS.has(id) ? handleLaunchStandalone(id) : setActiveTab(id)}
+            onLaunchStandalone={handleLaunchStandalone}
+          />
+        );
     }
   };
 
@@ -294,21 +324,32 @@ export default function App() {
           <div className="suite-sidebar-menu">
             <div style={{ marginBottom: '30px', padding: '0 10px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
-              <NavItem id="dashboard" icon="🏠" label="Home Dashboard" activeTab={activeTab} setTab={setActiveTab} />
+              <NavItem id="hub" icon="🏠" label="App Hub" activeTab={activeTab} setTab={setActiveTab} />
               <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={setActiveTab} />
-              {isSidebarFeatureVisible('lan') && <NavItem id="lan" icon="📡" label="Network Drive" activeTab={activeTab} setTab={setActiveTab} />}
-              {isSidebarFeatureVisible('vm-protect') && <NavItem id="vm-protect" icon={<VmIcon size={16} />} label="VM Protect" activeTab={activeTab} setTab={setActiveTab} />}
-              {isSidebarFeatureVisible('telegram') && <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />}
+              <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />
+              <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />
             </div>
 
-            {(isSidebarFeatureVisible('sheets') || isSidebarFeatureVisible('notebook') || isSidebarFeatureVisible('todo') || isSidebarFeatureVisible('crypto') || isSidebarFeatureVisible('disk-analyzer')) && (
+            {/* Installed hub apps — show in sidebar */}
+            {installedApps.length > 0 && (
               <div style={{ marginBottom: '16px', padding: '0 10px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Productivity</div>
-                {isSidebarFeatureVisible('sheets') && <NavItem id="sheets" icon="📊" label="Encrypted Tables" activeTab={activeTab} setTab={setActiveTab} />}
-                {isSidebarFeatureVisible('notebook') && <NavItem id="notebook" icon="📓" label="Secure Notebook" activeTab={activeTab} setTab={setActiveTab} />}
-                {isSidebarFeatureVisible('todo') && <NavItem id="todo" icon="📋" label="Task Board" activeTab={activeTab} setTab={setActiveTab} />}
-                {isSidebarFeatureVisible('crypto') && <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />}
-                {isSidebarFeatureVisible('disk-analyzer') && <NavItem id="disk-analyzer" icon="💾" label="Space Analyzer" activeTab={activeTab} setTab={setActiveTab} />}
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Installed</div>
+                {installedApps.map(appId => {
+                  const hubApp = HUB_APPS.find(a => a.id === appId);
+                  if (!hubApp) return null;
+                  const isStandalone = STANDALONE_APP_IDS.has(appId);
+                  return (
+                    <NavItem
+                      key={appId}
+                      id={appId}
+                      icon={renderSmallIcon(hubApp.icon, 16)}
+                      label={hubApp.label}
+                      activeTab={activeTab}
+                      setTab={isStandalone ? () => handleLaunchStandalone(appId) : setActiveTab}
+                      suffix={isStandalone ? '↗' : null}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
@@ -383,7 +424,7 @@ function AppLoadingState() {
   );
 }
 
-function NavItem({ id, icon, label, activeTab, setTab }) {
+function NavItem({ id, icon, label, activeTab, setTab, suffix }) {
   const active = activeTab === id;
   return (
     <button
@@ -412,85 +453,13 @@ function NavItem({ id, icon, label, activeTab, setTab }) {
       }}
     >
       <span style={{ marginRight: '12px', fontSize: '16px' }}>{icon}</span>
-      {label}
+      <span style={{ flex: 1 }}>{label}</span>
+      {suffix && <span style={{ fontSize: '12px', opacity: 0.5, marginLeft: '4px' }}>{suffix}</span>}
     </button>
   );
 }
 
-function Dashboard({ setActiveTab }) {
-  return (
-    <div style={{ padding: '40px', height: '100%', overflowY: 'auto' }}>
-      <div style={{ marginBottom: '40px' }}>
-        <h1 style={{ fontSize: '32px', marginBottom: '8px', background: 'linear-gradient(90deg, #B0E4CC, #408A71)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          Welcome to LabSuite
-        </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '16px' }}>Your unified encrypted workspace and backup solution.</p>
-      </div>
-
-      <ShutdownTimerPanel />
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-        
-        <DashboardCard 
-          icon="🛡️" title="Backup Engine" 
-          description="Manage your encrypted cloud backups, configure local folders, and monitor real-time sync activity."
-          onClick={() => setActiveTab('backup')}
-          color="#3b82f6"
-        />
-        
-        <DashboardCard 
-          icon="📡" title="Network Drive" 
-          description="Discover computers on your local network and securely mount shared folders as native Windows drives."
-          onClick={() => setActiveTab('lan')}
-          color="#10b981"
-        />
-
-        <DashboardCard
-          icon={<VmIcon size={32} />} title="VM Protect"
-          description="Protect selected files inside VMware guests without backing up their entire virtual disks."
-          onClick={() => setActiveTab('vm-protect')}
-          color="#2dd4bf"
-        />
-        
-        <DashboardCard 
-          icon="✈️" title="Telegram Backup" 
-          description="Automatically back up your Telegram Desktop data including all messages, images, and videos to encrypted cloud storage."
-          onClick={() => setActiveTab('telegram')}
-          color="#0088cc"
-        />
-        
-        <DashboardCard 
-          icon="📊" title="Encrypted Tables" 
-          description="Keep structured rows and columns in your encrypted cloud workspace."
-          onClick={() => setActiveTab('sheets')}
-          color="#8b5cf6"
-        />
-
-        <DashboardCard 
-          icon="📓" title="Secure Notebook" 
-          description="Maintain a private, distraction-free markdown knowledge base synced instantly across your devices."
-          onClick={() => setActiveTab('notebook')}
-          color="#f59e0b"
-        />
-
-        <DashboardCard 
-          icon="📋" title="Task Board" 
-          description="Organize your life with an encrypted Kanban board using native drag-and-drop mechanics."
-          onClick={() => setActiveTab('todo')}
-          color="#ec4899"
-        />
-
-        <DashboardCard 
-          icon={<LtcIcon size={32} />} title="Crypto Portfolio" 
-          description="Track your holdings and transactions with live market rates and custom SVG charts."
-          onClick={() => setActiveTab('crypto')}
-          color="#408A71"
-        />
-        
-      </div>
-    </div>
-  );
-}
+// Dashboard component removed — replaced by AppHub
 
 function ShutdownTimerPanel() {
   const [selectedPreset, setSelectedPreset] = useState(SHUTDOWN_PRESETS[2]);
@@ -627,37 +596,4 @@ function ShutdownTimerPanel() {
   );
 }
 
-function DashboardCard({ icon, title, description, onClick, color }) {
-  return (
-    <div 
-      onClick={onClick}
-      style={{
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.05)',
-        borderRadius: '12px',
-        padding: '24px',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        display: 'flex',
-        flexDirection: 'column',
-        backdropFilter: 'blur(10px)',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-        e.currentTarget.style.borderColor = color;
-        e.currentTarget.style.boxShadow = `0 8px 24px ${color}20`;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.background = 'rgba(255,255,255,0.02)';
-        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)';
-        e.currentTarget.style.boxShadow = 'none';
-      }}
-    >
-      <div style={{ fontSize: '32px', marginBottom: '16px' }}>{icon}</div>
-      <h3 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)', fontSize: '18px' }}>{title}</h3>
-      <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.5' }}>{description}</p>
-    </div>
-  );
-}
+// DashboardCard component removed — replaced by AppHub cards

@@ -88,6 +88,7 @@ let quitDatabaseFlushComplete = false;
 let quitDatabaseFlushPromise = null;
 const recentRendererMessages = new Map();
 let autoUpdater = null;
+const childWindows = new Map(); // appId -> BrowserWindow
 let updaterInitialized = false;
 let updateCheckPromise = null;
 let updateStatus = {
@@ -152,16 +153,25 @@ if (!gotTheLock) {
   app.exit(0);
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    // Check for text file arguments (launched via File Association)
+    const filePath = commandLine.find(arg => arg.endsWith('.txt') && fs.existsSync(arg));
+    if (filePath) {
+      // Auto-install notebook if needed, then open in standalone window
+      try {
+        const database = require('./database');
+        let installed = [];
+        try { installed = JSON.parse(database.getSetting('installed_apps') || '[]'); } catch (_) {}
+        if (!Array.isArray(installed)) installed = [];
+        if (!installed.includes('notebook')) {
+          installed.push('notebook');
+          database.setSetting('installed_apps', JSON.stringify(installed));
+        }
+      } catch (_) {}
+      createAppWindow('notebook', { filePath });
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
-
-      // Check for text file arguments (launched via File Association)
-      const filePath = commandLine.find(arg => arg.endsWith('.txt') && fs.existsSync(arg));
-      if (filePath) {
-        mainWindow.webContents.send('notepad:open-file', filePath);
-      }
     }
   });
 }
@@ -376,6 +386,65 @@ function resolveAppIconPath() {
   return candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
 }
 
+function createAppWindow(appId, extraParams = {}) {
+  // If a window for this app already exists, focus it
+  const existing = childWindows.get(appId);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+
+  const appIconPath = resolveAppIconPath();
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 700,
+    minWidth: 800,
+    minHeight: 500,
+    icon: appIconPath,
+    backgroundColor: '#1b2326',
+    autoHideMenuBar: true,
+    frame: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      preload: path.join(__dirname, 'preload.js'),
+    }
+  });
+
+  win.removeMenu();
+  win.setMenuBarVisibility(false);
+
+  // Build URL with app query parameter
+  const queryStr = `?app=${encodeURIComponent(appId)}${extraParams.filePath ? '&file=' + encodeURIComponent(extraParams.filePath) : ''}`;
+  if (isDev) {
+    const port = process.env.VITE_PORT || 5173;
+    win.loadURL(`http://127.0.0.1:${port}${queryStr}`).catch((err) => {
+      win.loadURL(`http://127.0.0.1:5174${queryStr}`).catch(() => {});
+    });
+  } else {
+    // For file:// protocol, use hash instead of query to avoid issues
+    win.loadFile(path.join(__dirname, '../dist/index.html'), { search: queryStr }).catch((err) => {
+      console.error(`LabSuite: Failed to load standalone app ${appId}:`, err.message);
+    });
+  }
+
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    captureRendererConsole(level, message, line, sourceId);
+  });
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+  win.on('closed', () => {
+    childWindows.delete(appId);
+  });
+
+  childWindows.set(appId, win);
+  return win;
+}
+
 function createWindow() {
   mainWindowShown = false;
   const startHidden = process.argv.includes('--hidden');
@@ -472,12 +541,19 @@ function createWindow() {
     const filePath = process.argv.find(arg => arg.endsWith('.txt') && fs.existsSync(arg));
     if (filePath) {
       setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-          mainWindow.focus();
-          mainWindow.webContents.send('notepad:open-file', filePath);
-        }
-      }, 800); // Give React time to mount and listen
+        // Auto-install notebook if needed, then open in standalone window
+        try {
+          const database = require('./database');
+          let installed = [];
+          try { installed = JSON.parse(database.getSetting('installed_apps') || '[]'); } catch (_) {}
+          if (!Array.isArray(installed)) installed = [];
+          if (!installed.includes('notebook')) {
+            installed.push('notebook');
+            database.setSetting('installed_apps', JSON.stringify(installed));
+          }
+        } catch (_) {}
+        createAppWindow('notebook', { filePath });
+      }, 800);
     }
   });
 
@@ -501,7 +577,7 @@ function createWindow() {
   });
 
   // ── IPC layer needs mainWindow reference ──────────────────────────────────
-  setupIpc(mainWindow, () => mainWindow); // pass getter so IPC always has fresh ref
+  setupIpc(mainWindow, () => mainWindow, createAppWindow); // pass getter so IPC always has fresh ref
   initTray(mainWindow, () => mainWindow);
 
   // ── Expose log file path to renderer ─────────────────────────────────────
@@ -521,13 +597,20 @@ function createWindow() {
   });
 
   // ── Window Controls ──────────────────────────────────────────────────────────
-  ipcMain.on('window:minimize', () => { if (mainWindow) mainWindow.minimize(); });
-  ipcMain.on('window:maximize', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    else mainWindow.maximize();
+  ipcMain.on('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.minimize();
   });
-  ipcMain.on('window:close', () => { if (mainWindow) mainWindow.close(); });
+  ipcMain.on('window:maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.close();
+  });
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -636,9 +719,7 @@ app.on('ready', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Don't quit — main window hides to tray, not actually closed
 });
 
 app.on('activate', () => {
@@ -650,6 +731,11 @@ app.on('activate', () => {
 function beginQuitCleanup() {
   if (!quitCleanupStarted) {
     quitCleanupStarted = true;
+    // Close all standalone app windows
+    for (const [appId, win] of childWindows) {
+      if (win && !win.isDestroyed()) win.destroy();
+    }
+    childWindows.clear();
     watcher.stopWatcher();
     scheduler.stopScheduler();
     try {

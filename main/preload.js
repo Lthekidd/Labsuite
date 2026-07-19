@@ -179,10 +179,8 @@ const INVOKE_CHANNELS = new Set([
   'notepad:restoreVersion',
   'notepad:readFile',
 
-  // Disk Analyzer API
-  'disk-analyzer:getDrives',
-  'disk-analyzer:startScan',
-  'disk-analyzer:cancelScan',
+  // App Hub API
+  'app:launchStandalone',
 
   // Telegram API
   'telegram:discover',
@@ -236,7 +234,6 @@ const LISTEN_CHANNELS = new Set([
   'vmProtect:state',
   'updates:status',
   'notepad:open-file',
-  'disk-analyzer:progress',
 
   // Telegram Listen Channels
   'telegram:progress',

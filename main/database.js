@@ -147,7 +147,8 @@ const DEFAULT_SETTINGS = {
   active_raw_remote: 'gdrive',
   active_crypt_remote: 'gdrive-crypt',
   vault_destinations: '[]',
-  vault_transfer_jobs: '[]'
+  vault_transfer_jobs: '[]',
+  installed_apps: '[]'
 };
 
 // Default database structure matching SQLite schema
@@ -416,6 +417,20 @@ function loadDatabase() {
 
       if (!data.settings.last_full_reconcile && data.settings.last_full_sync) {
         data.settings.last_full_reconcile = data.settings.last_full_sync;
+        migrated = true;
+      }
+
+      // v2.3: App Hub migration — auto-install apps that were previously visible
+      if (data.settings.installed_apps === undefined || data.settings.installed_apps === '[]') {
+        const allHubApps = ['notebook', 'sheets', 'lan', 'vm-protect', 'todo'];
+        let hiddenFeatures = [];
+        try {
+          hiddenFeatures = JSON.parse(String(data.settings.sidebar_hidden_features || '[]'));
+          if (!Array.isArray(hiddenFeatures)) hiddenFeatures = [];
+        } catch (_) {}
+        // Install all apps that were NOT hidden (i.e. were visible before the update)
+        const installedApps = allHubApps.filter(id => !hiddenFeatures.includes(id));
+        data.settings.installed_apps = JSON.stringify(installedApps);
         migrated = true;
       }
 

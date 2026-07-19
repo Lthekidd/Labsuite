@@ -2027,4 +2027,263 @@ input:checked + .slider:before {
   .tg-media-option { display: none; }
 }
 
+/* ═══════════════════════════════════════════
+   App Hub Styling
+   ═══════════════════════════════════════════ */
+.apphub-container {
+  color: var(--text-primary);
+}
+
+.apphub-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.apphub-section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.apphub-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+}
+
+.apphub-section-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 99px;
+  color: var(--text-secondary);
+}
+
+.apphub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 20px;
+}
+
+.apphub-card {
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  backdrop-filter: blur(12px);
+}
+
+.apphub-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--card-accent, var(--accent-primary));
+  opacity: 0.35;
+  transition: opacity 0.25s;
+}
+
+.apphub-card:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--card-accent, var(--accent-primary));
+  box-shadow: 0 8px 24px cubic-bezier(0.4, 0, 0.2, 1) rgba(0, 0, 0, 0.2), 0 0 16px rgba(var(--card-accent-rgb, 64, 138, 113), 0.15);
+}
+
+.apphub-card:hover::before {
+  opacity: 1;
+}
+
+.apphub-card.just-installed {
+  animation: apphub-pulse 1.2s ease-in-out;
+}
+
+@keyframes apphub-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(64, 138, 113, 0.4); }
+  50% { transform: scale(1.02); box-shadow: 0 0 0 10px rgba(64, 138, 113, 0); }
+  100% { transform: scale(1); }
+}
+
+.apphub-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.apphub-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.apphub-card-icon svg {
+  color: var(--card-accent, var(--text-primary));
+}
+
+.apphub-card-meta {
+  display: flex;
+  gap: 4px;
+}
+
+.apphub-card-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+
+.apphub-card-badge.standalone {
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.apphub-card-badge.dual {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.apphub-card-badge.core {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.apphub-card-title {
+  margin: 0 0 8px 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.apphub-card-description {
+  margin: 0 0 20px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  flex-grow: 1;
+}
+
+.apphub-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.apphub-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.apphub-btn-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.apphub-btn-open {
+  background: var(--card-accent, var(--accent-primary));
+  color: #12181a;
+  flex-grow: 1;
+  justify-content: center;
+}
+
+.apphub-btn-open:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.apphub-btn-install {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  flex-grow: 1;
+  justify-content: center;
+}
+
+.apphub-btn-install:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--card-accent, var(--accent-primary));
+}
+
+.apphub-btn-uninstall {
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.apphub-btn-uninstall:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+
+.apphub-install-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-secondary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: apphub-spin 0.6s linear infinite;
+  display: inline-block;
+}
+
+@keyframes apphub-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Standalone window additions */
+.standalone-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.standalone-titlebar {
+  flex-shrink: 0;
+}
+
+.standalone-app main {
+  flex-grow: 1;
+  height: calc(100vh - 36px) !important;
+  overflow: hidden;
+}
+
+
 

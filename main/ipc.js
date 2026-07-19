@@ -1,4 +1,4 @@
-const { ipcMain, dialog, app } = require('electron');
+const { ipcMain, dialog, app, BrowserWindow } = require('electron');
 const fs = require('fs');
 
 function safeMkdirSync(dir, opts) {
@@ -115,6 +115,7 @@ const RENDERER_WRITABLE_SETTINGS = new Set([
   'pack_root_prune_interval_hours',
   'explorer_friendly_active_vault',
   'sidebar_hidden_features',
+  'installed_apps',
   'crash_report_url'
 ]);
 
@@ -811,7 +812,7 @@ function getFolderExcludePatterns(folder) {
   return filesystem.buildFolderExcludePatterns(folder);
 }
 
-function setupIpc(mainWindowArg, getMainWindow) {
+function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   const getWin = typeof getMainWindow === 'function' ? getMainWindow : () => mainWindowArg;
 
   const sendToRenderer = (channel, data) => {
@@ -1805,29 +1806,6 @@ function setupIpc(mainWindowArg, getMainWindow) {
 
   ipcMain.handle('filesystem:listDir', async (event, { dirPath }) => {
     return filesystem.listDir(dirPath);
-  });
-
-  // Disk Analyzer API
-  ipcMain.handle('disk-analyzer:getDrives', async () => {
-    return filesystem.listDrives();
-  });
-
-  ipcMain.handle('disk-analyzer:startScan', async (event, { rootPath }) => {
-    const diskAnalyzer = require('./diskAnalyzer');
-    try {
-      const result = await diskAnalyzer.startDiskScan(rootPath, (progressData) => {
-        sendToRenderer('disk-analyzer:progress', progressData);
-      });
-      return { success: true, ...result };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-
-  ipcMain.handle('disk-analyzer:cancelScan', async () => {
-    const diskAnalyzer = require('./diskAnalyzer');
-    diskAnalyzer.cancelDiskScan();
-    return true;
   });
 
   // Health API
@@ -3781,6 +3759,15 @@ ${configContent}
     const error = await shell.openPath(folderPath);
     if (error) throw new Error(error);
     return true;
+  });
+
+  // App Hub: launch standalone app windows
+  ipcMain.handle('app:launchStandalone', async (event, { appId, filePath }) => {
+    if (typeof createAppWindow === 'function') {
+      createAppWindow(appId, { filePath });
+      return true;
+    }
+    return false;
   });
 
   app.on('will-quit', () => {
