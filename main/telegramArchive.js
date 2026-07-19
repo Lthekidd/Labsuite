@@ -302,6 +302,10 @@ function parseAutomationOutput(stdout) {
   throw new Error('Telegram automation returned no readable result.');
 }
 
+function isRetryableScanOutputError(error) {
+  return !!(error && error.telegramAction === 'scan' && /returned no readable result/i.test(error.message || ''));
+}
+
 function runAutomation(action, payload = {}, options = {}) {
   if (process.platform !== 'win32') {
     return Promise.reject(automationError(new Error('Telegram chat export automation currently requires Windows.'), action));
@@ -511,7 +515,20 @@ async function scanChats() {
   let previousForeground;
   try {
     previousForeground = await runAutomation('foreground', {}, { timeoutMs: 30 * 1000 });
-    const result = await scanChatsWithoutFocusRestore();
+    let result;
+    try {
+      result = await scanChatsWithoutFocusRestore();
+    } catch (error) {
+      if (!isRetryableScanOutputError(error)) throw error;
+      appendDiagnosticEvent({
+        outcome: 'retrying',
+        operation: 'chat-scan',
+        stage: 'recover-empty-output',
+        message: 'Telegram returned an empty scan response; dismissing any popup and retrying once.'
+      });
+      try { await runAutomation('dismiss', {}, { timeoutMs: 15 * 1000 }); } catch (_) {}
+      result = await scanChatsWithoutFocusRestore();
+    }
     appendDiagnosticEvent({
       outcome: 'success',
       operation: 'chat-scan',
@@ -989,6 +1006,7 @@ module.exports = {
     runAutomation,
     runTelegramExport,
     cleanupNewExport,
+    isRetryableScanOutputError,
     appendDiagnosticEvent,
     readDiagnosticEvents,
     redactDiagnosticText,

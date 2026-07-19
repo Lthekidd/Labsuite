@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.34 — 2026-07-19
+
+### Fixed
+
+- Telegram chat scanning now automatically dismisses a stray Telegram popup and retries once when Telegram Desktop returns an empty automation response. This prevents a transient scan failure from leaving the archive list empty.
+
 ## 2.2.33 — 2026-07-19
 
 ### Added

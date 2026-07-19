@@ -81,6 +81,14 @@ assert.strictEqual(mediaFiles.length, 1, 'Media directory should contain one con
 const selectedId = telegramArchive.__private.discoveredChatId('account', 'Saved Messages', 'Saved Messages');
 assert.strictEqual(selectedId, telegramArchive.__private.discoveredChatId('account', 'Saved Messages', 'Saved Messages'));
 assert.notStrictEqual(selectedId, telegramArchive.__private.discoveredChatId('account', 'Chat', 'Another chat'));
+assert.ok(
+  telegramArchive.__private.isRetryableScanOutputError({ telegramAction: 'scan', message: 'Telegram automation returned no readable result.' }),
+  'Empty Telegram scan output should receive one automatic recovery attempt'
+);
+assert.ok(
+  !telegramArchive.__private.isRetryableScanOutputError({ telegramAction: 'open-export', message: 'Telegram automation returned no readable result.' }),
+  'Only chat scans should automatically retry an empty response'
+);
 
 telegramArchive.__private.appendDiagnosticEvent({
   outcome: 'failure',
