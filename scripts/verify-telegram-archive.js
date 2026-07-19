@@ -82,6 +82,21 @@ const selectedId = telegramArchive.__private.discoveredChatId('account', 'Saved 
 assert.strictEqual(selectedId, telegramArchive.__private.discoveredChatId('account', 'Saved Messages', 'Saved Messages'));
 assert.notStrictEqual(selectedId, telegramArchive.__private.discoveredChatId('account', 'Chat', 'Another chat'));
 
+telegramArchive.__private.appendDiagnosticEvent({
+  outcome: 'failure',
+  operation: 'rclone-upload',
+  stage: 'copy',
+  message: `token=super-secret failed below ${os.homedir()}\\TelegramArchive`
+});
+const events = telegramArchive.__private.readDiagnosticEvents();
+assert.strictEqual(events.length, 1, 'Telegram diagnostics should persist failure events');
+assert.ok(!JSON.stringify(events).includes('super-secret'), 'Telegram diagnostics must redact credential-like values');
+assert.ok(JSON.stringify(events).includes('%USERPROFILE%'), 'Telegram diagnostics should redact the user profile path');
+const failureReport = telegramArchive.__private.buildFailureReport({ skipSystemProbe: true });
+assert.strictEqual(failureReport.latestFailure.stage, 'copy', 'Failure report should identify the exact failed stage');
+assert.ok(failureReport.privacy.includes('No message bodies'), 'Failure report should explain its privacy boundary');
+assert.ok(failureReport.recommendations.some(item => item.includes('rclone')), 'Upload failures should receive an rclone-specific recommendation');
+
 fs.rmSync(tempRoot, { recursive: true, force: true });
 delete process.env.LABSUITE_TELEGRAM_ARCHIVE_ROOT;
 

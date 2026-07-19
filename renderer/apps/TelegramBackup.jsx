@@ -18,6 +18,7 @@ export default function TelegramBackup() {
   const [newInstallPath, setNewInstallPath] = useState('');
   const [progressMap, setProgressMap] = useState({});
   const [statusMessage, setStatusMessage] = useState(null);
+  const [failureLogStatus, setFailureLogStatus] = useState('');
 
   // Load installs on mount
   useEffect(() => {
@@ -82,6 +83,21 @@ export default function TelegramBackup() {
     setTimeout(() => {
       setStatusMessage(null);
     }, 5000);
+  };
+
+  const handleCopyFailureLog = async () => {
+    setFailureLogStatus('copying');
+    try {
+      const text = await ipcRenderer.invoke('telegramArchive:getFailureLog');
+      await navigator.clipboard.writeText(String(text || ''));
+      setFailureLogStatus('copied');
+      showStatus('Telegram failure log copied. It excludes message bodies and cloud credentials.', 'success');
+    } catch (error) {
+      setFailureLogStatus('error');
+      showStatus('Could not copy Telegram failure log: ' + error.message, 'error');
+    } finally {
+      setTimeout(() => setFailureLogStatus(''), 2500);
+    }
   };
 
   const handleScan = async () => {
@@ -274,7 +290,16 @@ export default function TelegramBackup() {
             Build readable, searchable archives for selected chats, with optional encrypted session backups.
           </p>
         </div>
-        {activeTab === 'installs' && <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleCopyFailureLog}
+            disabled={failureLogStatus === 'copying'}
+            title="Copy safe diagnostics for readable archives and encrypted session backups"
+          >
+            {failureLogStatus === 'copying' ? 'Building log…' : failureLogStatus === 'copied' ? 'Log copied' : '📋 Copy failure log'}
+          </button>
+          {activeTab === 'installs' && <>
           <button 
             className="btn btn-secondary" 
             onClick={handleScan}
@@ -290,7 +315,8 @@ export default function TelegramBackup() {
           >
             ➕ Custom Path
           </button>
-        </div>}
+          </>}
+        </div>
       </div>
 
       {/* Global Status Banner */}

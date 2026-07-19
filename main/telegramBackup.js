@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const db = require('./database');
 const rcloneModule = require('./rclone');
+const telegramArchive = require('./telegramArchive');
 const os = require('os');
 
 // Keep track of active backup runs
@@ -193,13 +194,29 @@ async function runTelegramBackup(installId, onProgress) {
   // refer to removable or other-PC drives (for example E:) that are unavailable here.
   const tempDest = getTelegramTempDestination(installId);
   const startTime = Date.now();
+  let failureStage = 'snapshot-copy';
+  telegramArchive.recordDiagnosticEvent({
+    outcome: 'started',
+    operation: 'session-backup',
+    stage: 'snapshot-copy',
+    installId,
+    message: 'Encrypted Telegram session backup started.'
+  });
 
   try {
     // 1. Create a shadow copy snapshot of the files
     console.log(`Creating snapshot of ${install.tdata_path} to ${tempDest}`);
     await createFolderSnapshot(install.tdata_path, tempDest);
+    telegramArchive.recordDiagnosticEvent({
+      outcome: 'success',
+      operation: 'session-backup',
+      stage: 'snapshot-copy',
+      installId,
+      message: 'Telegram session files were copied into local staging.'
+    });
 
     // 2. Perform rclone copy to Google Drive crypt
+    failureStage = 'encrypted-cloud-copy';
     if (onProgress) {
       onProgress({ stage: 'uploading', percent: 10, message: 'Uploading to Google Drive...' });
     }
@@ -227,18 +244,24 @@ async function runTelegramBackup(installId, onProgress) {
     activeBackups.set(installId, rcloneProc);
 
     let stderrBuffer = '';
+    const rcloneErrors = [];
     
     await new Promise((resolvePromise, rejectPromise) => {
       rcloneProc.stderr.on('data', (data) => {
         stderrBuffer += data.toString();
         const lines = stderrBuffer.split('\n');
         stderrBuffer = lines.pop(); // keep last incomplete line
+        if (stderrBuffer.length > 64 * 1024) stderrBuffer = stderrBuffer.slice(-64 * 1024);
 
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
           try {
             const entry = JSON.parse(trimmed);
+            if (entry.level === 'error' || entry.level === 'critical' || entry.level === 'warning') {
+              rcloneErrors.push(entry.msg || trimmed);
+              if (rcloneErrors.length > 12) rcloneErrors.shift();
+            }
             if (entry.stats && onProgress) {
               const s = entry.stats;
               const percent = s.totalBytes > 0 ? Math.round((s.bytes / s.totalBytes) * 100) : 0;
@@ -248,18 +271,47 @@ async function runTelegramBackup(installId, onProgress) {
                 message: `Uploading: ${percent}% (${(s.bytes / 1024 / 1024).toFixed(1)} MB / ${(s.totalBytes / 1024 / 1024).toFixed(1)} MB)`
               });
             }
-          } catch (_) {}
+          } catch (_) {
+            rcloneErrors.push(trimmed);
+            if (rcloneErrors.length > 12) rcloneErrors.shift();
+          }
         }
       });
 
+      let settled = false;
+      rcloneProc.on('error', error => {
+        if (settled) return;
+        settled = true;
+        rejectPromise(error);
+      });
       rcloneProc.on('close', (code) => {
         activeBackups.delete(installId);
+        if (settled) return;
+        settled = true;
         if (code === 0) {
           resolvePromise();
         } else {
-          rejectPromise(new Error(`rclone copy exited with code ${code}`));
+          if (stderrBuffer.trim()) {
+            try {
+              const entry = JSON.parse(stderrBuffer.trim());
+              rcloneErrors.push(entry.msg || stderrBuffer.trim());
+            } catch (_) {
+              rcloneErrors.push(stderrBuffer.trim());
+            }
+          }
+          const detail = rcloneErrors.slice(-8).join(' | ');
+          const error = new Error(detail ? `Encrypted session upload failed: ${detail}` : `Encrypted session upload exited with code ${code}.`);
+          error.exitCode = code;
+          rejectPromise(error);
         }
       });
+    });
+    telegramArchive.recordDiagnosticEvent({
+      outcome: 'success',
+      operation: 'session-backup',
+      stage: 'encrypted-cloud-copy',
+      installId,
+      message: 'Encrypted Telegram session copy completed.'
     });
 
     // Determine backup size
@@ -312,10 +364,25 @@ async function runTelegramBackup(installId, onProgress) {
     if (onProgress) {
       onProgress({ stage: 'completed', percent: 100, message: 'Backup completed successfully!' });
     }
+    telegramArchive.recordDiagnosticEvent({
+      outcome: 'success',
+      operation: 'session-backup',
+      stage: 'completed',
+      installId,
+      message: 'Telegram session backup completed.'
+    });
 
     return true;
   } catch (error) {
     console.error(`Telegram backup ${installId} failed:`, error);
+    telegramArchive.recordDiagnosticEvent({
+      outcome: 'failure',
+      operation: 'session-backup',
+      stage: failureStage,
+      installId,
+      message: error.message,
+      exitCode: error.exitCode
+    });
     
     // Cleanup temp folder
     try {

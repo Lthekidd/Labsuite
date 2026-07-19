@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.32 — 2026-07-19
+
+### Added
+
+- Added a persistent, copy-ready Telegram failure log for both readable chat archives and encrypted session backups. It records the exact failed stage, recent run events, LabSuite/Telegram/PowerShell details, archive write access, source-path availability, and local rclone configuration state.
+- Added a global **Copy failure log** action to the Telegram page. Reports redact Windows user-profile paths and credential-like values, and never include message bodies, media contents, OAuth tokens, or rclone secrets.
+
+### Changed
+
+- Telegram archive and session uploads now retain a sanitized tail of rclone's real error instead of reporting only its exit code, making authentication, quota, configuration, and network failures distinguishable.
+- Telegram failures now distinguish account/chat scanning, individual UI automation actions, local archive copying, session snapshot copying, and encrypted cloud copying.
+
+### Compatibility
+
+- The report calls out the current requirement for Telegram Desktop's interface language to be English and checks whether Telegram has a usable main window. LabSuite and Telegram should normally run at the same non-administrator privilege level.
+
 ## 2.2.31 — 2026-07-18
 
 ### Added

@@ -75,7 +75,7 @@ export default function TelegramChatArchive({ onStatus }) {
       loadChats();
       loadMessages();
       if (result.success) onStatus?.('Selected Telegram chats were archived.', 'success');
-      else onStatus?.(result.error || 'One or more Telegram chat archives need attention.', 'error');
+      else onStatus?.(`${result.error || 'One or more Telegram chat archives need attention.'} Use Copy failure log for the exact failed stage.`, 'error');
     };
     ipcRenderer.on('telegramArchive:progress', handleProgress);
     ipcRenderer.on('telegramArchive:complete', handleComplete);
@@ -114,7 +114,7 @@ export default function TelegramChatArchive({ onStatus }) {
       await loadChats();
       onStatus?.(`Detected ${result.chats} chats across ${result.accounts} Telegram account(s).`, 'success');
     } catch (error) {
-      onStatus?.(`Telegram scan failed: ${error.message}`, 'error');
+      onStatus?.(`Telegram scan failed: ${error.message}. Use Copy failure log for safe diagnostics.`, 'error');
     } finally {
       setIsScanning(false);
     }

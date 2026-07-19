@@ -2,13 +2,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const db = require('./database');
 const rclone = require('./rclone');
 
 const activeBackups = new Set();
 let schedulerInterval = null;
 let scheduledRunActive = false;
+const MAX_DIAGNOSTIC_EVENTS = 120;
+const MAX_DIAGNOSTIC_BYTES = 512 * 1024;
 
 function hashId(value, length = 24) {
   return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex').slice(0, length);
@@ -36,6 +38,249 @@ function getChatArchiveDir(chatId) {
   return path.join(getArchiveRoot(), safeId);
 }
 
+function getDiagnosticPaths() {
+  const diagnosticDir = path.join(getArchiveRoot(), 'diagnostics');
+  return {
+    diagnosticDir,
+    eventLogPath: path.join(diagnosticDir, 'telegram-failure-log.jsonl')
+  };
+}
+
+function redactDiagnosticText(value) {
+  let text = String(value === undefined || value === null ? '' : value);
+  const home = os.homedir();
+  if (home) text = text.replace(new RegExp(home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '%USERPROFILE%');
+  text = text
+    .replace(/(client_secret|access_token|refresh_token|password|token)\s*[=:]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(/Authorization:\s*(?:Bearer|Basic)\s+[^\s]+/gi, 'Authorization: [REDACTED]')
+    .replace(/[A-Za-z]:\\Users\\[^\\\s"']+/gi, match => match.replace(/(\\Users\\)[^\\]+/i, '$1[USER]'));
+  return text.slice(0, 12000);
+}
+
+function sanitizeDiagnosticValue(value, depth = 0) {
+  if (depth > 4) return '[truncated]';
+  if (typeof value === 'string') return redactDiagnosticText(value);
+  if (Array.isArray(value)) return value.slice(0, 30).map(item => sanitizeDiagnosticValue(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).slice(0, 40).map(([key, child]) => [key, sanitizeDiagnosticValue(child, depth + 1)]));
+}
+
+function appendDiagnosticEvent(event = {}) {
+  try {
+    const { diagnosticDir, eventLogPath } = getDiagnosticPaths();
+    fs.mkdirSync(diagnosticDir, { recursive: true });
+    const safeEvent = sanitizeDiagnosticValue({
+      timestamp: new Date().toISOString(),
+      outcome: event.outcome || 'info',
+      operation: event.operation || 'telegram-archive',
+      stage: event.stage || 'unknown',
+      message: event.message || '',
+      ...event
+    });
+    fs.appendFileSync(eventLogPath, `${JSON.stringify(safeEvent)}\n`, 'utf8');
+    const stat = fs.statSync(eventLogPath);
+    if (stat.size > MAX_DIAGNOSTIC_BYTES) {
+      const lines = fs.readFileSync(eventLogPath, 'utf8').split(/\r?\n/).filter(Boolean).slice(-MAX_DIAGNOSTIC_EVENTS);
+      fs.writeFileSync(eventLogPath, `${lines.join('\n')}\n`, 'utf8');
+    }
+    return safeEvent;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readDiagnosticEvents() {
+  try {
+    const { eventLogPath } = getDiagnosticPaths();
+    if (!fs.existsSync(eventLogPath)) return [];
+    return fs.readFileSync(eventLogPath, 'utf8')
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-MAX_DIAGNOSTIC_EVENTS)
+      .map(line => {
+        try { return JSON.parse(line); } catch (_) { return null; }
+      })
+      .filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+function getAppVersion() {
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getVersion === 'function') return app.getVersion();
+  } catch (_) {}
+  try { return require('../package.json').version; } catch (_) { return 'unknown'; }
+}
+
+function collectWindowsEnvironment() {
+  if (process.platform !== 'win32') return { supported: false };
+  const script = `
+$telegram = @(Get-Process Telegram -ErrorAction SilentlyContinue)
+$usable = @($telegram | Where-Object { $_.MainWindowHandle -ne 0 })
+$candidatePaths = @(
+  (Join-Path $env:APPDATA 'Telegram Desktop\\Telegram.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Telegram Desktop\\Telegram.exe')
+)
+$exePath = $null
+foreach ($item in $usable) { try { if ($item.Path) { $exePath = $item.Path; break } } catch {} }
+if (-not $exePath) { $exePath = $candidatePaths | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1 }
+$version = $null
+if ($exePath) { try { $version = (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion } catch {} }
+$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+[ordered]@{
+  powershellVersion = $PSVersionTable.PSVersion.ToString()
+  labSuiteElevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  telegramRunning = ($telegram.Count -gt 0)
+  telegramProcessCount = $telegram.Count
+  telegramUsableWindowCount = $usable.Count
+  telegramExecutableFound = [bool]$exePath
+  telegramExecutablePath = $exePath
+  telegramVersion = $version
+} | ConvertTo-Json -Compress
+`;
+  try {
+    const result = spawnSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')
+    ], { windowsHide: true, encoding: 'utf8', timeout: 15000 });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error(result.stderr || `PowerShell exited with code ${result.status}.`);
+    return sanitizeDiagnosticValue(JSON.parse(String(result.stdout || '').trim()));
+  } catch (error) {
+    return { probeError: redactDiagnosticText(error.message || error) };
+  }
+}
+
+function checkArchiveStorage() {
+  const archiveRoot = getArchiveRoot();
+  const result = { archiveRoot: redactDiagnosticText(archiveRoot), exists: fs.existsSync(archiveRoot), writable: false };
+  try {
+    const { diagnosticDir } = getDiagnosticPaths();
+    fs.mkdirSync(diagnosticDir, { recursive: true });
+    const probePath = path.join(diagnosticDir, `.write-test-${process.pid}-${Date.now()}`);
+    fs.writeFileSync(probePath, 'ok', 'utf8');
+    fs.unlinkSync(probePath);
+    result.exists = true;
+    result.writable = true;
+  } catch (error) {
+    result.error = redactDiagnosticText(error.message || error);
+  }
+  return result;
+}
+
+function getRcloneEnvironment() {
+  try {
+    const { rcloneBin, configPath } = rclone.getPaths();
+    const configuredRemote = rclone.getRemote();
+    let sections = [];
+    if (fs.existsSync(configPath)) {
+      sections = Array.from(fs.readFileSync(configPath, 'utf8').matchAll(/^\s*\[([^\]]+)\]\s*$/gm), match => match[1]);
+    }
+    return {
+      executableFound: fs.existsSync(rcloneBin),
+      executablePath: redactDiagnosticText(rcloneBin),
+      configFound: fs.existsSync(configPath),
+      configPath: redactDiagnosticText(configPath),
+      encryptedRemote: configuredRemote,
+      encryptedRemoteConfigured: sections.some(section => section.toLowerCase() === configuredRemote.toLowerCase()),
+      configuredSections: sections
+    };
+  } catch (error) {
+    return { error: redactDiagnosticText(error.message || error) };
+  }
+}
+
+function buildFailureReport(options = {}) {
+  const events = readDiagnosticEvents();
+  const failures = events.filter(event => event.outcome === 'failure');
+  let chats = [];
+  let sessionInstalls = [];
+  try { chats = db.getTelegramArchiveChats(); } catch (_) {}
+  try { sessionInstalls = db.getTelegramInstalls(); } catch (_) {}
+  const latestFailure = failures[failures.length - 1] || null;
+  const recommendations = [
+    'Confirm both PCs are running this same LabSuite version.',
+    'Keep Telegram Desktop unlocked, visible, and on its main chat list while testing.',
+    'Use Telegram Desktop in English; this automation currently matches English accessibility labels.',
+    'Run LabSuite and Telegram at the same privilege level (normally both non-administrator).',
+    'If local export succeeds but upload fails, reconnect Google Drive/rclone on that PC.'
+  ];
+  if (latestFailure && latestFailure.operation === 'rclone-upload') {
+    recommendations.unshift('The readable local copy completed; focus on the Google Drive/rclone error shown in the latest event.');
+  } else if (latestFailure && latestFailure.operation === 'telegram-automation') {
+    recommendations.unshift(`Telegram UI automation stopped at '${latestFailure.stage}'. Check Telegram language, lock state, and version.`);
+  } else if (latestFailure && latestFailure.operation === 'session-backup') {
+    recommendations.unshift(`Telegram session backup stopped at '${latestFailure.stage}'. Use its error and source-path check below.`);
+  }
+  return sanitizeDiagnosticValue({
+    reportType: 'LabSuite Telegram copy failure log',
+    generatedAt: new Date().toISOString(),
+    privacy: 'No message bodies, media contents, OAuth tokens, or rclone secrets are included.',
+    labSuite: {
+      version: getAppVersion(),
+      packaged: !!process.resourcesPath,
+      processElevated: options.skipSystemProbe ? 'not-probed' : undefined
+    },
+    system: {
+      platform: process.platform,
+      release: os.release(),
+      version: typeof os.version === 'function' ? os.version() : '',
+      arch: process.arch,
+      computerName: os.hostname(),
+      ...(options.skipSystemProbe ? {} : collectWindowsEnvironment())
+    },
+    telegramCompatibility: {
+      requiredInterfaceLanguage: 'English',
+      requiredState: 'Unlocked Telegram Desktop main window with accessibility available'
+    },
+    archiveStorage: checkArchiveStorage(),
+    encryptedUpload: getRcloneEnvironment(),
+    chatSummary: {
+      detected: chats.length,
+      selected: chats.filter(chat => chat.selected).length,
+      protected: chats.filter(chat => chat.last_backup_status === 'success').length,
+      localOnly: chats.filter(chat => chat.last_backup_status === 'local-only').length,
+      failed: chats.filter(chat => chat.last_backup_status === 'failed').length
+    },
+    sessionBackupSummary: sessionInstalls.map(install => ({
+      id: install.id,
+      label: install.label,
+      sourcePath: redactDiagnosticText(install.tdata_path),
+      sourceExists: !!install.tdata_path && fs.existsSync(install.tdata_path),
+      enabled: install.enabled !== false,
+      lastBackupAt: install.last_backup_at,
+      lastStatus: install.last_backup_status,
+      consecutiveFailures: install.consecutive_failures || 0,
+      lastError: redactDiagnosticText(install.last_error || '')
+    })),
+    latestFailure,
+    recentEvents: events.slice(-40),
+    recommendations
+  });
+}
+
+function getFailureLog(options = {}) {
+  return JSON.stringify(buildFailureReport(options), null, 2);
+}
+
+function automationError(error, action, details = {}) {
+  const wrapped = error instanceof Error ? error : new Error(String(error || 'Telegram automation failed.'));
+  wrapped.telegramAction = action;
+  Object.assign(wrapped, details);
+  appendDiagnosticEvent({
+    outcome: 'failure',
+    operation: 'telegram-automation',
+    stage: action,
+    message: wrapped.message,
+    exitCode: details.exitCode,
+    stderrTail: details.stderrTail
+  });
+  return wrapped;
+}
+
 function ensureAutomationScript() {
   const sourcePath = path.join(__dirname, 'telegramArchiveAutomation.ps1');
   const source = fs.readFileSync(sourcePath);
@@ -59,7 +304,7 @@ function parseAutomationOutput(stdout) {
 
 function runAutomation(action, payload = {}, options = {}) {
   if (process.platform !== 'win32') {
-    return Promise.reject(new Error('Telegram chat export automation currently requires Windows.'));
+    return Promise.reject(automationError(new Error('Telegram chat export automation currently requires Windows.'), action));
   }
 
   const scriptPath = ensureAutomationScript();
@@ -82,9 +327,15 @@ function runAutomation(action, payload = {}, options = {}) {
     let stderr = '';
     const maxOutput = 1024 * 1024;
     const timeoutMs = Number(options.timeoutMs) || 35 * 60 * 1000;
+    let settled = false;
+    const rejectOnce = error => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
     const timeout = setTimeout(() => {
       try { child.kill(); } catch (_) {}
-      reject(new Error('Telegram automation timed out.'));
+      rejectOnce(automationError(new Error('Telegram automation timed out.'), action, { timeoutMs }));
     }, timeoutMs);
 
     child.stdout.on('data', data => {
@@ -96,20 +347,27 @@ function runAutomation(action, payload = {}, options = {}) {
     child.on('error', error => {
       clearTimeout(timeout);
       try { fs.unlinkSync(payloadPath); } catch (_) {}
-      reject(error);
+      rejectOnce(automationError(error, action));
     });
     child.on('close', code => {
       clearTimeout(timeout);
       try { fs.unlinkSync(payloadPath); } catch (_) {}
+      if (settled) return;
       if (code !== 0) {
         const detail = stderr.trim().split(/\r?\n/).slice(-8).join('\n');
-        reject(new Error(detail || `Telegram automation exited with code ${code}.`));
+        rejectOnce(automationError(
+          new Error(detail || `Telegram automation exited with code ${code}.`),
+          action,
+          { exitCode: code, stderrTail: detail }
+        ));
         return;
       }
       try {
+        settled = true;
         resolve(parseAutomationOutput(stdout));
       } catch (error) {
-        reject(error);
+        settled = false;
+        rejectOnce(automationError(error, action));
       }
     });
   });
@@ -197,6 +455,12 @@ async function scanChatsWithoutFocusRestore() {
         await runAutomation('list-account-switcher', {}, { timeoutMs: 30 * 1000 });
       } catch (error) {
         console.warn(`Telegram account scan skipped '${candidate.buttonName}':`, error.message);
+        appendDiagnosticEvent({
+          outcome: 'failure',
+          operation: 'account-scan',
+          stage: 'switch-account',
+          message: error.message
+        });
       }
     }
     if (candidates.length > 0) {
@@ -243,11 +507,30 @@ async function scanChatsWithoutFocusRestore() {
 }
 
 async function scanChats() {
-  const previousForeground = await runAutomation('foreground', {}, { timeoutMs: 30 * 1000 });
+  appendDiagnosticEvent({ outcome: 'started', operation: 'chat-scan', stage: 'starting', message: 'Telegram account and chat scan started.' });
+  let previousForeground;
   try {
-    return await scanChatsWithoutFocusRestore();
+    previousForeground = await runAutomation('foreground', {}, { timeoutMs: 30 * 1000 });
+    const result = await scanChatsWithoutFocusRestore();
+    appendDiagnosticEvent({
+      outcome: 'success',
+      operation: 'chat-scan',
+      stage: 'completed',
+      message: `Detected ${result.chats} chats across ${result.accounts} account(s).`
+    });
+    return result;
+  } catch (error) {
+    appendDiagnosticEvent({
+      outcome: 'failure',
+      operation: 'chat-scan',
+      stage: error.telegramAction || 'scan',
+      message: error.message
+    });
+    throw error;
   } finally {
-    try { await runAutomation('restore-foreground', previousForeground, { timeoutMs: 30 * 1000 }); } catch (_) {}
+    if (previousForeground) {
+      try { await runAutomation('restore-foreground', previousForeground, { timeoutMs: 30 * 1000 }); } catch (_) {}
+    }
   }
 }
 
@@ -420,23 +703,55 @@ function runRcloneCopy(localPath, remotePath, onProgress) {
   return new Promise((resolve, reject) => {
     const child = spawn(rcloneBin, args, { windowsHide: true });
     let buffer = '';
+    const errorLines = [];
     child.stderr.on('data', data => {
       buffer += data.toString();
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop();
+      if (buffer.length > 64 * 1024) buffer = buffer.slice(-64 * 1024);
       for (const line of lines) {
         try {
           const entry = JSON.parse(line);
+          if (entry.level === 'error' || entry.level === 'critical' || entry.level === 'warning') {
+            errorLines.push(entry.msg || line);
+            if (errorLines.length > 12) errorLines.shift();
+          }
           if (entry.stats && onProgress) {
             const stats = entry.stats;
             const percent = stats.totalBytes > 0 ? Math.round((stats.bytes / stats.totalBytes) * 100) : 100;
             onProgress({ stage: 'uploading', percent: Math.min(99, 70 + Math.round(percent * 0.29)), message: `Uploading encrypted archive: ${percent}%` });
           }
-        } catch (_) {}
+        } catch (_) {
+          if (line.trim()) {
+            errorLines.push(line.trim());
+            if (errorLines.length > 12) errorLines.shift();
+          }
+        }
       }
     });
-    child.on('error', reject);
-    child.on('close', code => code === 0 ? resolve(true) : reject(new Error(`Encrypted archive upload exited with code ${code}.`)));
+    child.on('error', error => {
+      error.rcloneStage = 'launch';
+      reject(error);
+    });
+    child.on('close', code => {
+      if (code === 0) {
+        resolve(true);
+        return;
+      }
+      if (buffer.trim()) {
+        try {
+          const entry = JSON.parse(buffer.trim());
+          errorLines.push(entry.msg || buffer.trim());
+        } catch (_) {
+          errorLines.push(buffer.trim());
+        }
+      }
+      const detail = errorLines.slice(-8).join(' | ');
+      const error = new Error(detail ? `Encrypted archive upload failed: ${detail}` : `Encrypted archive upload exited with code ${code}.`);
+      error.exitCode = code;
+      error.rcloneStage = 'copy';
+      reject(error);
+    });
   });
 }
 
@@ -460,6 +775,15 @@ async function backupChat(chatId, onProgress) {
   activeBackups.add(chatId);
   db.updateTelegramArchiveChat(chatId, { last_backup_status: 'running', last_error: null });
   const progress = value => { if (onProgress) onProgress({ chatId, ...value }); };
+  let failureStage = 'telegram-export';
+  appendDiagnosticEvent({
+    outcome: 'started',
+    operation: 'chat-backup',
+    stage: 'starting',
+    chatId,
+    chatType: chat.type,
+    message: `Backup started for selected ${chat.type || 'chat'}.`
+  });
   try {
     progress({ stage: 'opening', percent: 5, message: `Opening ${chat.name} in Telegram...` });
     const exported = await runTelegramExport({
@@ -470,17 +794,36 @@ async function backupChat(chatId, onProgress) {
       checkpointDate: chat.checkpoint_date,
       timeoutSeconds: 1800
     });
+    appendDiagnosticEvent({ outcome: 'success', operation: 'chat-backup', stage: 'telegram-export', chatId, message: 'Telegram JSON export completed.' });
+    failureStage = 'local-archive-copy';
     progress({ stage: 'indexing', percent: 55, message: 'Indexing new and changed messages...' });
     const ingested = ingestExport(chat, exported.resultPath, { checkpointDate: exported.startedAt });
     cleanupNewExport(exported.resultPath, exported.startedAt);
+    appendDiagnosticEvent({
+      outcome: 'success',
+      operation: 'chat-backup',
+      stage: 'local-archive-copy',
+      chatId,
+      message: `Stored ${ingested.newMessages} new or changed message records locally.`
+    });
 
     const remotePath = `TelegramArchive/v1/${chat.account_id}/${chat.id}`;
+    failureStage = 'encrypted-cloud-copy';
     progress({ stage: 'uploading', percent: 70, message: 'Uploading new archive files through encrypted rclone...' });
     let uploadError = null;
     try {
       await runRcloneCopy(ingested.chatDir, remotePath, progress);
+      appendDiagnosticEvent({ outcome: 'success', operation: 'rclone-upload', stage: 'encrypted-cloud-copy', chatId, message: 'Encrypted Google Drive copy completed.' });
     } catch (error) {
       uploadError = error;
+      appendDiagnosticEvent({
+        outcome: 'failure',
+        operation: 'rclone-upload',
+        stage: error.rcloneStage || 'encrypted-cloud-copy',
+        chatId,
+        message: error.message,
+        exitCode: error.exitCode
+      });
     }
 
     const updates = {
@@ -501,11 +844,25 @@ async function backupChat(chatId, onProgress) {
         ? `Saved ${ingested.newMessages} new/changed messages locally; cloud upload needs attention.`
         : `Backed up ${ingested.newMessages} new/changed messages.`
     });
+    appendDiagnosticEvent({
+      outcome: uploadError ? 'partial' : 'success',
+      operation: 'chat-backup',
+      stage: 'completed',
+      chatId,
+      message: uploadError ? 'Local archive completed, but encrypted cloud copy failed.' : 'Local archive and encrypted cloud copy completed.'
+    });
     return { ...ingested, uploadError: uploadError ? uploadError.message : null };
   } catch (error) {
     db.updateTelegramArchiveChat(chatId, {
       last_backup_status: 'failed',
       last_error: error.message
+    });
+    appendDiagnosticEvent({
+      outcome: 'failure',
+      operation: 'chat-backup',
+      stage: error.telegramAction || failureStage,
+      chatId,
+      message: error.message
     });
     throw error;
   } finally {
@@ -619,6 +976,8 @@ module.exports = {
   getMessages,
   getArchiveRoot,
   getChatArchiveDir,
+  getFailureLog,
+  recordDiagnosticEvent: appendDiagnosticEvent,
   startScheduler,
   stopScheduler,
   isDue,
@@ -629,6 +988,10 @@ module.exports = {
     ingestExport,
     runAutomation,
     runTelegramExport,
-    cleanupNewExport
+    cleanupNewExport,
+    appendDiagnosticEvent,
+    readDiagnosticEvents,
+    redactDiagnosticText,
+    buildFailureReport
   }
 };

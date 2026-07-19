@@ -3769,6 +3769,10 @@ ${configContent}
     return telegramArchive.getMessages(id, { query, limit, offset });
   });
 
+  ipcMain.handle('telegramArchive:getFailureLog', async () => {
+    return telegramArchive.getFailureLog();
+  });
+
   ipcMain.handle('telegramArchive:openFolder', async (event, id) => {
     const { shell } = require('electron');
     const folderPath = id ? telegramArchive.getChatArchiveDir(id) : telegramArchive.getArchiveRoot();

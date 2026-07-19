@@ -201,6 +201,7 @@ const INVOKE_CHANNELS = new Set([
   'telegramArchive:backupSelected',
   'telegramArchive:backupChat',
   'telegramArchive:getMessages',
+  'telegramArchive:getFailureLog',
   'telegramArchive:openFolder'
 ]);
 
