@@ -315,6 +315,7 @@ function runAutomation(action, payload = {}, options = {}) {
   const payloadDir = path.join(os.tmpdir(), 'LabSuite_Temp', 'telegram_archive_payloads');
   fs.mkdirSync(payloadDir, { recursive: true });
   const payloadPath = path.join(payloadDir, `${process.pid}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.json`);
+  const resultPath = `${payloadPath}.result.json`;
   fs.writeFileSync(payloadPath, JSON.stringify(payload), 'utf8');
 
   return new Promise((resolve, reject) => {
@@ -324,7 +325,8 @@ function runAutomation(action, payload = {}, options = {}) {
       '-ExecutionPolicy', 'Bypass',
       '-File', scriptPath,
       '-Action', action,
-      '-PayloadPath', payloadPath
+      '-PayloadPath', payloadPath,
+      '-ResultPath', resultPath
     ], { windowsHide: true });
 
     let stdout = '';
@@ -341,6 +343,10 @@ function runAutomation(action, payload = {}, options = {}) {
       try { child.kill(); } catch (_) {}
       rejectOnce(automationError(new Error('Telegram automation timed out.'), action, { timeoutMs }));
     }, timeoutMs);
+    const cleanupPayloadFiles = () => {
+      try { fs.unlinkSync(payloadPath); } catch (_) {}
+      try { fs.unlinkSync(resultPath); } catch (_) {}
+    };
 
     child.stdout.on('data', data => {
       if (stdout.length < maxOutput) stdout += data.toString();
@@ -350,15 +356,15 @@ function runAutomation(action, payload = {}, options = {}) {
     });
     child.on('error', error => {
       clearTimeout(timeout);
-      try { fs.unlinkSync(payloadPath); } catch (_) {}
+      cleanupPayloadFiles();
       rejectOnce(automationError(error, action));
     });
     child.on('close', code => {
       clearTimeout(timeout);
-      try { fs.unlinkSync(payloadPath); } catch (_) {}
       if (settled) return;
       if (code !== 0) {
         const detail = stderr.trim().split(/\r?\n/).slice(-8).join('\n');
+        cleanupPayloadFiles();
         rejectOnce(automationError(
           new Error(detail || `Telegram automation exited with code ${code}.`),
           action,
@@ -367,8 +373,15 @@ function runAutomation(action, payload = {}, options = {}) {
         return;
       }
       try {
+        let fileOutput = '';
+        try { fileOutput = fs.readFileSync(resultPath, 'utf8'); } catch (_) {}
+        cleanupPayloadFiles();
         settled = true;
-        resolve(parseAutomationOutput(stdout));
+        try {
+          resolve(parseAutomationOutput(fileOutput));
+        } catch (_) {
+          resolve(parseAutomationOutput(stdout));
+        }
       } catch (error) {
         settled = false;
         rejectOnce(automationError(error, action));

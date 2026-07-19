@@ -4,7 +4,10 @@ param(
   [string]$Action,
 
   [Parameter(Mandatory = $true)]
-  [string]$PayloadPath
+  [string]$PayloadPath,
+
+  [Parameter(Mandatory = $false)]
+  [string]$ResultPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -715,16 +718,25 @@ function Start-Export($Process, $Payload) {
   }
 }
 
+function Write-LabSuiteResult($Value, [int]$Depth = 8) {
+  $json = $Value | ConvertTo-Json -Depth $Depth -Compress
+  if ($ResultPath) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($ResultPath, $json, $utf8NoBom)
+  }
+  Write-Output $json
+}
+
 $payload = Get-Content -LiteralPath $PayloadPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $process = Get-TelegramProcess
 
 if ($Action -eq 'foreground') {
   $cursor = [LabSuiteTelegramAccessibility]::CursorPosition().Split(',')
-  [ordered]@{
+  Write-LabSuiteResult ([ordered]@{
     handle = [LabSuiteTelegramAccessibility]::ForegroundHandle().ToString()
     cursorX = [int]$cursor[0]
     cursorY = [int]$cursor[1]
-  } | ConvertTo-Json -Compress
+  })
   exit 0
 }
 
@@ -734,44 +746,44 @@ if ($Action -eq 'restore-foreground') {
     [int]$payload.cursorX,
     [int]$payload.cursorY
   )
-  [ordered]@{ restored = [bool]$restored } | ConvertTo-Json -Compress
+  Write-LabSuiteResult ([ordered]@{ restored = [bool]$restored })
   exit 0
 }
 
 if ($Action -eq 'scan') {
   $maxScrolls = if ($payload.maxScrolls -ne $null) { [int]$payload.maxScrolls } else { 40 }
   $account = Scan-CurrentAccount $process $maxScrolls
-  [ordered]@{
+  Write-LabSuiteResult ([ordered]@{
     accounts = @($account)
     scannedAt = [DateTime]::UtcNow.ToString('o')
-  } | ConvertTo-Json -Depth 8 -Compress
+  }) 8
   exit 0
 }
 
 if ($Action -eq 'open-account-switcher') {
-  Open-AccountSwitcher $process | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Open-AccountSwitcher $process) 5
   exit 0
 }
 
 if ($Action -eq 'list-account-switcher') {
-  Get-AccountSwitcherButtons $process | ConvertTo-Json -Depth 8 -Compress
+  Write-LabSuiteResult (Get-AccountSwitcherButtons $process) 8
   exit 0
 }
 
 if ($Action -eq 'switch-account') {
-  Switch-Account $process ([string]$payload.buttonName) | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Switch-Account $process ([string]$payload.buttonName)) 5
   exit 0
 }
 
 if ($Action -eq 'dismiss') {
   [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
-  [ordered]@{ dismissed = $true } | ConvertTo-Json -Compress
+  Write-LabSuiteResult ([ordered]@{ dismissed = $true })
   exit 0
 }
 
 if ($Action -eq 'open-export') {
   Open-Chat $process $payload
-  Open-ExportSettings $process | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Open-ExportSettings $process) 5
   exit 0
 }
 
@@ -781,26 +793,26 @@ if ($Action -eq 'open-format') {
   if (-not $title) { throw 'Telegram Chat export settings are not open.' }
   Set-MediaSelection $root ([bool]$payload.includeMedia)
   $opened = Open-JsonFormat $root
-  [ordered]@{ needsJsonSelection = [bool]$opened } | ConvertTo-Json -Compress
+  Write-LabSuiteResult ([ordered]@{ needsJsonSelection = [bool]$opened })
   exit 0
 }
 
 if ($Action -eq 'select-json') {
-  Select-JsonFormat $process | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Select-JsonFormat $process) 5
   exit 0
 }
 
 if ($Action -eq 'open-date') {
-  Open-FromDate $process $payload | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Open-FromDate $process $payload) 5
   exit 0
 }
 
 if ($Action -eq 'select-date') {
-  Select-FromDate $process $payload | ConvertTo-Json -Depth 5 -Compress
+  Write-LabSuiteResult (Select-FromDate $process $payload) 5
   exit 0
 }
 
 if ($Action -eq 'start-export') {
-  Start-Export $process $payload | ConvertTo-Json -Depth 8 -Compress
+  Write-LabSuiteResult (Start-Export $process $payload) 8
   exit 0
 }

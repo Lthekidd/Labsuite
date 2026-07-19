@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.35 — 2026-07-19
+
+### Fixed
+
+- Telegram Desktop automation now writes each scan/export result to a temporary UTF-8 JSON file and LabSuite reads that file directly. This removes the PowerShell console-output/encoding path that could produce a false “no readable result” scan failure even when Telegram had returned valid chat data.
+
 ## 2.2.34 — 2026-07-19
 
 ### Fixed

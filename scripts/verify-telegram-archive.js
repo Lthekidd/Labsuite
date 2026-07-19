@@ -6,8 +6,12 @@ const path = require('path');
 const tempRoot = path.join(os.tmpdir(), `labsuite_telegram_archive_test_${process.pid}_${Date.now()}`);
 process.env.LABSUITE_TELEGRAM_ARCHIVE_ROOT = path.join(tempRoot, 'archive');
 const telegramArchive = require('../main/telegramArchive');
+const automationScript = fs.readFileSync(path.join(__dirname, '..', 'main', 'telegramArchiveAutomation.ps1'), 'utf8');
 
 console.log('Running Telegram readable archive verification tests...');
+
+assert.ok(automationScript.includes('[string]$ResultPath'), 'Telegram automation should accept a direct result-file path');
+assert.ok(automationScript.includes('Write-LabSuiteResult'), 'Telegram automation should persist machine-readable results outside PowerShell stdout');
 
 const exportDir = path.join(tempRoot, 'ChatExport_test');
 fs.mkdirSync(path.join(exportDir, 'files'), { recursive: true });
