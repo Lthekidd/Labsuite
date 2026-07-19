@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.2.33 — 2026-07-19
+
+### Added
+
+- Added **Sidebar** controls in Suite Settings. Optional tools can be hidden individually without disabling their schedules, backups, or local data; Home Dashboard, Backup Engine, and Settings remain available.
+
+### Fixed
+
+- Made the left tool list independently scrollable and pinned Suite Settings above the connection card, so Settings remains reachable in smaller non-fullscreen windows.
+- At very short window heights, the connection card collapses before navigation controls do.
+
 ## 2.2.32 — 2026-07-19
 
 ### Added

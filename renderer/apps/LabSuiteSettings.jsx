@@ -16,7 +16,28 @@ const compactInputStyle = {
   fontSize: '12px'
 };
 
-export default function LabSuiteSettings() {
+const SIDEBAR_FEATURES = [
+  { id: 'lan', label: 'Network Drive', description: 'LAN peer browsing and Quick Drop' },
+  { id: 'vm-protect', label: 'VM Protect', description: 'Backup protection for VMware guests' },
+  { id: 'telegram', label: 'Telegram Backup', description: 'Readable chats and encrypted Telegram sessions' },
+  { id: 'sheets', label: 'Encrypted Tables', description: 'Private spreadsheet workspace' },
+  { id: 'notebook', label: 'Secure Notebook', description: 'Local encrypted notes' },
+  { id: 'todo', label: 'Task Board', description: 'Tasks and planning workspace' },
+  { id: 'crypto', label: 'Crypto Portfolio', description: 'Portfolio tracking workspace' },
+  { id: 'disk-analyzer', label: 'Space Analyzer', description: 'Disk usage explorer' }
+];
+
+function parseSidebarHiddenFeatures(value) {
+  try {
+    const items = JSON.parse(String(value || '[]'));
+    const known = new Set(SIDEBAR_FEATURES.map(feature => feature.id));
+    return Array.isArray(items) ? items.filter(id => known.has(id)) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
   const [settings, setSettings] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [updateStatus, setUpdateStatus] = useState({
@@ -105,6 +126,24 @@ export default function LabSuiteSettings() {
     }
   };
 
+  const updateSidebarFeatures = async (hiddenFeatures) => {
+    const value = JSON.stringify(hiddenFeatures);
+    setSettings(prev => ({ ...prev, sidebar_hidden_features: value }));
+    try {
+      await ipcRenderer.invoke('settings:set', { key: 'sidebar_hidden_features', value });
+      onSidebarFeaturesChange?.(hiddenFeatures);
+    } catch (error) {
+      console.error('Failed to update sidebar feature visibility:', error);
+      loadSettings();
+    }
+  };
+
+  const toggleSidebarFeature = (id) => {
+    const hidden = parseSidebarHiddenFeatures(settings.sidebar_hidden_features);
+    const next = hidden.includes(id) ? hidden.filter(item => item !== id) : [...hidden, id];
+    updateSidebarFeatures(next);
+  };
+
   const exportDecryptTool = async () => {
     try {
       const result = await ipcRenderer.invoke('settings:exportDecryptTool');
@@ -181,6 +220,43 @@ export default function LabSuiteSettings() {
       <h1 style={{ marginBottom: '24px', fontSize: '24px', color: 'var(--accent-primary)' }}>Suite Settings</h1>
       
       <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '800px' }}>
+        <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '18px', margin: '0 0 6px', color: 'var(--text-primary)' }}>Sidebar</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                Hide tools you do not use. This only removes their shortcut; it does not disable backups or delete data. Home, Backup Engine, and Settings always stay available.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => updateSidebarFeatures([])}
+              disabled={parseSidebarHiddenFeatures(settings.sidebar_hidden_features).length === 0}
+            >
+              Show all
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '10px' }}>
+            {SIDEBAR_FEATURES.map(feature => {
+              const hidden = parseSidebarHiddenFeatures(settings.sidebar_hidden_features).includes(feature.id);
+              return (
+                <label key={feature.id} style={{ display: 'flex', gap: '10px', padding: '11px', border: '1px solid var(--border-color)', borderRadius: '8px', cursor: 'pointer', background: hidden ? 'rgba(0,0,0,0.12)' : 'rgba(64, 138, 113, 0.08)' }}>
+                  <input
+                    type="checkbox"
+                    checked={!hidden}
+                    onChange={() => toggleSidebarFeature(feature.id)}
+                    style={{ width: '17px', height: '17px', marginTop: '2px', accentColor: 'var(--accent-primary)' }}
+                  />
+                  <span>
+                    <strong style={{ display: 'block', fontSize: '13px', color: 'var(--text-primary)' }}>{feature.label}</strong>
+                    <span style={{ display: 'block', marginTop: '3px', fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.35 }}>{feature.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </section>
         
         {/* Backup & Sync Behavior */}
         <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>

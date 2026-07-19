@@ -1200,6 +1200,34 @@ input:checked + .slider:before {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.suite-sidebar {
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.suite-sidebar-menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-height: 650px) {
+  .suite-sidebar .suite-status-card {
+    display: none;
+  }
+
+  .suite-sidebar-footer {
+    gap: 8px;
+  }
 }
 
 .suite-status-card {

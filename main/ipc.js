@@ -114,6 +114,7 @@ const RENDERER_WRITABLE_SETTINGS = new Set([
   'pack_max_files',
   'pack_root_prune_interval_hours',
   'explorer_friendly_active_vault',
+  'sidebar_hidden_features',
   'crash_report_url'
 ]);
 

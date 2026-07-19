@@ -72,6 +72,19 @@ const SHUTDOWN_PRESETS = [
   { label: '8 hrs', seconds: 8 * 60 * 60 }
 ];
 
+const SIDEBAR_FEATURE_IDS = new Set([
+  'lan', 'vm-protect', 'telegram', 'sheets', 'notebook', 'todo', 'crypto', 'disk-analyzer'
+]);
+
+function parseSidebarHiddenFeatures(value) {
+  try {
+    const items = JSON.parse(String(value || '[]'));
+    return Array.isArray(items) ? items.filter(id => SIDEBAR_FEATURE_IDS.has(id)) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
 function formatShutdownDuration(totalSeconds = 0) {
   const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
   const hours = Math.floor(seconds / 3600);
@@ -94,6 +107,7 @@ export default function App() {
   const [globalStatus, setGlobalStatus] = useState('Protected');
   const [globalStatusDetail, setGlobalStatusDetail] = useState('All enabled backups on this PC are healthy.');
   const [globalFailureCount, setGlobalFailureCount] = useState(0);
+  const [hiddenSidebarFeatures, setHiddenSidebarFeatures] = useState([]);
 
   const refreshGlobalStatus = () => {
     Promise.all([
@@ -156,6 +170,7 @@ export default function App() {
 
   useEffect(() => {
     safeInvoke('settings:get').then(s => {
+      if (s) setHiddenSidebarFeatures(parseSidebarHiddenFeatures(s.sidebar_hidden_features));
       if (s && s.setup_complete !== '1') {
         setActiveTab('backup');
       }
@@ -214,6 +229,12 @@ export default function App() {
   const handleMinimize = () => ipcRenderer.send('window:minimize');
   const handleMaximize = () => ipcRenderer.send('window:maximize');
   const handleClose = () => ipcRenderer.send('window:close');
+  const handleSidebarFeaturesChange = (nextHiddenFeatures) => {
+    const next = Array.from(new Set(nextHiddenFeatures || [])).filter(id => SIDEBAR_FEATURE_IDS.has(id));
+    setHiddenSidebarFeatures(next);
+    if (next.includes(activeTab)) setActiveTab('dashboard');
+  };
+  const isSidebarFeatureVisible = id => !hiddenSidebarFeatures.includes(id);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -238,7 +259,7 @@ export default function App() {
       case 'disk-analyzer':
         return <DiskAnalyzer />;
       case 'settings':
-        return <LabSuiteSettings />;
+        return <LabSuiteSettings onSidebarFeaturesChange={handleSidebarFeaturesChange} />;
       default:
         return <Dashboard setActiveTab={setActiveTab} />;
     }
@@ -270,27 +291,30 @@ export default function App() {
             <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); }}>Settings</button>
           </div>
 
-          <div style={{ marginBottom: '30px', padding: '0 10px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
-            <NavItem id="dashboard" icon="🏠" label="Home Dashboard" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="lan" icon="📡" label="Network Drive" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="vm-protect" icon={<VmIcon size={16} />} label="VM Protect" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />
-          </div>
+          <div className="suite-sidebar-menu">
+            <div style={{ marginBottom: '30px', padding: '0 10px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
+              <NavItem id="dashboard" icon="🏠" label="Home Dashboard" activeTab={activeTab} setTab={setActiveTab} />
+              <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={setActiveTab} />
+              {isSidebarFeatureVisible('lan') && <NavItem id="lan" icon="📡" label="Network Drive" activeTab={activeTab} setTab={setActiveTab} />}
+              {isSidebarFeatureVisible('vm-protect') && <NavItem id="vm-protect" icon={<VmIcon size={16} />} label="VM Protect" activeTab={activeTab} setTab={setActiveTab} />}
+              {isSidebarFeatureVisible('telegram') && <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />}
+            </div>
 
-          <div style={{ marginBottom: '30px', padding: '0 10px' }}>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Productivity</div>
-            <NavItem id="sheets" icon="📊" label="Encrypted Tables" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="notebook" icon="📓" label="Secure Notebook" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="todo" icon="📋" label="Task Board" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />
-            <NavItem id="disk-analyzer" icon="💾" label="Space Analyzer" activeTab={activeTab} setTab={setActiveTab} />
+            {(isSidebarFeatureVisible('sheets') || isSidebarFeatureVisible('notebook') || isSidebarFeatureVisible('todo') || isSidebarFeatureVisible('crypto') || isSidebarFeatureVisible('disk-analyzer')) && (
+              <div style={{ marginBottom: '16px', padding: '0 10px' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Productivity</div>
+                {isSidebarFeatureVisible('sheets') && <NavItem id="sheets" icon="📊" label="Encrypted Tables" activeTab={activeTab} setTab={setActiveTab} />}
+                {isSidebarFeatureVisible('notebook') && <NavItem id="notebook" icon="📓" label="Secure Notebook" activeTab={activeTab} setTab={setActiveTab} />}
+                {isSidebarFeatureVisible('todo') && <NavItem id="todo" icon="📋" label="Task Board" activeTab={activeTab} setTab={setActiveTab} />}
+                {isSidebarFeatureVisible('crypto') && <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />}
+                {isSidebarFeatureVisible('disk-analyzer') && <NavItem id="disk-analyzer" icon="💾" label="Space Analyzer" activeTab={activeTab} setTab={setActiveTab} />}
+              </div>
+            )}
           </div>
-
-          <div style={{ flex: 1 }}></div>
 
           <div className="suite-sidebar-footer">
+            <NavItem id="settings" icon="⚙️" label="Suite Settings" activeTab={activeTab} setTab={setActiveTab} />
             {/* Global Google Drive Status */}
             <div className="suite-status-card">
               <div className="suite-status-header">
@@ -330,7 +354,6 @@ export default function App() {
               )}
             </div>
 
-            <NavItem id="settings" icon="⚙️" label="Suite Settings" activeTab={activeTab} setTab={setActiveTab} />
             <div className="suite-version">
               LabSuite v{appVersion}
             </div>
