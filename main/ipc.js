@@ -1844,6 +1844,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return {
       rcloneVersion: version,
       gdriveStatus: gdriveInfo.email !== 'Disconnected' ? 'Connected' : 'Disconnected',
+      gdriveError: gdriveInfo.error || null,
       remoteSafety: remoteSafetyStatus
     };
   });

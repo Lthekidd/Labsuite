@@ -3506,6 +3506,11 @@ export default function LabSuiteBackup() {
                   <p style={{ fontSize: '18px', margin: '10px 0 4px', color: healthInfo.gdriveStatus === 'Connected' ? 'var(--accent-secondary)' : 'var(--accent-error)' }}>
                     {healthInfo.gdriveStatus === 'Connected' ? 'Google Drive connected' : 'Google Drive disconnected'}
                   </p>
+                  {healthInfo.gdriveStatus !== 'Connected' && healthInfo.gdriveError && (
+                    <p style={{ fontSize: '11.5px', color: 'var(--accent-error)', margin: '4px 0 6px', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                      {healthInfo.gdriveError}
+                    </p>
+                  )}
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
                     rclone version: {healthInfo.rcloneVersion}
                   </p>

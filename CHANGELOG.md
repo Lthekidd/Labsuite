@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.38 — 2026-07-20
+
+### Added
+
+- Added a "Re-authorize Account" button to Suite Settings that triggers browser authentication using the currently active personal Client ID and Client Secret (without needing to re-enter them).
+
+### Fixed
+
+- Exposed connection check error messages (e.g. "Google Drive login session expired") in the Backup Health Connectivity card rather than marking the drive as disconnected silently.
+
 ## 2.2.37 — 2026-07-20
 
 ### Fixed

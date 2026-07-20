@@ -1,6 +1,6 @@
 {
   "name": "labsuite",
-  "version": "2.2.37",
+  "version": "2.2.38",
   "description": "Encrypted suite of productivity tools",
   "main": "main/index.js",
   "author": "LabSuite Team",

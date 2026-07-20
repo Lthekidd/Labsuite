@@ -608,15 +608,44 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
             </p>
             {googleClientError && <p style={{ color: 'var(--accent-error)', fontSize: '12px', margin: '0 0 12px' }}>{googleClientError}</p>}
             {googleClientMessage && <p style={{ color: 'var(--accent-secondary)', fontSize: '12px', margin: '0 0 12px' }}>{googleClientMessage}</p>}
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={isReconnectingGoogle || !googleClientId.trim() || !googleClientSecret.trim() || !googleClientStatus.hasRemote}
-              onClick={reconnectGoogleDriveClient}
-              style={{ padding: '9px 14px' }}
-            >
-              {isReconnectingGoogle ? 'Approve in Browser...' : 'Save Credentials & Reconnect'}
-            </button>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={isReconnectingGoogle || !googleClientId.trim() || !googleClientSecret.trim() || !googleClientStatus.hasRemote}
+                onClick={reconnectGoogleDriveClient}
+                style={{ padding: '9px 14px' }}
+              >
+                {isReconnectingGoogle && googleClientId.trim() ? 'Approve in Browser...' : 'Save Credentials & Reconnect'}
+              </button>
+              {googleClientStatus.hasRemote && (
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={isReconnectingGoogle}
+                  onClick={async () => {
+                    setGoogleClientError('');
+                    setGoogleClientMessage('');
+                    setIsReconnectingGoogle(true);
+                    try {
+                      const status = await ipcRenderer.invoke('auth:reconnectGDriveClient', {
+                        clientId: '',
+                        clientSecret: ''
+                      });
+                      setGoogleClientStatus(status || {});
+                      setGoogleClientMessage('Google Drive was reauthorized. Backups have resumed.');
+                    } catch (error) {
+                      setGoogleClientError(error.message || 'Google Drive could not be reauthorized.');
+                    } finally {
+                      setIsReconnectingGoogle(false);
+                    }
+                  }}
+                  style={{ padding: '9px 14px' }}
+                >
+                  {isReconnectingGoogle && !googleClientId.trim() ? 'Approve in Browser...' : 'Re-authorize Account'}
+                </button>
+              )}
+            </div>
           </div>
         </section>
 

@@ -1042,7 +1042,15 @@ async function getGDriveInfoForRemote(remoteName) {
     };
   } catch (error) {
     console.error('getGDriveInfoForRemote failed with error:', error);
-    return { email: 'Disconnected', accountEmail: '', displayName: '', used: 0, total: 0, free: 0 };
+    return {
+      email: 'Disconnected',
+      accountEmail: '',
+      displayName: '',
+      used: 0,
+      total: 0,
+      free: 0,
+      error: error.message || String(error)
+    };
   }
 }
 
@@ -1127,7 +1135,6 @@ async function reconnectGoogleDriveClient(clientId, clientSecret) {
   if (activeRcloneProcesses.size > 0) {
     throw new Error('Wait for the current backup or restore transfer to finish, then reconnect Google Drive.');
   }
-  const credentials = validateGoogleClientCredentials(clientId, clientSecret);
   const { configPath } = getPaths();
   const remoteName = getRawRemoteName();
   if (!fs.existsSync(configPath)) {
@@ -1135,10 +1142,26 @@ async function reconnectGoogleDriveClient(clientId, clientSecret) {
   }
 
   const previousConfig = fs.readFileSync(configPath, 'utf8');
-  const updatedConfig = updateRcloneRemoteConfig(previousConfig, remoteName, {
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret
-  });
+  let finalClientId = clientId;
+  let finalClientSecret = clientSecret;
+
+  if (!clientId && !clientSecret) {
+    finalClientId = getRcloneRemoteConfigValue(previousConfig, remoteName, 'client_id');
+    finalClientSecret = getRcloneRemoteConfigValue(previousConfig, remoteName, 'client_secret');
+  }
+
+  let credentials = null;
+  if (finalClientId || finalClientSecret) {
+    credentials = validateGoogleClientCredentials(finalClientId, finalClientSecret);
+  }
+
+  let updatedConfig = previousConfig;
+  if (credentials) {
+    updatedConfig = updateRcloneRemoteConfig(previousConfig, remoteName, {
+      client_id: credentials.clientId,
+      client_secret: credentials.clientSecret
+    });
+  }
 
   try {
     fs.writeFileSync(configPath, updatedConfig, 'utf8');
