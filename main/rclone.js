@@ -1021,14 +1021,14 @@ function getNamedRemotePath(remoteName, remotePath = '') {
 
 async function getGDriveInfoForRemote(remoteName) {
   try {
-    const stdout = await runRclone(['about', getNamedRemotePath(remoteName), '--json'], { timeoutMs: 15000 });
+    const stdout = await runRclone(['about', getNamedRemotePath(remoteName), '--json'], { timeoutMs: 45000 });
     const info = safeParseJson(stdout) || {};
     let accountEmail = '';
     let displayName = '';
     try {
       const userInfo = parseJsonOrObjectText(await runRclone([
         'backend', 'userinfo', getNamedRemotePath(remoteName)
-      ], { timeoutMs: 15000 }));
+      ], { timeoutMs: 45000 }));
       accountEmail = findNestedField(userInfo, ['email', 'emailAddress', 'email_address', 'userPrincipalName']);
       displayName = findNestedField(userInfo, ['name', 'displayName', 'display_name']);
     } catch (_) {}
@@ -1041,6 +1041,7 @@ async function getGDriveInfoForRemote(remoteName) {
       free: Number(info.free) || 0
     };
   } catch (error) {
+    console.error('getGDriveInfoForRemote failed with error:', error);
     return { email: 'Disconnected', accountEmail: '', displayName: '', used: 0, total: 0, free: 0 };
   }
 }
@@ -1662,7 +1663,7 @@ async function listRemoteShortcutCandidates() {
  */
 async function getRemoteFileMetadata(remoteFilePath) {
   try {
-    const stdout = await runRclone(['lsjson', getRemotePath(remoteFilePath)], { timeoutMs: 15000 });
+    const stdout = await runRclone(['lsjson', getRemotePath(remoteFilePath)], { timeoutMs: 45000 });
     const items = safeParseJson(stdout);
     return items.length > 0 ? items[0] : null;
   } catch (e) {

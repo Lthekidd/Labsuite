@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.37 — 2026-07-20
+
+### Fixed
+
+- Increased the Google Drive connection and remote metadata check timeouts from 15 seconds to 45 seconds. This prevents connection dropouts and "Google Drive disconnected" states when rclone performs network-bound OAuth token refreshes on slower networks.
+
 ## 2.2.36 — 2026-07-19
 
 ### Added
