@@ -2999,7 +2999,7 @@ export default function LabSuiteBackup() {
                   {/* Detailed Stats */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
                     <div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Data Remaining</div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Queue Data Remaining</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
                         {displayBytesTotal > 0 ? `${formatBytes(displayBytesRemaining)} left` : 'Calculating...'}
                         {displayBytesTotal > 0 && (
@@ -3023,14 +3023,14 @@ export default function LabSuiteBackup() {
                     </div>
 
                     <div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Transfer Speed</div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Current Transfer Speed</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
                         {formatSpeed(displaySpeed) || 'Calculating...'}
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Time Left (ETA)</div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Current Transfer ETA</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
                         {formatEta(displayEtaSec)}
                       </div>

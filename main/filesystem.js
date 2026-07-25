@@ -59,6 +59,10 @@ const DEFAULT_EXCLUSIONS = [
   // Log & crash files
   '*.log',
   '**/*.log',
+  // VMware lock directories and files are transient while a VM is running.
+  // They must not be planned or verified as durable backup content.
+  '*.lck',
+  '**/*.lck',
   'DumpStack.log',
   'DumpStack.log.tmp',
   '**/DumpStack.log.tmp',

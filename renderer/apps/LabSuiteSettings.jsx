@@ -365,17 +365,18 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload Speed)</label>
+              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload Speed, MB/s)</label>
               <select 
                 value={settings.bwlimit || '0'}
                 onChange={(e) => updateSetting('bwlimit', e.target.value)}
                 style={inputStyle}
               >
                 <option value="0">Unlimited (Fastest)</option>
-                <option value="1M">1 MB/s (Light)</option>
-                <option value="5M">5 MB/s (Moderate)</option>
-                <option value="10M">10 MB/s (Heavy)</option>
-                <option value="50M">50 MB/s (Very Heavy)</option>
+                <option value="1M">1 MB/s (about 8 Mbps)</option>
+                <option value="5M">5 MB/s (about 40 Mbps)</option>
+                <option value="6M">6 MB/s (about 50 Mbps)</option>
+                <option value="10M">10 MB/s (about 80 Mbps)</option>
+                <option value="50M">50 MB/s (about 400 Mbps)</option>
               </select>
             </div>
 

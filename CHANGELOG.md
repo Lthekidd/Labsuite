@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.39 — 2026-07-25
+
+### Fixed
+
+- Secure Notebook now authorizes active backup folders independently from optional LAN sharing, so notes listed in the sidebar can be opened.
+- Backup queue progress now distinguishes logical queue work from network transfer activity. The ETA is limited to the active rclone transfer and no longer treats skipped existing files or cloud-side version moves as uploaded bytes.
+- Added a 6 MB/s (about 50 Mbps) bandwidth option and clarified that bandwidth settings use MB/s rather than Mbps.
+- Excluded transient VMware `.lck` files and directories from backup planning and verification.
+- Fixed VM Protect staged-file reconciliation when reading manifest entries.
+
 ## 2.2.38 — 2026-07-20
 
 ### Added

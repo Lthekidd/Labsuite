@@ -5,27 +5,67 @@ const fastDriveSync = require('./fastDriveSync');
 const fastCrypt = require('./fastCrypt');
 const crypto = require('crypto');
 
+function resolveExistingPath(filePath) {
+  const resolved = path.resolve(filePath);
+  try {
+    return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+  } catch (_) {
+    return resolved;
+  }
+}
+
+function getNotebookFolders() {
+  return db.getEnabledFolders()
+    .map(folder => {
+      const localPath = folder.local_path || folder.path;
+      if (!localPath || typeof localPath !== 'string') return null;
+      return {
+        ...folder,
+        local_path: resolveExistingPath(localPath)
+      };
+    })
+    .filter(Boolean);
+}
+
+function isAllowedByFolder(filePath, folder) {
+  const filesystem = require('./filesystem');
+  return filesystem.isPathInsideFolder(filePath, folder.local_path)
+    && filesystem.isPathIncluded(filePath, folder)
+    && !filesystem.isPathExcluded(filePath, folder);
+}
+
 /**
  * Scan all LabSuite managed folders for .txt files.
  */
 function listLocal() {
-  const folders = db.getFolders();
+  const folders = getNotebookFolders();
   const txtFiles = [];
+  const seenPaths = new Set();
 
-  const walkSync = (dir, rootId, rootName) => {
+  const walkSync = (dir, folder, rootName) => {
     try {
-      const files = fs.readdirSync(dir);
-      for (const file of files) {
-        const fullPath = path.join(dir, file);
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
         try {
-          const stat = fs.statSync(fullPath);
-          if (stat.isDirectory()) {
-            walkSync(fullPath, rootId, rootName);
-          } else if (file.endsWith('.txt')) {
+          // Do not follow links or junctions outside the configured backup root.
+          if (entry.isSymbolicLink() || !isAllowedByFolder(fullPath, folder)) continue;
+
+          if (entry.isDirectory()) {
+            walkSync(fullPath, folder, rootName);
+          } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.txt') {
+            const canonicalPath = resolveExistingPath(fullPath);
+            if (!isAllowedByFolder(canonicalPath, folder)) continue;
+
+            const pathKey = process.platform === 'win32' ? canonicalPath.toLowerCase() : canonicalPath;
+            if (seenPaths.has(pathKey)) continue;
+            seenPaths.add(pathKey);
+
+            const stat = fs.statSync(canonicalPath);
             txtFiles.push({
-              path: fullPath,
-              name: file,
-              rootId: rootId,
+              path: canonicalPath,
+              name: entry.name,
+              rootId: folder.id,
               rootName: rootName,
               size: stat.size,
               mtime: stat.mtimeMs
@@ -41,9 +81,9 @@ function listLocal() {
   };
 
   for (const f of folders) {
-    const localPath = f.local_path || f.path;
+    const localPath = f.local_path;
     if (localPath && fs.existsSync(localPath)) {
-      walkSync(localPath, f.id, path.basename(localPath));
+      walkSync(localPath, f, path.basename(localPath) || localPath);
     }
   }
 
@@ -51,17 +91,16 @@ function listLocal() {
 }
 
 function assertAllowedTextFile(filePath) {
-  const filesystem = require('./filesystem');
   if (!filePath || typeof filePath !== 'string') {
     throw new Error('Missing note path.');
   }
 
-  const resolved = path.resolve(filePath);
+  const resolved = resolveExistingPath(filePath);
   if (path.extname(resolved).toLowerCase() !== '.txt') {
     throw new Error('Secure Notebook can only open text files.');
   }
 
-  if (!filesystem.isWithinSharedPaths(resolved)) {
+  if (!getNotebookFolders().some(folder => isAllowedByFolder(resolved, folder))) {
     throw new Error('Secure Notebook can only access files inside configured backup folders.');
   }
 

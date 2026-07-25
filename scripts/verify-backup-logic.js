@@ -110,6 +110,9 @@ assert.ok(filesystem.matchesExclusionPattern('**/node_modules/**', 'project/node
 assert.ok(filesystem.matchesExclusionPattern('**/dist-packaged/**', 'LabSuite/dist-packaged/win-unpacked.tmp/locales/en-US.pak'));
 assert.ok(filesystem.matchesExclusionPattern('/private/**', 'private/secret.txt'));
 assert.ok(!filesystem.matchesExclusionPattern('/private/**', 'public/private/secret.txt'));
+assert.ok(filesystem.matchesExclusionPattern('**/*.lck', 'Spanish Octo 4/Spanish Octo 4.vmdk.lck/M36802.lck'));
+assert.ok(filesystem.DEFAULT_EXCLUSIONS.includes('*.lck'));
+assert.ok(filesystem.DEFAULT_EXCLUSIONS.includes('**/*.lck'));
 
 assert.ok(filesystem.isPathInsideFolder('C:\\root\\child\\file.txt', 'C:\\root'));
 assert.ok(!filesystem.isPathInsideFolder('C:\\root-other\\file.txt', 'C:\\root'));
@@ -297,6 +300,22 @@ assert.strictEqual(
 );
 assert.strictEqual(backupWorker.watcherDebounceMs, 10000);
 assert.strictEqual(backupWorker.watcherMaxWaitMs, 60000);
+const originalRunStats = backupWorker.currentRunStats;
+backupWorker.currentRunStats = {
+  globalBytesDone: 1024 * 1024 * 1024,
+  globalBytesTotal: 2 * 1024 * 1024 * 1024,
+  globalFilesDone: 1,
+  globalFilesTotal: 2,
+  startedAt: Date.now() - 1000
+};
+let capturedOverallProgress = null;
+backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
+backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: null });
+assert.strictEqual(capturedOverallProgress.etaSec, null, 'Logical queue bytes must not fabricate an upload ETA.');
+backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
+backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: 45 });
+assert.strictEqual(capturedOverallProgress.etaSec, 45, 'Current rclone transfer ETA should remain available.');
+backupWorker.currentRunStats = originalRunStats;
 assert.strictEqual(remoteSafety.VAULT_MARKER_PATH, rclone.getVaultPath('control', 'vault-marker.json'));
 assert.ok(network.__private.isWithinWindow('23:00', '06:00') === true || network.__private.isWithinWindow('23:00', '06:00') === false);
 

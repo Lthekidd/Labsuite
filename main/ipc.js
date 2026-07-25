@@ -2139,7 +2139,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   const markVmTreeDirty = async (rootPath, folder, maxFiles = 5000) => {
     const manifestEntries = folder
-      ? new Map(db.getManifestEntries(folder.id).map(entry => [String(entry.relative_path || '').replace(/\\/g, '/').toLowerCase(), entry]))
+      ? new Map(Object.values(db.getManifestEntries(folder.id)).map(entry => [String(entry.relative_path || '').replace(/\\/g, '/').toLowerCase(), entry]))
       : new Map();
     const queue = [rootPath];
     let marked = 0;

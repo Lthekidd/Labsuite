@@ -47,5 +47,9 @@ assert.ok(
   mainSources.includes("app.exit(0);") && mainSources.includes("if (!gotTheLock)"),
   'Duplicate LabSuite processes must exit immediately before starting backup services.'
 );
+assert.ok(
+  mainSources.includes('Object.values(db.getManifestEntries(folder.id)).map'),
+  'VM Protect reconciliation must convert manifest entry maps before iterating them.'
+);
 
 console.log(`IPC contract verification passed (${allowed.size} invoke channels).`);

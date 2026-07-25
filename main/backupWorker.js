@@ -379,11 +379,15 @@ class BackupWorker extends EventEmitter {
     }
 
     const speed = folderProgress.speed || 0;
-    const remainingBytes = Math.max(0, globalBytesTotal - globalBytesDone);
     
-    const averageSpeed = elapsed > 0 ? globalBytesDone / elapsed : 0;
-    const effectiveSpeed = averageSpeed > 0 ? averageSpeed : speed;
-    const etaSec = effectiveSpeed > 0 && remainingBytes > 0 ? Math.round(remainingBytes / effectiveSpeed) : null;
+    // Queue progress includes work that rclone can skip after comparing an
+    // existing remote object, as well as cloud-side moves into history. Those
+    // bytes are not necessarily network uploads, so never derive an overall
+    // upload ETA from logical queue bytes completed.
+    const etaSec = folderProgress.etaSec !== null && folderProgress.etaSec !== undefined &&
+      Number.isFinite(Number(folderProgress.etaSec)) && Number(folderProgress.etaSec) >= 0
+      ? Number(folderProgress.etaSec)
+      : null;
 
     const progressPayload = {
       percent: Math.max(0, Math.min(100, percent)),
