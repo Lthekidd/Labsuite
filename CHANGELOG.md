@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.42 — 2026-07-25
+
+### Fixed
+
+- Backup Engine: Fixed pause state instability where active progress listeners could override user-initiated backup pauses.
+- App Hub: Restored the PC Shutdown / Restart Timer panel with quick preset buttons (10 min, 30 min, 1 hr, 3 hrs, 5 hrs, 8 hrs).
+- Telegram Desktop Backup: Enhanced executable detection to auto-launch Telegram Desktop if closed or minimized to tray, automatically set media export size limit slider to maximum, and improved UI Automation JSON format selection.
+
 ## 2.2.41 — 2026-07-25
 
 ### Fixed
