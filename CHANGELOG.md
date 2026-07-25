@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.46 — 2026-07-25
+
+### Added
+
+- Activity Tab: Added live restore job tracking with real-time speed (MB/s), file progress, and a 1-click **Resume Restore** button for every restore entry.
+- Persistent Restore Manager: Restores now persist in the local database across app restarts and updates. Interrupted restore jobs automatically prompt an **Interrupted Restore Found — [Resume Restore]** banner on startup.
+- Bandwidth Limits: Enforced global `--bwlimit` and transfer tuning flags on all restore downloads.
+
 ## 2.2.45 — 2026-07-25
 
 ### Improved

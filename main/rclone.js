@@ -1463,7 +1463,8 @@ function copyFileRemoteToLocal(remoteFilePath, localFilePath, options = {}) {
     'copyto',
     getRemotePath(remoteFilePath),
     localFilePath,
-    ...(options.overwrite === true ? [] : ['--ignore-existing'])
+    ...(options.overwrite === true ? [] : ['--ignore-existing']),
+    ...getTransferFlagArgs()
   ]);
 }
 

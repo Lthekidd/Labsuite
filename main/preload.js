@@ -69,6 +69,8 @@ const INVOKE_CHANNELS = new Set([
   'restore:deleteRemote',
   'restore:start',
   'restore:packedFile',
+  'restore:getActiveJobs',
+  'restore:resumeJob',
 
   // Filesystem API
   'filesystem:listDrives',
@@ -222,7 +224,7 @@ const LISTEN_CHANNELS = new Set([
   'restore:progress',
   'restore:complete',
   'restore:error',
-  'restore:error',
+  'restore:activity-update',
   'health:verify-log',
   'health:safety-update',
   'vault:transfer-progress',

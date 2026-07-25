@@ -346,6 +346,7 @@ function loadDatabase() {
       if (!data.backup_manifest) data.backup_manifest = {};
       if (!data.restore_points) data.restore_points = [];
       if (!data.sync_log) data.sync_log = [];
+      if (!data.active_restores) data.active_restores = [];
       if (!data.settings) data.settings = {};
       if (!data.cache) data.cache = {};
       if (!data.telegramInstalls) data.telegramInstalls = [];
@@ -1109,6 +1110,51 @@ module.exports = {
   clearSyncLogs: () => {
     loadDatabase();
     data.sync_log = [];
+    saveDatabase();
+    return true;
+  },
+
+  // Active restore operations
+  getActiveRestores: () => {
+    loadDatabase();
+    return data.active_restores || [];
+  },
+
+  upsertActiveRestore: (restoreJob) => {
+    loadDatabase();
+    if (!data.active_restores) data.active_restores = [];
+    const index = data.active_restores.findIndex(job => job.id === restoreJob.id || (job.remotePath === restoreJob.remotePath && job.localDestination === restoreJob.localDestination));
+    const now = new Date().toISOString();
+    const updated = {
+      id: restoreJob.id || `restore-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      remotePath: restoreJob.remotePath,
+      localDestination: restoreJob.localDestination,
+      label: restoreJob.label || restoreJob.remotePath,
+      type: restoreJob.type || 'folder',
+      status: restoreJob.status || 'restoring',
+      filesDone: Number(restoreJob.filesDone) || 0,
+      filesTotal: Number(restoreJob.filesTotal) || 0,
+      bytesDone: Number(restoreJob.bytesDone) || 0,
+      bytesTotal: Number(restoreJob.bytesTotal) || 0,
+      speed: Number(restoreJob.speed) || 0,
+      startedAt: restoreJob.startedAt || now,
+      updatedAt: now,
+      errorMsg: restoreJob.errorMsg || null
+    };
+
+    if (index >= 0) {
+      data.active_restores[index] = { ...data.active_restores[index], ...updated };
+    } else {
+      data.active_restores.push(updated);
+    }
+    saveDatabase();
+    return updated;
+  },
+
+  removeActiveRestore: (id) => {
+    loadDatabase();
+    if (!data.active_restores) return false;
+    data.active_restores = data.active_restores.filter(job => job.id !== id);
     saveDatabase();
     return true;
   },

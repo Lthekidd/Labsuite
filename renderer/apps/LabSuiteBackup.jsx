@@ -426,9 +426,32 @@ export default function LabSuiteBackup() {
   const [remotePath, setRemotePath] = useState('');
   const [remoteItems, setRemoteItems] = useState([]);
   const [restoreDest, setRestoreDest] = useState('');
-  const [restoreStatus, setRestoreStatus] = useState(''); // '', 'restoring', 'success', 'error'
   const [restoreProgress, setRestoreProgress] = useState(null); // { filesDone, filesTotal, bytesDone, bytesTotal }
+  const [activeRestores, setActiveRestores] = useState([]);
   const [restoreLoading, setRestoreLoading] = useState(false);
+
+  const handleResumeRestore = async (rowOrJob) => {
+    const targetRemotePath = rowOrJob.remotePath || rowOrJob.relativePath || rowOrJob.file_path;
+    let targetLocalDest = rowOrJob.localDestination || rowOrJob.localPath || rowOrJob.folderPath;
+    if (!targetLocalDest) {
+      targetLocalDest = await ipcRenderer.invoke('folders:selectRestoreDest');
+      if (!targetLocalDest) return;
+    }
+    setRestoreStatus('restoring');
+    setRestoreDest(targetLocalDest);
+    setSelectedRestorePath(targetRemotePath);
+    attachRestoreListeners();
+    try {
+      await ipcRenderer.invoke('restore:resumeJob', {
+        id: rowOrJob.id,
+        remotePath: targetRemotePath,
+        localDestination: targetLocalDest
+      });
+    } catch (err) {
+      setRestoreStatus('error');
+      alert(`Failed to resume restore: ${err.message || err}`);
+    }
+  };
   const [restoreBrowseError, setRestoreBrowseError] = useState('');
   const [explorerSearch, setExplorerSearch] = useState('');
   const [selectedRemoteItem, setSelectedRemoteItem] = useState(null); // { Name, IsDir, Path, Size }
@@ -888,7 +911,8 @@ export default function LabSuiteBackup() {
             manifestSummary,
             points,
             mount,
-            destinations
+            destinations,
+            activeRestoreJobs
           ] = await Promise.all([
             safeInvoke('auth:getGDriveInfo'),
             safeInvoke('health:get'),
@@ -897,7 +921,8 @@ export default function LabSuiteBackup() {
             safeInvoke('backup:manifestSummary'),
             safeInvoke('backup:restorePoints'),
             safeInvoke('vault:getMountStatus'),
-            safeInvoke('vault:destinations')
+            safeInvoke('vault:destinations'),
+            safeInvoke('restore:getActiveJobs')
           ]);
 
           setGDriveInfo(info || null);
@@ -908,6 +933,7 @@ export default function LabSuiteBackup() {
           setRestorePoints(points || []);
           setMountInfo(mount || { status: 'unmounted' });
           setVaultDestinations(destinations || []);
+          setActiveRestores(activeRestoreJobs || []);
         } else {
           await refreshGDriveConnection();
         }
@@ -2605,6 +2631,15 @@ export default function LabSuiteBackup() {
   };
 
   const getActivityStatusStyle = (status) => {
+    if (status === 'restoring') {
+      return { label: 'Restoring', color: '#fbbf24', bg: 'rgba(245,158,11,0.14)', symbol: '↓' };
+    }
+    if (status === 'restored') {
+      return { label: 'Restored', color: '#34d399', bg: 'rgba(16,185,129,0.14)', symbol: '✓' };
+    }
+    if (status === 'restore_failed') {
+      return { label: 'Restore Failed', color: '#fca5a5', bg: 'rgba(239,68,68,0.14)', symbol: '!' };
+    }
     if (status === 'packing') {
       return { label: 'Packing', color: '#93c5fd', bg: 'rgba(59,130,246,0.14)', symbol: 'up' };
     }
@@ -2648,7 +2683,7 @@ export default function LabSuiteBackup() {
             <th style={{ padding: compact ? '8px 10px' : '10px 12px' }}>Size</th>
             <th style={{ padding: compact ? '8px 10px' : '10px 12px' }}>Progress</th>
             {!compact && <th style={{ padding: '10px 12px' }}>Time</th>}
-            {!compact && <th style={{ padding: '10px 12px' }}>Issue</th>}
+            {!compact && <th style={{ padding: '10px 12px' }}>Issue / Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -2660,7 +2695,8 @@ export default function LabSuiteBackup() {
             </tr>
           ) : visibleRows.map((row, rowIndex) => {
             const status = getActivityStatusStyle(row.status);
-            const active = ['uploading', 'versioning', 'preparing', 'packing'].includes(row.status);
+            const active = ['uploading', 'versioning', 'preparing', 'packing', 'restoring'].includes(row.status);
+            const isRestoreRow = row.action === 'restore' || row.type === 'restore';
             const pct = Math.max(0, Math.min(100, Number(row.percent) || 0));
             const showIndeterminate = active && pct === 0 && rowIndex < 8;
             return (
@@ -2689,7 +2725,7 @@ export default function LabSuiteBackup() {
                 <td style={{ padding: compact ? '8px 10px' : '10px 12px', minWidth: compact ? '130px' : '180px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ flex: 1, height: '5px', background: 'rgba(255,255,255,0.07)', borderRadius: '4px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: active && pct === 0 ? '35%' : `${pct}%`, background: row.status === 'failed' ? '#ef4444' : 'linear-gradient(90deg, #60a5fa, #34d399)', animation: showIndeterminate ? 'indeterminate-bar 1.6s ease-in-out infinite' : 'none', transition: 'width 0.3s ease' }} />
+                      <div style={{ height: '100%', width: active && pct === 0 ? '35%' : `${pct}%`, background: row.status === 'failed' ? '#ef4444' : isRestoreRow ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #60a5fa, #34d399)', animation: showIndeterminate ? 'indeterminate-bar 1.6s ease-in-out infinite' : 'none', transition: 'width 0.3s ease' }} />
                     </div>
                     <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', width: '34px', textAlign: 'right' }}>{pct}%</span>
                   </div>
@@ -2701,8 +2737,24 @@ export default function LabSuiteBackup() {
                 </td>
                 {!compact && <td style={{ padding: '10px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatActivityTime(row)}</td>}
                 {!compact && (
-                  <td style={{ padding: '10px 12px', color: row.error ? '#fca5a5' : 'var(--text-muted)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.error ? getReadableError(row.error) : ''}>
-                    {row.error ? getReadableError(row.error) : '-'}
+                  <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                    {isRestoreRow ? (
+                      <button
+                        className="btn btn-primary"
+                        style={{ padding: '3px 10px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                        disabled={restoreStatus === 'restoring'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleResumeRestore(row);
+                        }}
+                      >
+                        ⚡ Resume Restore
+                      </button>
+                    ) : (
+                      <span style={{ color: row.error ? '#fca5a5' : 'var(--text-muted)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.error ? getReadableError(row.error) : ''}>
+                        {row.error ? getReadableError(row.error) : '-'}
+                      </span>
+                    )}
                   </td>
                 )}
               </tr>
@@ -2909,6 +2961,43 @@ export default function LabSuiteBackup() {
       <div className="content-area" style={{ flex: 1, overflowY: 'auto', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative' }}>
           {activeTab === 'dashboard' && (
             <div className="activity-view-container">
+              {activeRestores.length > 0 && activeRestores.some(j => ['failed', 'restoring'].includes(j.status)) && (() => {
+                const job = activeRestores.find(j => ['failed', 'restoring'].includes(j.status)) || activeRestores[0];
+                return (
+                  <div style={{
+                    margin: '0 0 16px 0',
+                    background: 'linear-gradient(135deg, rgba(245,158,11,0.1) 0%, rgba(245,158,11,0.03) 100%)',
+                    border: '1px solid rgba(245,158,11,0.35)',
+                    borderRadius: '10px',
+                    padding: '14px 18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '20px' }}>⚠️</span>
+                      <div>
+                        <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-warning)' }}>
+                          Interrupted Restore Job Found
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                          {job.label || job.remotePath} → {job.localDestination}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      style={{ padding: '6px 14px', fontSize: '12px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      disabled={restoreStatus === 'restoring'}
+                      onClick={() => handleResumeRestore(job)}
+                    >
+                      ⚡ Resume Restore
+                    </button>
+                  </div>
+                );
+              })()}
               <div className="activity-header">
                 <div className="activity-title-section">
                   <h1>Activity</h1>
