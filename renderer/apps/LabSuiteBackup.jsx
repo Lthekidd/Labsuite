@@ -426,32 +426,10 @@ export default function LabSuiteBackup() {
   const [remotePath, setRemotePath] = useState('');
   const [remoteItems, setRemoteItems] = useState([]);
   const [restoreDest, setRestoreDest] = useState('');
+  const [restoreStatus, setRestoreStatus] = useState(''); // '', 'restoring', 'success', 'error'
   const [restoreProgress, setRestoreProgress] = useState(null); // { filesDone, filesTotal, bytesDone, bytesTotal }
   const [activeRestores, setActiveRestores] = useState([]);
   const [restoreLoading, setRestoreLoading] = useState(false);
-
-  const handleResumeRestore = async (rowOrJob) => {
-    const targetRemotePath = rowOrJob.remotePath || rowOrJob.relativePath || rowOrJob.file_path;
-    let targetLocalDest = rowOrJob.localDestination || rowOrJob.localPath || rowOrJob.folderPath;
-    if (!targetLocalDest) {
-      targetLocalDest = await ipcRenderer.invoke('folders:selectRestoreDest');
-      if (!targetLocalDest) return;
-    }
-    setRestoreStatus('restoring');
-    setRestoreDest(targetLocalDest);
-    setSelectedRestorePath(targetRemotePath);
-    attachRestoreListeners();
-    try {
-      await ipcRenderer.invoke('restore:resumeJob', {
-        id: rowOrJob.id,
-        remotePath: targetRemotePath,
-        localDestination: targetLocalDest
-      });
-    } catch (err) {
-      setRestoreStatus('error');
-      alert(`Failed to resume restore: ${err.message || err}`);
-    }
-  };
   const [restoreBrowseError, setRestoreBrowseError] = useState('');
   const [explorerSearch, setExplorerSearch] = useState('');
   const [selectedRemoteItem, setSelectedRemoteItem] = useState(null); // { Name, IsDir, Path, Size }
@@ -503,6 +481,29 @@ export default function LabSuiteBackup() {
   const [analyticsSummary, setAnalyticsSummary] = useState({ totalItems: 0, successCount: 0, failedCount: 0, totalBytes: 0, successRate: 100, graphData: [] });
 
   // Load configuration and status
+  const handleResumeRestore = async (rowOrJob) => {
+    const targetRemotePath = rowOrJob.remotePath || rowOrJob.relativePath || rowOrJob.file_path;
+    let targetLocalDest = rowOrJob.localDestination || rowOrJob.localPath || rowOrJob.folderPath;
+    if (!targetLocalDest) {
+      targetLocalDest = await ipcRenderer.invoke('folders:selectRestoreDest');
+      if (!targetLocalDest) return;
+    }
+    setRestoreStatus('restoring');
+    setRestoreDest(targetLocalDest);
+    setSelectedRestorePath(targetRemotePath);
+    attachRestoreListeners();
+    try {
+      await ipcRenderer.invoke('restore:resumeJob', {
+        id: rowOrJob.id,
+        remotePath: targetRemotePath,
+        localDestination: targetLocalDest
+      });
+    } catch (err) {
+      setRestoreStatus('error');
+      alert(`Failed to resume restore: ${err.message || err}`);
+    }
+  };
+
   useEffect(() => {
     loadAppConfigs();
 
