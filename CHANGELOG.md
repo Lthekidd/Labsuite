@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.47 — 2026-07-25
+
+### Fixed
+
+- Auto Updater: Fixed NSIS installer execution mode during updates (`isSilent=false`). Previously, silent mode (`isSilent=true`) caused the NSIS installer to silently abort on machines configured with non-one-click setups, leaving the application stuck on the previous version after restart.
+
 ## 2.2.46 — 2026-07-25
 
 ### Added

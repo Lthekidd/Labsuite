@@ -357,7 +357,11 @@ async function restartAndInstallUpdate() {
     message: 'Restarting LabSuite to install the update...'
   });
 
-  setTimeout(() => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+
+  setImmediate(() => {
     try {
       autoUpdater.quitAndInstall(true, true);
     } catch (error) {
@@ -368,7 +372,7 @@ async function restartAndInstallUpdate() {
         message: `Could not restart for update installation: ${error.message}`
       });
     }
-  }, 250);
+  });
 
   return { started: true };
 }
