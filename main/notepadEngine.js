@@ -8,7 +8,13 @@ const crypto = require('crypto');
 function resolveExistingPath(filePath) {
   const resolved = path.resolve(filePath);
   try {
-    return fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+    const realPath = fs.realpathSync.native ? fs.realpathSync.native(resolved) : fs.realpathSync(resolved);
+    // Windows can return an extended-length path (\\?\C:\...) here, while
+    // path.join/readdir return a normal drive path. Keep both sides of the
+    // backup-root comparison in the same form.
+    return realPath
+      .replace(/^\\\\\?\\UNC\\/i, '\\\\')
+      .replace(/^\\\\\?\\/, '');
   } catch (_) {
     return resolved;
   }

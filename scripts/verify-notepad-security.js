@@ -100,6 +100,19 @@ try {
 
   assert.strictEqual(notepadEngine.assertAllowedTextFile(allowedNote), path.resolve(allowedNote));
   assert.strictEqual(notepadEngine.assertAllowedTextFile(selectedNote), path.resolve(selectedNote));
+  if (fs.realpathSync.native) {
+    const originalRealpathNative = fs.realpathSync.native;
+    fs.realpathSync.native = filePath => `\\\\?\\${originalRealpathNative(filePath).replace(/^\\\\\\?\\/, '')}`;
+    try {
+      assert.strictEqual(
+        notepadEngine.assertAllowedTextFile(allowedNote),
+        path.resolve(allowedNote),
+        'Windows extended-length paths must still match their configured backup root.'
+      );
+    } finally {
+      fs.realpathSync.native = originalRealpathNative;
+    }
+  }
   assert.throws(() => notepadEngine.assertAllowedTextFile(disabledNote), /configured backup folders/);
   assert.throws(() => notepadEngine.assertAllowedTextFile(unselectedNote), /configured backup folders/);
   assert.throws(
