@@ -26,6 +26,8 @@ const ACTIVITY_TABLE_VIEWPORT_HEIGHT = 520;
 const ACTIVITY_TABLE_OVERSCAN_ROWS = 12;
 
 const TRANSFER_STATUSES = new Set(['uploading', 'versioning']);
+const RESTORE_RUNNING_STATUSES = new Set(['restoring']);
+const RESTORE_RESUMABLE_STATUSES = new Set(['interrupted', 'failed']);
 const LIVE_SETTLE_STATUSES = new Set(['uploading', 'versioning', 'packing', 'preparing', 'queued']);
 const OVERALL_QUEUE_STATUSES = new Set(['uploading', 'versioning', 'packing', 'preparing', 'queued']);
 
@@ -39,6 +41,8 @@ function isPackedBundleUpload(row) {
 
 function getActivityRank(row) {
   if (row.status === 'failed' || row.status === 'at_risk') return 0;
+  if (RESTORE_RUNNING_STATUSES.has(row.status)) return 1;
+  if (row.status === 'interrupted') return 2;
   if (TRANSFER_STATUSES.has(row.status)) {
     const percent = getPercent(row);
     if (percent > 0 && percent < 100) return 1;
@@ -112,6 +116,14 @@ function buildActivityQueueProgress(rows = []) {
 }
 
 function getLiveActivityText(item) {
+  const isRestore = item.action === 'restore' || item.type === 'restore';
+  if (isRestore) {
+    if (item.status === 'interrupted') return 'Restore interrupted';
+    if (item.status === 'failed') return 'Restore failed';
+    if (item.status === 'restored') return 'Restored';
+    const percent = getPercent(item);
+    return percent > 0 ? `Restoring (${percent}%)` : 'Preparing restore';
+  }
   if (item.status === 'queued') return 'Queued';
   if (item.status === 'failed') return 'Failed';
   if (item.status === 'at_risk') return 'Needs repair';
@@ -122,6 +134,45 @@ function getLiveActivityText(item) {
   if (item.status === 'packing') return 'Preparing package';
   if (item.status === 'preparing') return 'Preparing';
   return `Backing up (${item.progress}%)`;
+}
+
+function restoreJobToActivityRow(job = {}) {
+  const bytesTotal = Math.max(0, Number(job.bytesTotal) || 0);
+  const bytesDone = Math.max(0, Number(job.bytesDone) || 0);
+  const remotePath = String(job.remotePath || '');
+  return {
+    id: job.id || `restore-${remotePath}`,
+    action: 'restore',
+    type: 'restore',
+    status: job.status || 'interrupted',
+    relativePath: remotePath,
+    remotePath,
+    localPath: job.localDestination || '',
+    localDestination: job.localDestination || '',
+    fileName: job.label || remotePath.split('/').filter(Boolean).pop() || 'Vault restore',
+    folderPath: job.localDestination || '',
+    size: bytesTotal,
+    bytesDone,
+    bytesTotal,
+    filesDone: Math.max(0, Number(job.filesDone) || 0),
+    filesTotal: Math.max(0, Number(job.filesTotal) || 0),
+    percent: bytesTotal > 0 ? Math.min(100, Math.round((bytesDone / bytesTotal) * 100)) : 0,
+    speed: Math.max(0, Number(job.speed) || 0),
+    restoreKind: job.restoreKind || job.type || 'folder',
+    resumable: job.resumable !== false && job.type !== 'packed_file',
+    updatedAt: job.updatedAt || job.startedAt || new Date().toISOString(),
+    error: job.errorMsg || ''
+  };
+}
+
+function getHistoricalActivityStatus(log = {}) {
+  const status = String(log.status || '').toLowerCase();
+  if (log.action === 'restore') {
+    if (['restored', 'success', 'completed'].includes(status)) return 'restored';
+    if (['restoring', 'interrupted'].includes(status)) return 'interrupted';
+    return 'failed';
+  }
+  return ['success', 'completed', 'backed_up'].includes(status) ? 'completed' : 'failed';
 }
 
 const timeAgo = (dateStr) => {
@@ -663,10 +714,89 @@ export default function LabSuiteBackup() {
           updatedAt: data.updatedAt || new Date().toISOString()
         });
       }
+
+      if (!fileActivityFlushTimerRef.current) {
+        fileActivityFlushTimerRef.current = setTimeout(() => {
+          fileActivityFlushTimerRef.current = null;
+          const bufferedRows = [...fileActivityBufferRef.current.entries()];
+          fileActivityBufferRef.current.clear();
+          if (bufferedRows.length === 0) return;
+
+          setFileActivity(prev => {
+            const next = { ...prev };
+            for (const [id, row] of bufferedRows) {
+              next[id] = {
+                ...(next[id] || {}),
+                ...row
+              };
+            }
+            const retained = Object.values(next)
+              .sort(sortActivityRows)
+              .slice(0, MAX_FILE_ACTIVITY_ROWS);
+            return Object.fromEntries(retained.map(row => [row.id, row]));
+          });
+        }, FILE_ACTIVITY_RENDER_FLUSH_MS);
+      }
     };
 
     ipcRenderer.on('backup:file-activity', (event, data) => {
       queueFileActivityRows([data]);
+    });
+    ipcRenderer.on('backup:file-activity-batch', (event, rows) => {
+      queueFileActivityRows(Array.isArray(rows) ? rows : []);
+    });
+    const applyRestoreActivityUpdate = (data) => {
+      if (!data) return;
+      queueFileActivityRows([data]);
+      setActiveRestores(prev => {
+        if (data.status === 'restored') {
+          return prev.filter(job =>
+            job.id !== data.id &&
+            (!data.remotePath || job.remotePath !== data.remotePath)
+          );
+        }
+        const nextJob = {
+          id: data.id,
+          remotePath: data.remotePath || data.relativePath,
+          localDestination: data.localDestination || data.localPath,
+          label: data.fileName || data.remotePath || data.relativePath,
+          status: data.status,
+          filesDone: data.filesDone,
+          filesTotal: data.filesTotal,
+          bytesDone: data.bytesDone,
+          bytesTotal: data.bytesTotal,
+          speed: data.speed,
+          restoreKind: data.restoreKind,
+          resumable: data.resumable,
+          updatedAt: data.updatedAt,
+          errorMsg: data.error || ''
+        };
+        const index = prev.findIndex(job => job.id === nextJob.id);
+        if (index < 0) return [nextJob, ...prev];
+        const next = [...prev];
+        next[index] = { ...next[index], ...nextJob };
+        return next;
+      });
+      if (data.status === 'restored' || data.status === 'failed') {
+        loadAppConfigs();
+      }
+    };
+
+    ipcRenderer.on('restore:activity-update', (event, data) => {
+      applyRestoreActivityUpdate(data);
+    });
+    ipcRenderer.on('restore:progress', (event, data) => {
+      applyRestoreActivityUpdate(restoreJobToActivityRow({ ...data, status: 'restoring' }));
+    });
+    ipcRenderer.on('restore:complete', (event, data) => {
+      applyRestoreActivityUpdate(restoreJobToActivityRow({ ...data, status: 'restored' }));
+    });
+    ipcRenderer.on('restore:error', (event, data) => {
+      applyRestoreActivityUpdate(restoreJobToActivityRow({
+        ...data,
+        status: 'failed',
+        errorMsg: data && data.error
+      }));
     });
     ipcRenderer.on('sync:complete', (event, data) => {
       setSyncProgress(null);
@@ -712,6 +842,10 @@ export default function LabSuiteBackup() {
       ipcRenderer.removeAllListeners('sync:overall-progress');
       ipcRenderer.removeAllListeners('backup:file-activity');
       ipcRenderer.removeAllListeners('backup:file-activity-batch');
+      ipcRenderer.removeAllListeners('restore:activity-update');
+      ipcRenderer.removeAllListeners('restore:progress');
+      ipcRenderer.removeAllListeners('restore:complete');
+      ipcRenderer.removeAllListeners('restore:error');
       ipcRenderer.removeAllListeners('sync:complete');
       ipcRenderer.removeAllListeners('sync:conflict');
       ipcRenderer.removeAllListeners('health:verify-log');
@@ -824,7 +958,7 @@ export default function LabSuiteBackup() {
     
     // 1. Add active items from fileActivity
     const activeLive = Object.values(fileActivity).filter(row =>
-      ['uploading', 'versioning', 'preparing', 'packing', 'queued', 'failed', 'at_risk'].includes(row.status)
+      ['uploading', 'versioning', 'preparing', 'packing', 'queued', 'restoring', 'interrupted', 'failed', 'at_risk'].includes(row.status)
     );
     
     activeLive.forEach(row => {
@@ -841,6 +975,16 @@ export default function LabSuiteBackup() {
         etaSec: row.etaSec,
         time: row.updatedAt || row.queuedAt || new Date().toISOString(),
         isLive: true,
+        action: row.action || (row.type === 'restore' ? 'restore' : 'backup'),
+        type: row.type,
+        remotePath: row.remotePath || row.relativePath,
+        localDestination: row.localDestination || row.localPath || row.folderPath,
+        restoreKind: row.restoreKind,
+        resumable: row.resumable,
+        filesDone: row.filesDone,
+        filesTotal: row.filesTotal,
+        bytesDone: row.bytesDone,
+        bytesTotal: row.bytesTotal,
         issue: row.error || ''
       });
     });
@@ -858,13 +1002,13 @@ export default function LabSuiteBackup() {
         folderId: log.folder_id,
         folderPath: '',
         size: log.size_bytes || 0,
-        status: log.status === 'success' ? 'completed' : 'failed',
+        status: getHistoricalActivityStatus(log),
         progress: 100,
         speed: 0,
         etaSec: null,
         time: log.synced_at,
         isLive: false,
-        action: log.action,
+        action: log.action || 'backup',
         issue: log.error_msg || ''
       });
     });
@@ -934,7 +1078,21 @@ export default function LabSuiteBackup() {
           setRestorePoints(points || []);
           setMountInfo(mount || { status: 'unmounted' });
           setVaultDestinations(destinations || []);
-          setActiveRestores(activeRestoreJobs || []);
+          const restoreJobs = activeRestoreJobs || [];
+          setActiveRestores(restoreJobs);
+          if (restoreJobs.length > 0) {
+            setFileActivity(prev => {
+              const next = { ...prev };
+              for (const job of restoreJobs) {
+                const row = restoreJobToActivityRow(job);
+                next[row.id] = {
+                  ...(next[row.id] || {}),
+                  ...row
+                };
+              }
+              return next;
+            });
+          }
         } else {
           await refreshGDriveConnection();
         }
@@ -2489,7 +2647,7 @@ export default function LabSuiteBackup() {
   const formatBytes = (bytes) => {
     if (!bytes) return '0 B';
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
@@ -2638,6 +2796,9 @@ export default function LabSuiteBackup() {
     if (status === 'restored') {
       return { label: 'Restored', color: '#34d399', bg: 'rgba(16,185,129,0.14)', symbol: '✓' };
     }
+    if (status === 'interrupted') {
+      return { label: 'Interrupted', color: '#fbbf24', bg: 'rgba(245,158,11,0.14)', symbol: '!' };
+    }
     if (status === 'restore_failed') {
       return { label: 'Restore Failed', color: '#fca5a5', bg: 'rgba(239,68,68,0.14)', symbol: '!' };
     }
@@ -2739,7 +2900,7 @@ export default function LabSuiteBackup() {
                 {!compact && <td style={{ padding: '10px 12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{formatActivityTime(row)}</td>}
                 {!compact && (
                   <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                    {isRestoreRow ? (
+                    {isRestoreRow && row.resumable === true && RESTORE_RESUMABLE_STATUSES.has(row.status) ? (
                       <button
                         className="btn btn-primary"
                         style={{ padding: '3px 10px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
@@ -2904,6 +3065,19 @@ export default function LabSuiteBackup() {
   const overallStatusSuffix = displayOverallProgress
     ? `(${displayOverallPercent}% overall${displayEtaSec !== null && displayEtaSec !== undefined ? ` - ${formatEta(displayEtaSec)}` : ''})`
     : (aggregatePercent > 0 && aggregatePercent < 100 ? `(${aggregatePercent}% overall)` : '');
+  const currentRestoreJob = activeRestores.find(job => RESTORE_RUNNING_STATUSES.has(job.status)) || null;
+  const interruptedRestoreJob = activeRestores.find(job =>
+    job.resumable !== false && RESTORE_RESUMABLE_STATUSES.has(job.status)
+  ) || null;
+  const currentRestoreBytesDone = Math.max(0, Number(currentRestoreJob?.bytesDone) || 0);
+  const currentRestoreBytesTotal = Math.max(0, Number(currentRestoreJob?.bytesTotal) || 0);
+  const currentRestoreFilesDone = Math.max(0, Number(currentRestoreJob?.filesDone) || 0);
+  const currentRestoreFilesTotal = Math.max(0, Number(currentRestoreJob?.filesTotal) || 0);
+  const currentRestorePercent = currentRestoreBytesTotal > 0
+    ? Math.min(100, Math.round((currentRestoreBytesDone / currentRestoreBytesTotal) * 100))
+    : (currentRestoreFilesTotal > 0
+      ? Math.min(100, Math.round((currentRestoreFilesDone / currentRestoreFilesTotal) * 100))
+      : 0);
   const activityTableTotalRows = unifiedActivityItems.length;
   const activityTableVisibleCount = Math.ceil(ACTIVITY_TABLE_VIEWPORT_HEIGHT / ACTIVITY_TABLE_ROW_HEIGHT) + (ACTIVITY_TABLE_OVERSCAN_ROWS * 2);
   const activityTableMaxScrollTop = Math.max(0, (activityTableTotalRows * ACTIVITY_TABLE_ROW_HEIGHT) - ACTIVITY_TABLE_VIEWPORT_HEIGHT);
@@ -2962,8 +3136,8 @@ export default function LabSuiteBackup() {
       <div className="content-area" style={{ flex: 1, overflowY: 'auto', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', position: 'relative' }}>
           {activeTab === 'dashboard' && (
             <div className="activity-view-container">
-              {activeRestores.length > 0 && activeRestores.some(j => ['failed', 'restoring'].includes(j.status)) && (() => {
-                const job = activeRestores.find(j => ['failed', 'restoring'].includes(j.status)) || activeRestores[0];
+              {interruptedRestoreJob && (() => {
+                const job = interruptedRestoreJob;
                 return (
                   <div style={{
                     margin: '0 0 16px 0',
@@ -2981,7 +3155,7 @@ export default function LabSuiteBackup() {
                       <span style={{ fontSize: '20px' }}>⚠️</span>
                       <div>
                         <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--accent-warning)' }}>
-                          Interrupted Restore Job Found
+                          {job.status === 'failed' ? 'Restore Needs Attention' : 'Interrupted Restore Found'}
                         </div>
                         <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
                           {job.label || job.remotePath} → {job.localDestination}
@@ -3003,7 +3177,11 @@ export default function LabSuiteBackup() {
                 <div className="activity-title-section">
                   <h1>Activity</h1>
                   <span className="activity-status-text">
-                    {syncStatus === 'syncing' 
+                    {currentRestoreJob
+                      ? `Restoring from Google Drive... (${currentRestorePercent}%)`
+                      : interruptedRestoreJob
+                      ? 'A restore is ready to resume'
+                      : syncStatus === 'syncing'
                       ? `Backing up to Google Drive... ${overallStatusSuffix}`
                       : syncStatus === 'paused' 
                       ? 'Backup paused'
@@ -3047,6 +3225,66 @@ export default function LabSuiteBackup() {
                   </button>
                 </div>
               </div>
+
+              {currentRestoreJob && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(245,158,11,0.09), rgba(15,23,42,0.82))',
+                  border: '1px solid rgba(245,158,11,0.32)',
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '20px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.25)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '10px' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                        <span className="animate-spin" style={{ width: '14px', height: '14px', border: '2px solid var(--accent-warning)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', flexShrink: 0 }} />
+                        <span style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--accent-warning)' }}>Current Restore</span>
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={currentRestoreJob.remotePath}>
+                        {currentRestoreJob.label || currentRestoreJob.remotePath} → {currentRestoreJob.localDestination}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '18px', fontWeight: 800, color: 'var(--accent-warning)', fontFamily: 'monospace' }}>
+                      {currentRestorePercent}%
+                    </span>
+                  </div>
+                  <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '999px', overflow: 'hidden', marginBottom: '14px' }}>
+                    <div style={{
+                      width: `${currentRestorePercent}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #f59e0b, #fbbf24)',
+                      borderRadius: '999px',
+                      transition: 'width 0.4s ease-out',
+                      boxShadow: '0 0 8px rgba(245,158,11,0.55)'
+                    }} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Downloaded</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
+                        {formatBytes(currentRestoreBytesDone)}
+                        {currentRestoreBytesTotal > 0 ? ` / ${formatBytes(currentRestoreBytesTotal)}` : ''}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Files</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
+                        {currentRestoreFilesTotal > 0 ? `${currentRestoreFilesDone} / ${currentRestoreFilesTotal}` : 'Calculating...'}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Speed</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
+                        {formatSpeed(currentRestoreJob.speed) || 'Calculating...'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '10px' }}>
+                    Closing the window keeps this running in the tray. Quitting or restarting interrupts it; Activity will offer Resume. Totals exclude files already present at the destination.
+                  </div>
+                </div>
+              )}
 
               {syncStatus === 'syncing' && displayOverallProgress && (
                 <div style={{
@@ -3191,7 +3429,7 @@ export default function LabSuiteBackup() {
                       {unifiedActivityItems.length === 0 ? (
                         <tr>
                           <td colSpan={5} style={{ padding: '48px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                            No backup activity. Added folders will show files here as they are backed up.
+                            No backup or restore activity yet.
                           </td>
                         </tr>
                       ) : (
@@ -3202,9 +3440,10 @@ export default function LabSuiteBackup() {
                             </tr>
                           )}
                           {virtualizedActivityItems.map(item => {
+                          const isRestoreItem = item.action === 'restore' || item.type === 'restore';
                           // Icon helper
                           let statusIcon = null;
-                          if (['uploading', 'versioning', 'packing', 'preparing'].includes(item.status)) {
+                          if (['uploading', 'versioning', 'packing', 'preparing', 'restoring'].includes(item.status)) {
                             statusIcon = (
                               <span className="sync-status-icon pulsing" title={item.status}>
                                 <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -3212,9 +3451,9 @@ export default function LabSuiteBackup() {
                                 </svg>
                               </span>
                             );
-                          } else if (item.status === 'queued') {
+                          } else if (item.status === 'queued' || item.status === 'interrupted') {
                             statusIcon = (
-                              <span className="sync-status-icon queued" title="Queued">
+                              <span className="sync-status-icon queued" title={item.status === 'interrupted' ? 'Restore interrupted' : 'Queued'}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-warning)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                   <circle cx="12" cy="12" r="10" />
                                   <polyline points="12 6 12 12 16 14" />
@@ -3269,25 +3508,53 @@ export default function LabSuiteBackup() {
                                     <polyline points="14 2 14 8 20 8" />
                                   </svg>
                                   <span className="file-name-text" title={item.filePath}>{item.name}</span>
+                                  <span style={{
+                                    fontSize: '9px',
+                                    fontWeight: 800,
+                                    letterSpacing: '0.04em',
+                                    textTransform: 'uppercase',
+                                    color: isRestoreItem ? '#fbbf24' : '#93c5fd',
+                                    background: isRestoreItem ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
+                                    border: `1px solid ${isRestoreItem ? 'rgba(245,158,11,0.25)' : 'rgba(59,130,246,0.22)'}`,
+                                    borderRadius: '999px',
+                                    padding: '2px 6px',
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {isRestoreItem ? 'Restore' : 'Backup'}
+                                  </span>
                                 </div>
                               </td>
                               <td>
-                                <span className="folder-link-cell" onClick={() => setActiveTab('folders')}>
+                                <span className="folder-link-cell" onClick={() => setActiveTab(isRestoreItem ? 'restore' : 'folders')}>
                                   {folderName}
                                 </span>
                               </td>
                               <td style={{ whiteSpace: 'nowrap' }}>{formatBytes(item.size)}</td>
                               <td style={{ whiteSpace: 'nowrap', color: 'var(--text-secondary)' }}>
                                 {item.isLive ? (
-                                  <span style={{ color: 'var(--accent-primary)', fontWeight: '600' }}>
+                                  <span style={{ color: isRestoreItem ? 'var(--accent-warning)' : 'var(--accent-primary)', fontWeight: '600' }}>
                                     {getLiveActivityText(item)}
                                   </span>
                                 ) : (
-                                  timeAgo(item.time)
+                                  <span>
+                                    {isRestoreItem
+                                      ? (item.status === 'restored' ? 'Restored' : (item.status === 'interrupted' ? 'Interrupted' : 'Restore failed'))
+                                      : (item.status === 'completed' ? 'Backed up' : 'Backup failed')}
+                                    {' · '}{timeAgo(item.time)}
+                                  </span>
                                 )}
                               </td>
                               <td className="activity-issue-cell" title={item.issue ? getReadableError(item.issue) : ''}>
-                                {item.issue ? getReadableError(item.issue) : '-'}
+                                {isRestoreItem && item.resumable === true && RESTORE_RESUMABLE_STATUSES.has(item.status) ? (
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ padding: '4px 9px', fontSize: '10.5px', whiteSpace: 'nowrap' }}
+                                    disabled={restoreStatus === 'restoring'}
+                                    onClick={() => handleResumeRestore(item)}
+                                  >
+                                    Resume
+                                  </button>
+                                ) : (item.issue ? getReadableError(item.issue) : '-')}
                               </td>
                             </tr>
                           );
@@ -4454,6 +4721,11 @@ export default function LabSuiteBackup() {
                             </div>
                           ) : (
                             <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>Connecting to encrypted vault — decryption keys are being verified...</p>
+                          )}
+                          {hasData && (
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '10px' }}>
+                              Closing the window keeps this running in the tray. Quitting or restarting interrupts it; Activity will offer Resume. Totals exclude files already present at the destination.
+                            </div>
                           )}
                         </div>
                       );

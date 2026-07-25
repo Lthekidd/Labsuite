@@ -58,5 +58,12 @@ assert.ok(
   /if \(!dirtyOnly\) \{\s*db\.addRestorePoint\(\{/.test(workerSource),
   'unchanged dirty-only scans must not create duplicate checkpoint dates'
 );
+const restorePointCalls = [...workerSource.matchAll(/db\.addRestorePoint\(\{/g)].length;
+const fullScanGuardedCalls = [...workerSource.matchAll(/if \(!dirtyOnly\) \{\s*db\.addRestorePoint\(\{/g)].length;
+assert.strictEqual(
+  fullScanGuardedCalls,
+  restorePointCalls,
+  'changed dirty-only scans must not be recorded as complete point-in-time snapshots'
+);
 
 console.log('Restore checkpoint verification passed.');

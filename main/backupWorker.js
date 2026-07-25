@@ -893,15 +893,17 @@ class BackupWorker extends EventEmitter {
     if (!(await this.verifyFolderBeforeProtected(folder, base, coveredChildren, dirtyOnly))) return;
 
     db.updateFolderSyncStatus(folder.id, true);
-    db.addRestorePoint({
-      folderId: folder.id,
-      folderPath: folder.local_path,
-      remotePath: folder.remote_path,
-      filesTotal: plan.scannedFiles,
-      bytesTotal: plan.scannedBytes,
-      startedAt,
-      completedAt: new Date().toISOString()
-    });
+    if (!dirtyOnly) {
+      db.addRestorePoint({
+        folderId: folder.id,
+        folderPath: folder.local_path,
+        remotePath: folder.remote_path,
+        filesTotal: plan.scannedFiles,
+        bytesTotal: plan.scannedBytes,
+        startedAt,
+        completedAt: new Date().toISOString()
+      });
+    }
     db.addSyncLog({
       folderId: folder.id,
       filePath: folder.local_path,

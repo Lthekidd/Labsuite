@@ -1661,6 +1661,10 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   // Helper to push restore activity rows to the Activity feed
   const sendRestoreActivityRow = (job, stage = 'restoring', extra = {}) => {
+    const bytesDone = Math.max(0, Number(job.bytesDone) || 0);
+    const bytesTotal = Math.max(0, Number(job.bytesTotal) || 0);
+    const filesDone = Math.max(0, Number(job.filesDone) || 0);
+    const filesTotal = Math.max(0, Number(job.filesTotal) || 0);
     const row = {
       id: job.id || `restore-${job.remotePath}`,
       action: 'restore',
@@ -1670,22 +1674,121 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       localPath: job.localDestination,
       fileName: path.basename(job.remotePath || 'Vault Restore'),
       folderPath: job.localDestination || '',
-      size: job.bytesTotal || 0,
-      bytesDone: job.bytesDone || 0,
-      bytesTotal: job.bytesTotal || 0,
-      percent: job.bytesTotal > 0 ? Math.min(100, Math.round((job.bytesDone / job.bytesTotal) * 100)) : 0,
+      size: bytesTotal,
+      bytesDone,
+      bytesTotal,
+      filesDone,
+      filesTotal,
+      percent: stage === 'restored'
+        ? 100
+        : (bytesTotal > 0
+          ? Math.min(100, Math.round((bytesDone / bytesTotal) * 100))
+          : (filesTotal > 0 ? Math.min(100, Math.round((filesDone / filesTotal) * 100)) : 0)),
       speed: job.speed || 0,
       updatedAt: new Date().toISOString(),
       error: extra.error || job.errorMsg || null,
       remotePath: job.remotePath,
-      localDestination: job.localDestination
+      localDestination: job.localDestination,
+      restoreKind: job.type || 'folder',
+      resumable: extra.resumable !== false && job.type !== 'packed_file'
     };
     queueFileActivityForRenderer(row);
     sendToRenderer('restore:activity-update', row);
   };
 
+  const runningRestoreJobs = new Map();
+  const restoreCheckpointTimes = new Map();
+
+  const checkpointRestoreProgress = (progressData, force = false) => {
+    const now = Date.now();
+    const previous = restoreCheckpointTimes.get(progressData.id) || 0;
+    if (!force && now - previous < 5000) return progressData;
+    restoreCheckpointTimes.set(progressData.id, now);
+    return db.upsertActiveRestore(progressData);
+  };
+
+  const runRestoreJob = ({ id, remotePath, localDestination, resumed = false }) => {
+    if (!remotePath || !localDestination) {
+      throw new Error('Restore parameters missing.');
+    }
+    if (runningRestoreJobs.has(id)) {
+      throw new Error('This restore is already running.');
+    }
+
+    const initialJob = db.upsertActiveRestore({
+      id,
+      remotePath,
+      localDestination,
+      status: 'restoring',
+      speed: 0,
+      errorMsg: null
+    });
+    sendRestoreActivityRow(initialJob, 'restoring');
+
+    let latestProgress = initialJob;
+    const transfer = rclone.restore(remotePath, localDestination, (stats) => {
+      const progressData = {
+        id,
+        remotePath,
+        localDestination,
+        filesTotal: stats.totalTransfers || 0,
+        filesDone: stats.transfers || 0,
+        bytesTotal: stats.totalBytes || 0,
+        bytesDone: stats.bytes || 0,
+        speed: stats.speed || 0,
+        status: 'restoring',
+        errorMsg: null
+      };
+      latestProgress = { ...latestProgress, ...progressData };
+      checkpointRestoreProgress(progressData);
+      sendRestoreActivityRow(latestProgress, 'restoring');
+      sendToRenderer('restore:progress', latestProgress);
+    }).then(() => {
+      checkpointRestoreProgress({ ...latestProgress, status: 'restored', speed: 0 }, true);
+      db.removeActiveRestore(id);
+      db.addSyncLog({
+        filePath: remotePath,
+        action: 'restore',
+        status: 'restored',
+        sizeBytes: latestProgress.bytesTotal || latestProgress.bytesDone || 0
+      });
+      sendRestoreActivityRow({ ...latestProgress, bytesDone: latestProgress.bytesTotal || latestProgress.bytesDone, speed: 0 }, 'restored');
+      sendToRenderer('restore:complete', { id, remotePath, localDestination, resumed });
+    }).catch(err => {
+      const errorData = {
+        ...latestProgress,
+        id,
+        remotePath,
+        localDestination,
+        status: 'failed',
+        speed: 0,
+        errorMsg: err.message
+      };
+      checkpointRestoreProgress(errorData, true);
+      db.addSyncLog({
+        filePath: remotePath,
+        action: 'restore',
+        status: 'failed',
+        sizeBytes: errorData.bytesTotal || 0,
+        errorMsg: err.message
+      });
+      sendRestoreActivityRow(errorData, 'failed', { error: err.message });
+      sendToRenderer('restore:error', { id, remotePath, localDestination, error: err.message });
+    }).finally(() => {
+      runningRestoreJobs.delete(id);
+      restoreCheckpointTimes.delete(id);
+    });
+
+    runningRestoreJobs.set(id, transfer);
+    return transfer;
+  };
+
   ipcMain.handle('restore:getActiveJobs', async () => {
-    return db.getActiveRestores();
+    return db.getActiveRestores().map(job => {
+      if (runningRestoreJobs.has(job.id)) return { ...job, status: 'restoring' };
+      if (job.status === 'restoring') return { ...job, status: 'interrupted', speed: 0 };
+      return job;
+    });
   });
 
   ipcMain.handle('restore:resumeJob', async (event, { id, remotePath, localDestination }) => {
@@ -1698,47 +1801,12 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       throw new Error('Restore parameters missing.');
     }
 
-    const jobId = job ? job.id : `restore-${Date.now()}`;
-    const initialJob = db.upsertActiveRestore({
+    const jobId = job ? job.id : (id || `restore-${Date.now()}`);
+    runRestoreJob({
       id: jobId,
       remotePath: targetRemotePath,
       localDestination: targetLocalDest,
-      status: 'restoring'
-    });
-    sendRestoreActivityRow(initialJob, 'restoring');
-
-    rclone.restore(targetRemotePath, targetLocalDest, (stats) => {
-      const progressData = {
-        id: jobId,
-        remotePath: targetRemotePath,
-        localDestination: targetLocalDest,
-        filesTotal: stats.totalTransfers || 0,
-        filesDone: stats.transfers || 0,
-        bytesTotal: stats.totalBytes || 0,
-        bytesDone: stats.bytes || 0,
-        speed: stats.speed || 0,
-        status: 'restoring'
-      };
-      db.upsertActiveRestore(progressData);
-      sendRestoreActivityRow(progressData, 'restoring');
-      sendToRenderer('restore:progress', progressData);
-    }).then(() => {
-      db.removeActiveRestore(jobId);
-      db.addSyncLog({ filePath: targetRemotePath, action: 'restore', status: 'restored' });
-      sendRestoreActivityRow({ id: jobId, remotePath: targetRemotePath, localDestination: targetLocalDest }, 'restored');
-      sendToRenderer('restore:complete', { remotePath: targetRemotePath, localDestination: targetLocalDest });
-    }).catch(err => {
-      const errorData = {
-        id: jobId,
-        remotePath: targetRemotePath,
-        localDestination: targetLocalDest,
-        status: 'failed',
-        errorMsg: err.message
-      };
-      db.upsertActiveRestore(errorData);
-      db.addSyncLog({ filePath: targetRemotePath, action: 'restore', status: 'failed', errorMsg: err.message });
-      sendRestoreActivityRow(errorData, 'failed', { error: err.message });
-      sendToRenderer('restore:error', { remotePath: targetRemotePath, error: err.message });
+      resumed: true
     });
 
     return { resumed: true, jobId, remotePath: targetRemotePath };
@@ -1746,49 +1814,13 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   ipcMain.handle('restore:start', async (event, { remotePath, localDestination }) => {
     const jobId = `restore-${Date.now()}`;
-    const initialJob = db.upsertActiveRestore({
+    runRestoreJob({
       id: jobId,
       remotePath,
       localDestination,
-      status: 'restoring'
+      resumed: false
     });
-    db.addSyncLog({ filePath: remotePath, action: 'restore', status: 'restoring' });
-    sendRestoreActivityRow(initialJob, 'restoring');
-
-    rclone.restore(remotePath, localDestination, (stats) => {
-      const progressData = {
-        id: jobId,
-        remotePath,
-        localDestination,
-        filesTotal: stats.totalTransfers || 0,
-        filesDone: stats.transfers || 0,
-        bytesTotal: stats.totalBytes || 0,
-        bytesDone: stats.bytes || 0,
-        speed: stats.speed || 0,
-        status: 'restoring'
-      };
-      db.upsertActiveRestore(progressData);
-      sendRestoreActivityRow(progressData, 'restoring');
-      sendToRenderer('restore:progress', progressData);
-    }).then(() => {
-      db.removeActiveRestore(jobId);
-      db.addSyncLog({ filePath: remotePath, action: 'restore', status: 'restored' });
-      sendRestoreActivityRow({ id: jobId, remotePath, localDestination }, 'restored');
-      sendToRenderer('restore:complete', { remotePath, localDestination });
-    }).catch(err => {
-      const errorData = {
-        id: jobId,
-        remotePath,
-        localDestination,
-        status: 'failed',
-        errorMsg: err.message
-      };
-      db.upsertActiveRestore(errorData);
-      db.addSyncLog({ filePath: remotePath, action: 'restore', status: 'failed', errorMsg: err.message });
-      sendRestoreActivityRow(errorData, 'failed', { error: err.message });
-      sendToRenderer('restore:error', { remotePath, error: err.message });
-    });
-    return true;
+    return { started: true, jobId, remotePath, localDestination };
   });
 
   ipcMain.handle('restore:packedFile', async (event, { packRemotePath, relativePath, localDestination }) => {
@@ -1796,47 +1828,60 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     safeMkdirSync(tempDir, { recursive: true });
     const tempPath = path.join(tempDir, `${Date.now()}-${Math.random().toString(16).slice(2)}.vspack`);
     const jobId = `restore-pack-${Date.now()}`;
+    const metadata = await rclone.getRemoteFileMetadata(packRemotePath).catch(() => null);
+    const bytesTotal = Math.max(0, Number(metadata && metadata.Size) || 0);
 
     const initialJob = db.upsertActiveRestore({
       id: jobId,
       remotePath: packRemotePath,
       localDestination,
-      status: 'restoring'
+      type: 'packed_file',
+      label: relativePath || packRemotePath,
+      status: 'restoring',
+      filesTotal: 1,
+      bytesTotal
     });
-    db.addSyncLog({ filePath: packRemotePath, action: 'restore', status: 'restoring' });
-    sendRestoreActivityRow(initialJob, 'restoring');
+    sendRestoreActivityRow(initialJob, 'restoring', { resumable: false });
 
-    rclone.copyFileRemoteToLocal(packRemotePath, tempPath).then(() => {
+    const transfer = rclone.copyFileRemoteToLocal(packRemotePath, tempPath).then(() => {
       sendToRenderer('restore:progress', {
         id: jobId,
         remotePath: packRemotePath,
+        localDestination,
         filesTotal: 1,
         filesDone: 0,
-        bytesTotal: 0,
-        bytesDone: 0
+        bytesTotal,
+        bytesDone: bytesTotal,
+        restoreKind: 'packed_file',
+        resumable: false
       });
       const outputPath = packStore.extractPackedFile(tempPath, relativePath, localDestination);
       db.removeActiveRestore(jobId);
-      db.addSyncLog({ filePath: packRemotePath, action: 'restore', status: 'restored' });
-      sendRestoreActivityRow({ id: jobId, remotePath: packRemotePath, localDestination }, 'restored');
-      sendToRenderer('restore:complete', { remotePath: packRemotePath, outputPath });
+      db.addSyncLog({ filePath: packRemotePath, action: 'restore', status: 'restored', sizeBytes: bytesTotal });
+      sendRestoreActivityRow({
+        ...initialJob,
+        filesDone: 1,
+        bytesDone: bytesTotal
+      }, 'restored', { resumable: false });
+      sendToRenderer('restore:complete', { id: jobId, remotePath: packRemotePath, localDestination, outputPath });
     }).catch(err => {
       const errorData = {
-        id: jobId,
-        remotePath: packRemotePath,
-        localDestination,
+        ...initialJob,
         status: 'failed',
+        speed: 0,
         errorMsg: err.message
       };
-      db.upsertActiveRestore(errorData);
-      db.addSyncLog({ filePath: packRemotePath, action: 'restore', status: 'failed', errorMsg: err.message });
-      sendRestoreActivityRow(errorData, 'failed', { error: err.message });
-      sendToRenderer('restore:error', { remotePath: packRemotePath, error: err.message });
+      db.removeActiveRestore(jobId);
+      db.addSyncLog({ filePath: packRemotePath, action: 'restore', status: 'failed', sizeBytes: bytesTotal, errorMsg: err.message });
+      sendRestoreActivityRow(errorData, 'failed', { error: err.message, resumable: false });
+      sendToRenderer('restore:error', { id: jobId, remotePath: packRemotePath, localDestination, error: err.message });
     }).finally(() => {
+      runningRestoreJobs.delete(jobId);
       packStore.safeUnlink(tempPath);
     });
 
-    return true;
+    runningRestoreJobs.set(jobId, transfer);
+    return { started: true, jobId, remotePath: packRemotePath, localDestination };
   });
 
   // Wire up backup engine events to Electron main window webContents

@@ -1124,26 +1124,32 @@ module.exports = {
     loadDatabase();
     if (!data.active_restores) data.active_restores = [];
     const index = data.active_restores.findIndex(job => job.id === restoreJob.id || (job.remotePath === restoreJob.remotePath && job.localDestination === restoreJob.localDestination));
+    const existing = index >= 0 ? data.active_restores[index] : null;
     const now = new Date().toISOString();
+    const numericValue = (key, fallback = 0) => restoreJob[key] === undefined
+      ? (Number(existing && existing[key]) || fallback)
+      : (Number(restoreJob[key]) || 0);
     const updated = {
-      id: restoreJob.id || `restore-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      remotePath: restoreJob.remotePath,
-      localDestination: restoreJob.localDestination,
-      label: restoreJob.label || restoreJob.remotePath,
-      type: restoreJob.type || 'folder',
-      status: restoreJob.status || 'restoring',
-      filesDone: Number(restoreJob.filesDone) || 0,
-      filesTotal: Number(restoreJob.filesTotal) || 0,
-      bytesDone: Number(restoreJob.bytesDone) || 0,
-      bytesTotal: Number(restoreJob.bytesTotal) || 0,
-      speed: Number(restoreJob.speed) || 0,
-      startedAt: restoreJob.startedAt || now,
+      id: restoreJob.id || (existing && existing.id) || `restore-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      remotePath: restoreJob.remotePath || (existing && existing.remotePath) || '',
+      localDestination: restoreJob.localDestination || (existing && existing.localDestination) || '',
+      label: restoreJob.label || (existing && existing.label) || restoreJob.remotePath || '',
+      type: restoreJob.type || (existing && existing.type) || 'folder',
+      status: restoreJob.status || (existing && existing.status) || 'restoring',
+      filesDone: numericValue('filesDone'),
+      filesTotal: numericValue('filesTotal'),
+      bytesDone: numericValue('bytesDone'),
+      bytesTotal: numericValue('bytesTotal'),
+      speed: numericValue('speed'),
+      startedAt: restoreJob.startedAt || (existing && existing.startedAt) || now,
       updatedAt: now,
-      errorMsg: restoreJob.errorMsg || null
+      errorMsg: restoreJob.errorMsg === undefined
+        ? ((existing && existing.errorMsg) || null)
+        : (restoreJob.errorMsg || null)
     };
 
     if (index >= 0) {
-      data.active_restores[index] = { ...data.active_restores[index], ...updated };
+      data.active_restores[index] = { ...existing, ...updated };
     } else {
       data.active_restores.push(updated);
     }

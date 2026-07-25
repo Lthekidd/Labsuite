@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.48 - 2026-07-25
+
+### Fixed
+
+- Activity: Unified backup and restore activity, including a live restore progress card, transfer speed, file counts, history labels, and resumable interrupted jobs.
+- Activity: Restored the missing renderer flush for batched backup events, which could leave the Activity table empty while work was running.
+- Restore: Persist progress checkpoints without resetting previously recorded totals, distinguish interrupted jobs from running jobs after restart, and reduce large database rewrites by checkpointing every five seconds.
+- Restore: Clarified that transfer totals exclude files already present at the destination and now labels binary sizes as KiB, MiB, and GiB.
+
 ## 2.2.47 — 2026-07-25
 
 ### Fixed
