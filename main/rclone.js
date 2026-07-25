@@ -1558,6 +1558,7 @@ function restore(remotePath, localDestination, onProgress, options = {}) {
     ...(options.overwrite === true ? [] : ['--ignore-existing']),
     ...getTransferFlagArgs(),
     '--stats=1s',
+    '--stats-log-level', 'NOTICE',
     '--use-json-log'
   ];
 
@@ -1576,7 +1577,7 @@ function restore(remotePath, localDestination, onProgress, options = {}) {
         if (!trimmed) continue;
         try {
           const entry = safeParseJson(trimmed);
-          if (entry.stats) {
+          if (entry && entry.stats) {
             onProgress(entry.stats);
           }
         } catch (e) {

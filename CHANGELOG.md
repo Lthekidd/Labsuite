@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.44 — 2026-07-25
+
+### Fixed
+
+- Restore: Fixed missing `--stats-log-level NOTICE` flag on rclone restore calls, which caused the progress bar to stay stuck at "Establishing secure decryption tunnel..." for the entire duration of a folder download. Also fixed a null-dereference guard when parsing rclone JSON log lines.
+
 ## 2.2.43 — 2026-07-25
 
 ### Fixed
