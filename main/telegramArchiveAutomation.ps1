@@ -213,7 +213,7 @@ function Get-TelegramProcess {
   try {
     $shell = New-Object -ComObject WScript.Shell
     $shell.AppActivate($process.Id) | Out-Null
-  } catch (_) {}
+  } catch {}
   return $process
 }
 
@@ -545,7 +545,7 @@ function Set-MaxSliderLimit($Root) {
           $range.SetValue($range.Current.Maximum)
           continue
         }
-      } catch (_) {}
+      } catch {}
 
       try {
         $rect = $slider.Current.BoundingRectangle
@@ -556,7 +556,7 @@ function Set-MaxSliderLimit($Root) {
           )
           Start-Sleep -Milliseconds 200
         }
-      } catch (_) {}
+      } catch {}
     }
   }
 

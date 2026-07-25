@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.43 — 2026-07-25
+
+### Fixed
+
+- Telegram Desktop Archive: Fixed invalid PowerShell `catch (_)` syntax in `telegramArchiveAutomation.ps1` that caused parser errors under PowerShell 5.1.
+
 ## 2.2.42 — 2026-07-25
 
 ### Fixed
