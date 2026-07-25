@@ -4303,38 +4303,80 @@ export default function LabSuiteBackup() {
                     </div>
 
                     {/* Recovery progress feedback card */}
-                    {restoreStatus === 'restoring' && (
-                      <div style={{ margin: '16px 0', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '8px', border: '1px solid var(--accent-warning)' }}>
-                        <p style={{ fontSize: '13.5px', color: 'var(--accent-warning)', display: 'flex', gap: '8px', alignItems: 'center', margin: '0 0 12px 0', fontWeight: '500' }}>
-                          <span className="animate-spin" style={{ width: '12px', height: '12px', border: '2px solid var(--accent-warning)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block' }} />
-                          Restoring Files &amp; Decrypting Blobs...
-                        </p>
-                        
-                        {restoreProgress ? (
-                          <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                              <span>Files completed: {restoreProgress.filesDone} / {restoreProgress.filesTotal}</span>
-                              <span>{restoreProgress.bytesTotal > 0 ? `${Math.round((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100)}%` : 'Processing...'}</span>
+                    {restoreStatus === 'restoring' && (() => {
+                      const pct = restoreProgress && restoreProgress.bytesTotal > 0
+                        ? Math.min(100, Math.round((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100))
+                        : null;
+                      const speed = restoreProgress && restoreProgress.speed > 0
+                        ? formatBytes(restoreProgress.speed) + '/s'
+                        : null;
+                      const hasData = !!restoreProgress;
+                      return (
+                        <div style={{
+                          margin: '16px 0',
+                          background: 'linear-gradient(135deg, rgba(245,158,11,0.06) 0%, rgba(245,158,11,0.02) 100%)',
+                          border: '1px solid rgba(245,158,11,0.35)',
+                          borderRadius: '10px',
+                          padding: '16px 18px',
+                          boxShadow: '0 2px 12px rgba(0,0,0,0.25)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                              <span className="animate-spin" style={{ width: '14px', height: '14px', border: '2px solid var(--accent-warning)', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', flexShrink: 0 }} />
+                              <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent-warning)', letterSpacing: '0.01em' }}>
+                                {hasData ? 'Downloading & Decrypting' : 'Establishing Secure Tunnel...'}
+                              </span>
                             </div>
-                            
-                            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden', marginBottom: '8px' }}>
-                              {restoreProgress.bytesTotal > 0 && (
-                                <div style={{ height: '100%', background: 'var(--accent-warning)', width: `${Math.round((restoreProgress.bytesDone / restoreProgress.bytesTotal) * 100)}%`, transition: 'width 0.4s ease' }} />
+                            {pct !== null && (
+                              <span style={{ fontSize: '20px', fontWeight: '700', color: 'var(--accent-warning)', letterSpacing: '-0.5px', fontVariantNumeric: 'tabular-nums' }}>{pct}%</span>
+                            )}
+                          </div>
+                          <div style={{ width: '100%', height: '7px', background: 'rgba(255,255,255,0.07)', borderRadius: '99px', overflow: 'hidden', marginBottom: '14px', position: 'relative' }}>
+                            {hasData && pct !== null ? (
+                              <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #f59e0b, #fbbf24)', borderRadius: '99px', transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)', boxShadow: '0 0 8px rgba(245,158,11,0.5)' }} />
+                            ) : (
+                              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(90deg, transparent 0%, rgba(245,158,11,0.5) 40%, rgba(251,191,36,0.8) 50%, rgba(245,158,11,0.5) 60%, transparent 100%)', backgroundSize: '200% 100%', animation: 'shimmer 1.6s ease-in-out infinite' }} />
+                            )}
+                          </div>
+                          {hasData ? (
+                            <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Downloaded</span>
+                                <span style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                                  {formatBytes(restoreProgress.bytesDone)}
+                                  {restoreProgress.bytesTotal > 0 && <span style={{ fontWeight: '400', color: 'var(--text-muted)' }}> / {formatBytes(restoreProgress.bytesTotal)}</span>}
+                                </span>
+                              </div>
+                              {restoreProgress.filesTotal > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Files</span>
+                                  <span style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+                                    {restoreProgress.filesDone}<span style={{ fontWeight: '400', color: 'var(--text-muted)' }}> / {restoreProgress.filesTotal}</span>
+                                  </span>
+                                </div>
+                              )}
+                              {speed && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Speed</span>
+                                  <span style={{ fontSize: '12.5px', fontWeight: '600', color: 'var(--accent-warning)', fontVariantNumeric: 'tabular-nums' }}>{speed}</span>
+                                </div>
                               )}
                             </div>
-                            
-                            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>
-                              Data: {formatBytes(restoreProgress.bytesDone)} / {formatBytes(restoreProgress.bytesTotal)}
-                            </p>
-                          </div>
-                        ) : (
-                          <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Establishing secure decryption tunnel...</p>
-                        )}
-                      </div>
-                    )}
+                          ) : (
+                            <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>Connecting to encrypted vault — decryption keys are being verified...</p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {restoreStatus === 'success' && (
-                      <div style={{ margin: '16px 0', padding: '12px 16px', background: 'rgba(16,185,129,0.08)', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)', color: 'var(--accent-secondary)', fontSize: '13px' }}>
-                        ✓ Decrypted restore completed successfully! Files are ready at: {restoreDest}
+                      <div style={{ margin: '16px 0', padding: '14px 18px', background: 'linear-gradient(135deg, rgba(16,185,129,0.1) 0%, rgba(16,185,129,0.04) 100%)', borderRadius: '10px', border: '1px solid rgba(16,185,129,0.3)', boxShadow: '0 2px 12px rgba(0,0,0,0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '16px' }}>✅</span>
+                          <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--accent-secondary)' }}>Restore Complete</span>
+                        </div>
+                        <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
+                          Files saved to: <span style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>{restoreDest}</span>
+                        </p>
                       </div>
                     )}
                   </div>

@@ -365,6 +365,11 @@ label {
   animation: spin 1s linear infinite;
 }
 
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* Setup Wizard styles */
 .onboarding-container {
   height: 100%;

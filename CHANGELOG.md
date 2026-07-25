@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.45 — 2026-07-25
+
+### Improved
+
+- Restore: Overhauled the progress card into a polished gradient panel. Shows a shimmer indeterminate bar while connecting, then switches to a real progress bar with a large % counter, plus Downloaded, Files, and Speed stat columns. Success card upgraded with a green gradient and clear file path display.
+
 ## 2.2.44 — 2026-07-25
 
 ### Fixed
