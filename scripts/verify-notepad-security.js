@@ -1,9 +1,10 @@
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'labsuite-notepad-'));
+// Keep the fixture outside the OS temp directory: backup defaults correctly
+// exclude AppData\\Local\\Temp, including on GitHub's Windows runners.
+const tempDir = fs.mkdtempSync(path.join(process.cwd(), '.labsuite-notepad-'));
 const sharedDisabledRoot = path.join(tempDir, 'lan-disabled');
 const disabledRoot = path.join(tempDir, 'backup-disabled');
 const selectiveRoot = path.join(tempDir, 'selective');
