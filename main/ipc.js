@@ -1173,13 +1173,14 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   ipcMain.handle('sync:pause', async () => {
     watcher.stopWatcher();
     scheduler.stopScheduler();
-    backupWorker.cancelScheduledBackup();
+    backupWorker.stopBackup();
     db.setSetting('sync_paused', '1');
     sendToRenderer('status:change', { status: 'paused' });
     return true;
   });
 
   ipcMain.handle('sync:resume', async () => {
+    db.setSetting('sync_paused', '0');
     watcher.initWatcher();
     scheduler.startScheduler();
     db.setSetting('sync_paused', '0');

@@ -600,7 +600,7 @@ export default function LabSuiteBackup() {
 
     ipcRenderer.on('sync:progress', (event, data) => {
       setSyncProgress(data);
-      setSyncStatus('syncing');
+      setSyncStatus(prev => (prev === 'paused' ? 'paused' : 'syncing'));
       setSyncDetails(data.stageLabel || (data.phase === 'initial' ? 'Initial backup in progress...' : 'Backing up changes to Google Drive...'));
     });
 
@@ -618,7 +618,7 @@ export default function LabSuiteBackup() {
         }
       }));
       if (data.stage !== 'complete' && data.stage !== 'error') {
-        setSyncStatus('syncing');
+        setSyncStatus(prev => (prev === 'paused' ? 'paused' : 'syncing'));
         setSyncProgress(data);
       } else {
         setSyncProgress(null);
@@ -873,6 +873,9 @@ export default function LabSuiteBackup() {
         setFolders(activeFolders || []);
         setLogs(logsList || []);
         setSettings(resolvedSettings);
+        if (resolvedSettings.sync_paused === '1') {
+          setSyncStatus('paused');
+        }
         setSetupComplete(resolvedSettings.setup_complete === '1');
         setAppVersion(version || 'Unknown');
 

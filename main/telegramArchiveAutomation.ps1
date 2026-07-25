@@ -177,14 +177,28 @@ function Get-TelegramProcess {
     Select-Object -First 1
 
   if (-not $process) {
+    $existingProc = Get-Process Telegram -ErrorAction SilentlyContinue | Select-Object -First 1
+    $procPath = if ($existingProc -and $existingProc.Path) { $existingProc.Path } else { $null }
+
     $candidates = @(
+      $procPath,
       (Join-Path $env:APPDATA 'Telegram Desktop\Telegram.exe'),
-      (Join-Path $env:LOCALAPPDATA 'Telegram Desktop\Telegram.exe')
+      (Join-Path $env:LOCALAPPDATA 'Telegram Desktop\Telegram.exe'),
+      (Join-Path $env:ProgramFiles 'Telegram Desktop\Telegram.exe'),
+      (Join-Path ${env:ProgramFiles(x86)} 'Telegram Desktop\Telegram.exe')
     )
-    $executable = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+
+    $regPath = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+      Where-Object { $_.DisplayName -like '*Telegram*' -and $_.InstallLocation } |
+      ForEach-Object { Join-Path $_.InstallLocation 'Telegram.exe' } |
+      Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($regPath) { $candidates += $regPath }
+
+    $executable = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if (-not $executable) {
       throw 'Telegram Desktop is not running and its executable was not found.'
     }
+
     Start-Process -FilePath $executable | Out-Null
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
       Start-Sleep -Milliseconds 500
@@ -196,6 +210,10 @@ function Get-TelegramProcess {
   }
 
   if (-not $process) { throw 'Telegram Desktop did not open a usable window.' }
+  try {
+    $shell = New-Object -ComObject WScript.Shell
+    $shell.AppActivate($process.Id) | Out-Null
+  } catch (_) {}
   return $process
 }
 
@@ -510,6 +528,60 @@ function Open-ExportSettings($Process) {
   return [ordered]@{ opened = $true }
 }
 
+function Set-MaxSliderLimit($Root) {
+  $sliders = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Slider)
+  if (-not $sliders -or $sliders.Count -eq 0) {
+    $sliders = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Thumb)
+  }
+  if (-not $sliders -or $sliders.Count -eq 0) {
+    $sliders = Get-Descendants $Root ([System.Windows.Automation.ControlType]::ScrollBar)
+  }
+
+  if ($sliders -and $sliders.Count -gt 0) {
+    foreach ($slider in $sliders) {
+      try {
+        $range = $null
+        if ($slider.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$range)) {
+          $range.SetValue($range.Current.Maximum)
+          continue
+        }
+      } catch (_) {}
+
+      try {
+        $rect = $slider.Current.BoundingRectangle
+        if ($rect.Width -gt 0 -and $rect.Height -gt 0) {
+          [LabSuiteTelegramAccessibility]::Click(
+            [int]($rect.X + $rect.Width - 4),
+            [int]($rect.Y + ($rect.Height / 2))
+          )
+          Start-Sleep -Milliseconds 200
+        }
+      } catch (_) {}
+    }
+  }
+
+  # Also scan for Size limit text element and click far right of the slider line below it
+  $texts = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Text)
+  $sizeText = $null
+  foreach ($text in $texts) {
+    if ($text.Current.Name -like '*Size limit:*' -or $text.Current.Name -like '*MB*') {
+      $sizeText = $text
+      break
+    }
+  }
+  if ($sizeText) {
+    $rect = $sizeText.Current.BoundingRectangle
+    $dialogRect = $Root.Current.BoundingRectangle
+    if ($dialogRect.Width -gt 0) {
+      [LabSuiteTelegramAccessibility]::Click(
+        [int]($dialogRect.X + $dialogRect.Width - 30),
+        [int]($rect.Y + $rect.Height + 14)
+      )
+      Start-Sleep -Milliseconds 200
+    }
+  }
+}
+
 function Set-MediaSelection($Root, [bool]$Enabled) {
   $mediaNames = @('Photos', 'Videos', 'Voice messages', 'Video messages', 'Stickers', 'GIFs', 'Files')
   foreach ($name in $mediaNames) {
@@ -521,16 +593,19 @@ function Set-MediaSelection($Root, [bool]$Enabled) {
       if ($isOn -ne $Enabled) { $toggle.Toggle() }
     }
   }
+  if ($Enabled) {
+    Set-MaxSliderLimit $Root
+  }
 }
 
 function Open-JsonFormat($Root) {
   $labels = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Text)
   $formatLabel = $null
   foreach ($label in $labels) {
-    if ($label.Current.Name -like 'Format:*') { $formatLabel = $label; break }
+    if ($label.Current.Name -like '*Format:*') { $formatLabel = $label; break }
   }
   if (-not $formatLabel) { throw 'Telegram export format control was not found.' }
-  if ($formatLabel.Current.Name -like 'Format: JSON*') { return $false }
+  if ($formatLabel.Current.Name -like '*Format: JSON*' -or $formatLabel.Current.Name -like '*Format: *JSON*') { return $false }
   $process = Get-TelegramProcess
   $shell = New-Object -ComObject WScript.Shell
   $shell.AppActivate($process.Id) | Out-Null
@@ -545,17 +620,69 @@ function Open-JsonFormat($Root) {
 }
 
 function Select-JsonFormat($Process) {
+  Start-Sleep -Milliseconds 400
   $root = Get-Root $Process
   $jsonOption = $null
-  $radios = Get-Descendants $root ([System.Windows.Automation.ControlType]::RadioButton)
-  foreach ($radio in $radios) {
-    if ($radio.Current.Name -like '*JSON*') { $jsonOption = $radio; break }
+
+  # Search across all control types under main window first
+  $allElements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+  foreach ($elem in $allElements) {
+    $name = [string]$elem.Current.Name
+    if ($name -like '*JSON*' -or $name -like '*Machine-readable*') {
+      $jsonOption = $elem
+      break
+    }
   }
-  if (-not $jsonOption) { throw 'Telegram JSON export option was not found.' }
-  if (-not (Invoke-Element $jsonOption)) { throw 'Telegram JSON export option could not be selected.' }
+
+  # If not found under MainWindowHandle, search top-level process UIA elements
+  if (-not $jsonOption) {
+    $procCond = [System.Windows.Automation.PropertyCondition]::new(
+      [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+      $Process.Id
+    )
+    $procElements = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $procCond)
+    foreach ($elem in $procElements) {
+      $name = [string]$elem.Current.Name
+      if ($name -like '*JSON*' -or $name -like '*Machine-readable*') {
+        $jsonOption = $elem
+        break
+      }
+    }
+  }
+
+  if ($jsonOption) {
+    if (-not (Invoke-Element $jsonOption)) {
+      $rect = $jsonOption.Current.BoundingRectangle
+      if ($rect.Width -gt 0) {
+        [LabSuiteTelegramAccessibility]::Click(
+          [int]($rect.X + ($rect.Width / 2)),
+          [int]($rect.Y + ($rect.Height / 2))
+        )
+        Start-Sleep -Milliseconds 300
+      }
+    }
+  } else {
+    # Physical click fallback near middle-bottom of format dialog where JSON option is displayed
+    $rect = $root.Current.BoundingRectangle
+    if ($rect.Width -gt 0) {
+      [LabSuiteTelegramAccessibility]::Click(
+        [int]($rect.X + ($rect.Width / 2)),
+        [int]($rect.Y + ($rect.Height / 2) + 25)
+      )
+      Start-Sleep -Milliseconds 300
+    }
+  }
+
   $root = Get-Root $Process
   $save = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'Save'
-  if (-not (Invoke-Element $save)) { throw 'Telegram export format could not be saved.' }
+  if (-not $save) {
+    $save = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'OK'
+  }
+  if ($save) {
+    Invoke-Element $save | Out-Null
+  } else {
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+  }
   Start-Sleep -Milliseconds 500
   return [ordered]@{ selected = $true }
 }

@@ -62,6 +62,191 @@ function renderSmallIcon(icon, size = 16) {
   return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{icon}</span>;
 }
 
+const SHUTDOWN_PRESETS = [
+  { label: '10 min', seconds: 10 * 60 },
+  { label: '30 min', seconds: 30 * 60 },
+  { label: '1 hr', seconds: 60 * 60 },
+  { label: '3 hrs', seconds: 3 * 60 * 60 },
+  { label: '5 hrs', seconds: 5 * 60 * 60 },
+  { label: '8 hrs', seconds: 8 * 60 * 60 }
+];
+
+function formatShutdownDuration(totalSeconds = 0) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  if (minutes > 0) return `${minutes}m ${String(secs).padStart(2, '0')}s`;
+  return `${secs}s`;
+}
+
+function ShutdownTimerPanel() {
+  const [selectedPreset, setSelectedPreset] = useState(SHUTDOWN_PRESETS[0]);
+  const [schedule, setSchedule] = useState(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const refreshSchedule = async () => {
+    try {
+      const next = await ipcRenderer?.invoke('power:getShutdownSchedule');
+      setSchedule(next || null);
+    } catch (_) {
+      setSchedule(null);
+    }
+  };
+
+  useEffect(() => {
+    refreshSchedule();
+    const interval = setInterval(refreshSchedule, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const scheduleShutdown = async () => {
+    if (!selectedPreset) return;
+    const ok = window.confirm(`Schedule this PC to shut down in ${selectedPreset.label}?`);
+    if (!ok) return;
+
+    try {
+      setIsBusy(true);
+      setError('');
+      const next = await ipcRenderer?.invoke('power:scheduleShutdown', {
+        seconds: selectedPreset.seconds,
+        label: selectedPreset.label
+      });
+      setSchedule(next || null);
+    } catch (err) {
+      setError(err.message || 'Failed to schedule shutdown.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const cancelShutdown = async () => {
+    try {
+      setIsBusy(true);
+      setError('');
+      await ipcRenderer?.invoke('power:cancelShutdown');
+      setSchedule(null);
+    } catch (err) {
+      setError(err.message || 'Failed to cancel shutdown.');
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const dueTime = schedule?.dueAt
+    ? new Date(schedule.dueAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  return (
+    <section style={{
+      marginBottom: '32px',
+      border: '1px solid rgba(64, 138, 113, 0.28)',
+      borderRadius: '12px',
+      background: 'rgba(64, 138, 113, 0.06)',
+      padding: '18px 20px',
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '18px',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }}>
+      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+        <div style={{ fontSize: '12px', color: '#408A71', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+          Power Management
+        </div>
+        <div style={{ marginTop: '4px', fontSize: '18px', color: 'var(--text-primary)', fontWeight: 800 }}>
+          PC Shutdown / Restart Timer
+        </div>
+        <div style={{ marginTop: '4px', fontSize: '12.5px', color: error ? '#fca5a5' : 'var(--text-secondary)' }}>
+          {error || (schedule ? `Scheduled for ${dueTime}` : 'Choose a duration to schedule an automatic PC shutdown/restart.')}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flex: '2 1 340px', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+        {SHUTDOWN_PRESETS.map(preset => {
+          const active = selectedPreset.seconds === preset.seconds;
+          return (
+            <button
+              key={preset.seconds}
+              type="button"
+              onClick={() => setSelectedPreset(preset)}
+              disabled={isBusy}
+              style={{
+                height: '34px',
+                padding: '0 13px',
+                borderRadius: '999px',
+                border: active ? '1px solid #408A71' : '1px solid rgba(255, 255, 255, 0.1)',
+                background: active ? 'rgba(64, 138, 113, 0.25)' : 'rgba(0, 0, 0, 0.2)',
+                color: active ? '#B0E4CC' : 'var(--text-secondary)',
+                cursor: isBusy ? 'default' : 'pointer',
+                fontSize: '12.5px',
+                fontWeight: 700,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', flex: '0 1 auto', gap: '12px', alignItems: 'center', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+        {schedule && (
+          <div style={{ minWidth: '96px', textAlign: 'right' }}>
+            <div style={{ color: '#B0E4CC', fontSize: '18px', fontWeight: 800 }}>
+              {formatShutdownDuration(schedule.remainingSeconds)}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', fontWeight: 700, textTransform: 'uppercase' }}>
+              remaining
+            </div>
+          </div>
+        )}
+        {schedule ? (
+          <button
+            className="btn"
+            onClick={cancelShutdown}
+            disabled={isBusy}
+            style={{
+              height: '38px',
+              padding: '0 16px',
+              fontSize: '13px',
+              fontWeight: 700,
+              background: '#ef4444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        ) : (
+          <button
+            className="btn"
+            onClick={scheduleShutdown}
+            disabled={isBusy}
+            style={{
+              height: '38px',
+              padding: '0 18px',
+              fontSize: '13px',
+              fontWeight: 700,
+              background: 'linear-gradient(90deg, #408A71, #2d6351)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            {isBusy ? 'Scheduling...' : 'Schedule'}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function AppHub({ installedApps, onInstall, onUninstall, onOpenApp, onLaunchStandalone }) {
@@ -79,6 +264,9 @@ export default function AppHub({ installedApps, onInstall, onUninstall, onOpenAp
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '16px', margin: 0 }}>Your unified encrypted workspace and backup solution.</p>
       </div>
+
+      {/* PC Shutdown / Restart Timer Panel */}
+      <ShutdownTimerPanel />
 
       {/* Core Apps — always visible */}
       <div style={{ marginBottom: '36px' }}>

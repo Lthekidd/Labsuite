@@ -73,6 +73,11 @@ class BackupWorker extends EventEmitter {
     this.firstDirtyAt = null;
   }
 
+  stopBackup() {
+    this.cancelScheduledBackup();
+    this.isRunning = false;
+  }
+
   clearDirtyFolder(folderId) {
     this.dirtyFolders.delete(folderId);
     if (this.dirtyFolders.size === 0) {
@@ -81,12 +86,18 @@ class BackupWorker extends EventEmitter {
   }
 
   resumeScheduledBackup() {
+    if (db.getSetting('sync_paused') === '1') return;
     if (this.dirtyFolders.size > 0 && !this.timer && !this.isRunning) {
       this.scheduleBackup();
     }
   }
 
   async runBackup(folderIds = null, options = {}) {
+    if (db.getSetting('sync_paused') === '1' && !options.manual) {
+      console.log('BackupWorker: backups are currently paused.');
+      return false;
+    }
+
     if (this.isRunning) {
       console.log('BackupWorker: backup already running, request coalesced.');
       if (options.dirtyOnly) this.scheduleBackup();
