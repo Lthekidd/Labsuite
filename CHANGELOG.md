@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1 - 2026-07-26
+
+### Fixed
+
+- Telegram Readable Archive: Resolve redirected Windows and OneDrive Downloads folders, verify that Telegram selected JSON before starting, and recover custom completed-export paths through Telegram's **Show my data** action.
+
 ## 2.3.0 - 2026-07-26
 
 ### Fixed

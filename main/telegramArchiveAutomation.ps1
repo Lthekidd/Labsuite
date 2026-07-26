@@ -266,6 +266,58 @@ function Get-ElementValue($Element) {
   return ''
 }
 
+function Get-ElementTextCandidates($Element) {
+  $values = @()
+  if (-not $Element) { return $values }
+  try { $values += [string]$Element.Current.Name } catch {}
+  try { $values += [string]$Element.Current.HelpText } catch {}
+  try { $values += [string]$Element.Current.ItemStatus } catch {}
+  try { $values += Get-ElementValue $Element } catch {}
+  return @($values | Where-Object { $_ -and $_.Trim() } | ForEach-Object { $_.Trim() } | Select-Object -Unique)
+}
+
+function Get-DialogTextEntries($Root) {
+  $entries = @()
+  $elements = $Root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition
+  )
+  foreach ($element in $elements) {
+    foreach ($text in @(Get-ElementTextCandidates $element)) {
+      $entries += [pscustomobject]@{
+        Text = [string]$text
+        Element = $element
+      }
+    }
+  }
+  return $entries
+}
+
+function Get-ExportSettingsInfo($Root) {
+  $format = ''
+  $path = ''
+  $formatElement = $null
+  foreach ($entry in @(Get-DialogTextEntries $Root)) {
+    $text = [string]$entry.Text
+    if (-not $format -and $text -match '(?is)(?:^|\s)Format\s*:\s*([^,\r\n]+)') {
+      $format = $Matches[1].Trim()
+      $formatElement = $entry.Element
+    }
+    if (-not $path -and $text -match '(?is)(?:^|\s)Path\s*:\s*(.+?)\s*$') {
+      $path = $Matches[1].Trim()
+    }
+  }
+  return [ordered]@{
+    format = $format
+    path = $path
+    formatElement = $formatElement
+  }
+}
+
+function Test-JsonExportFormat([string]$Format) {
+  return [bool]($Format -and $Format -match '(?i)\bJSON\b')
+}
+
 function Set-ElementValue($Element, [string]$Value) {
   $pattern = $null
   if (-not $Element -or -not $Element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
@@ -599,13 +651,10 @@ function Set-MediaSelection($Root, [bool]$Enabled) {
 }
 
 function Open-JsonFormat($Root) {
-  $labels = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Text)
-  $formatLabel = $null
-  foreach ($label in $labels) {
-    if ($label.Current.Name -like '*Format:*') { $formatLabel = $label; break }
-  }
+  $settings = Get-ExportSettingsInfo $Root
+  $formatLabel = $settings.formatElement
   if (-not $formatLabel) { throw 'Telegram export format control was not found.' }
-  if ($formatLabel.Current.Name -like '*Format: JSON*' -or $formatLabel.Current.Name -like '*Format: *JSON*') { return $false }
+  if (Test-JsonExportFormat ([string]$settings.format)) { return $false }
   $process = Get-TelegramProcess
   $shell = New-Object -ComObject WScript.Shell
   $shell.AppActivate($process.Id) | Out-Null
@@ -624,50 +673,40 @@ function Select-JsonFormat($Process) {
   $root = Get-Root $Process
   $jsonOption = $null
 
-  # Search across all control types under main window first
-  $allElements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-  foreach ($elem in $allElements) {
-    $name = [string]$elem.Current.Name
-    if ($name -like '*JSON*' -or $name -like '*Machine-readable*') {
-      $jsonOption = $elem
+  # Telegram's official format dialog contains radio rows in this order:
+  # HTML, JSON, HTML and JSON. Prefer the explicitly named JSON-only row.
+  $radioButtons = @(Get-Descendants $root ([System.Windows.Automation.ControlType]::RadioButton)) |
+    Where-Object { -not $_.Current.IsOffscreen } |
+    Sort-Object { $_.Current.BoundingRectangle.Y }
+  foreach ($radio in $radioButtons) {
+    $text = (@(Get-ElementTextCandidates $radio) -join ' ')
+    if ($text -match '(?i)\bJSON\b' -and $text -notmatch '(?i)\bHTML\b') {
+      $jsonOption = $radio
       break
     }
   }
 
-  # If not found under MainWindowHandle, search top-level process UIA elements
   if (-not $jsonOption) {
-    $procCond = [System.Windows.Automation.PropertyCondition]::new(
-      [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
-      $Process.Id
-    )
-    $procElements = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $procCond)
-    foreach ($elem in $procElements) {
-      $name = [string]$elem.Current.Name
-      if ($name -like '*JSON*' -or $name -like '*Machine-readable*') {
-        $jsonOption = $elem
+    foreach ($entry in @(Get-DialogTextEntries $root)) {
+      if ($entry.Text -match '(?i)\bJSON\b' -and $entry.Text -notmatch '(?i)\bHTML\b') {
+        $jsonOption = $entry.Element
         break
       }
     }
   }
 
-  if ($jsonOption) {
-    if (-not (Invoke-Element $jsonOption)) {
-      $rect = $jsonOption.Current.BoundingRectangle
-      if ($rect.Width -gt 0) {
-        [LabSuiteTelegramAccessibility]::Click(
-          [int]($rect.X + ($rect.Width / 2)),
-          [int]($rect.Y + ($rect.Height / 2))
-        )
-        Start-Sleep -Milliseconds 300
-      }
-    }
-  } else {
-    # Physical click fallback near middle-bottom of format dialog where JSON option is displayed
-    $rect = $root.Current.BoundingRectangle
-    if ($rect.Width -gt 0) {
+  # Qt can omit radio names from UIA while retaining their ordering.
+  if (-not $jsonOption -and $radioButtons.Count -ge 2) {
+    $jsonOption = $radioButtons[1]
+  }
+  if (-not $jsonOption) { throw 'Telegram JSON-only export option was not found.' }
+
+  if (-not (Invoke-Element $jsonOption)) {
+    $rect = $jsonOption.Current.BoundingRectangle
+    if ($rect.Width -gt 0 -and $rect.Height -gt 0) {
       [LabSuiteTelegramAccessibility]::Click(
         [int]($rect.X + ($rect.Width / 2)),
-        [int]($rect.Y + ($rect.Height / 2) + 25)
+        [int]($rect.Y + ($rect.Height / 2))
       )
       Start-Sleep -Milliseconds 300
     }
@@ -679,12 +718,23 @@ function Select-JsonFormat($Process) {
     $save = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'OK'
   }
   if ($save) {
-    Invoke-Element $save | Out-Null
+    if (-not (Invoke-Element $save)) {
+      $saveRect = $save.Current.BoundingRectangle
+      [LabSuiteTelegramAccessibility]::Click(
+        [int]($saveRect.X + ($saveRect.Width / 2)),
+        [int]($saveRect.Y + ($saveRect.Height / 2))
+      )
+    }
   } else {
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    throw 'Telegram export format Save button was not found.'
   }
   Start-Sleep -Milliseconds 500
-  return [ordered]@{ selected = $true }
+  $settings = Get-ExportSettingsInfo (Get-Root $Process)
+  if (-not (Test-JsonExportFormat ([string]$settings.format))) {
+    $detected = if ($settings.format) { [string]$settings.format } else { 'unknown' }
+    throw "Telegram did not switch the export format to JSON (detected: $detected)."
+  }
+  return [ordered]@{ selected = $true; format = [string]$settings.format }
 }
 
 function Open-FromDate($Process, $Payload) {
@@ -768,27 +818,39 @@ function Select-FromDate($Process, $Payload) {
   return [ordered]@{ selected = $true; targetDate = $target.ToString('yyyy-MM-dd') }
 }
 
+function Get-WindowsDownloadsPath {
+  $userProfile = [Environment]::GetFolderPath('UserProfile')
+  $fallback = Join-Path $userProfile 'Downloads'
+  $downloadsGuid = '{374DE290-123F-4565-9164-39C4925E467B}'
+  foreach ($registryPath in @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+  )) {
+    try {
+      $properties = Get-ItemProperty -LiteralPath $registryPath
+      $property = $properties.PSObject.Properties[$downloadsGuid]
+      if ($property -and $property.Value) {
+        $expanded = [Environment]::ExpandEnvironmentVariables([string]$property.Value)
+        if ([System.IO.Path]::IsPathRooted($expanded)) {
+          return [System.IO.Path]::GetFullPath($expanded)
+        }
+      }
+    } catch {}
+  }
+  return $fallback
+}
+
 function Resolve-ExportRoot($Process) {
   $root = Get-Root $Process
-  $labels = Get-Descendants $root ([System.Windows.Automation.ControlType]::Text)
-  $labelNames = @($labels | ForEach-Object { ([string]$_.Current.Name).Trim() })
-  $configured = ''
-  for ($index = 0; $index -lt $labelNames.Count; $index++) {
-    $labelName = $labelNames[$index]
-    if ($labelName -match '(?is)(?:^|\s)Path\s*:\s*(.+?)\s*$') {
-      $configured = $Matches[1].Trim()
-      break
-    }
-    if ($labelName -match '(?i)^\s*Path\s*:\s*$' -and $index + 1 -lt $labelNames.Count) {
-      $configured = $labelNames[$index + 1].Trim()
-      break
-    }
-  }
-
+  $settings = Get-ExportSettingsInfo $root
+  $configured = [string]$settings.path
   $userProfile = [Environment]::GetFolderPath('UserProfile')
-  $downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
+  $downloads = Get-WindowsDownloadsPath
   if ($configured) {
     $configured = [Environment]::ExpandEnvironmentVariables($configured.Trim().Trim('"'))
+    if ($configured -match '(?i)^(?:Temporary|Temp)(?:\s+folder)?$') {
+      return [System.IO.Path]::GetTempPath()
+    }
     if ($configured -match '(?i)^Downloads(?:[\\/](.*))?$') {
       $tail = [string]$Matches[1]
       if ($tail) { return (Join-Path $downloads $tail) }
@@ -806,12 +868,22 @@ function Resolve-ExportRoot($Process) {
 }
 
 function Get-ExportSearchRoots([string]$ExportRoot) {
-  $downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
-  $candidatePaths = @(
-    $ExportRoot,
-    $downloads,
-    (Join-Path $downloads 'Telegram Desktop')
+  $userProfile = [Environment]::GetFolderPath('UserProfile')
+  $downloadRoots = @(
+    (Get-WindowsDownloadsPath),
+    (Join-Path $userProfile 'Downloads')
   )
+  foreach ($oneDriveRoot in @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial)) {
+    if ($oneDriveRoot) { $downloadRoots += (Join-Path $oneDriveRoot 'Downloads') }
+  }
+
+  $candidatePaths = @($ExportRoot)
+  foreach ($downloads in $downloadRoots) {
+    $candidatePaths += $downloads
+    $candidatePaths += (Join-Path $downloads 'Telegram Desktop')
+  }
+  $candidatePaths += [System.IO.Path]::GetTempPath()
+  if ($env:LOCALAPPDATA) { $candidatePaths += (Join-Path $env:LOCALAPPDATA 'Temp') }
   $seen = @{}
   $roots = @()
   foreach ($candidatePath in $candidatePaths) {
@@ -863,6 +935,77 @@ function Test-ExportCompletionDialog($Process) {
   return $false
 }
 
+function Get-RevealedExportResult([datetime]$StartedAt) {
+  try {
+    $shell = New-Object -ComObject Shell.Application
+    $paths = @()
+    foreach ($window in @($shell.Windows())) {
+      try {
+        if ([System.IO.Path]::GetFileName([string]$window.FullName) -ine 'explorer.exe') { continue }
+        $selected = $window.Document.SelectedItems()
+        for ($index = 0; $index -lt $selected.Count; $index++) {
+          $paths += [string]$selected.Item($index).Path
+        }
+      } catch {}
+    }
+
+    foreach ($candidatePath in @($paths | Where-Object { $_ } | Select-Object -Unique)) {
+      $revealedHtml = $null
+      if (Test-Path -LiteralPath $candidatePath -PathType Leaf) {
+        $file = Get-Item -LiteralPath $candidatePath -ErrorAction SilentlyContinue
+        if (-not $file -or $file.LastWriteTimeUtc -lt $StartedAt.AddSeconds(-2)) { continue }
+        if ($file.Name -ieq 'result.json') {
+          return [ordered]@{ resultPath = $file.FullName; revealedPath = $file.FullName }
+        }
+        if ($file.Extension -ieq '.html') {
+          $revealedHtml = $file.FullName
+        }
+        $candidatePath = $file.DirectoryName
+      }
+      if (-not (Test-Path -LiteralPath $candidatePath -PathType Container)) { continue }
+      $result = Get-ChildItem -LiteralPath $candidatePath -Filter result.json -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -ge $StartedAt.AddSeconds(-2) } |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+      if ($result) {
+        return [ordered]@{ resultPath = $result.FullName; revealedPath = $candidatePath }
+      }
+      if ($revealedHtml) {
+        return [ordered]@{ resultPath = $null; revealedPath = $revealedHtml }
+      }
+      $html = Get-ChildItem -LiteralPath $candidatePath -Filter *.html -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -ge $StartedAt.AddSeconds(-2) } |
+        Sort-Object LastWriteTimeUtc -Descending |
+        Select-Object -First 1
+      if ($html) {
+        return [ordered]@{ resultPath = $null; revealedPath = $html.FullName }
+      }
+    }
+  } catch {}
+  return [ordered]@{ resultPath = $null; revealedPath = $null }
+}
+
+function Reveal-CompletedExportResult($Process, [datetime]$StartedAt) {
+  try {
+    $root = Get-Root $Process
+    $showButton = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'Show my data'
+    if (-not $showButton) { return [ordered]@{ resultPath = $null; revealedPath = $null } }
+    if (-not (Invoke-Element $showButton)) {
+      $rect = $showButton.Current.BoundingRectangle
+      [LabSuiteTelegramAccessibility]::Click(
+        [int]($rect.X + ($rect.Width / 2)),
+        [int]($rect.Y + ($rect.Height / 2))
+      )
+    }
+    for ($attempt = 0; $attempt -lt 12; $attempt++) {
+      Start-Sleep -Milliseconds 500
+      $revealed = Get-RevealedExportResult $StartedAt
+      if ($revealed.resultPath -or $revealed.revealedPath) { return $revealed }
+    }
+  } catch {}
+  return [ordered]@{ resultPath = $null; revealedPath = $null }
+}
+
 function Dismiss-ExportCompletionDialog($Process, [int]$WaitMilliseconds = 0) {
   try {
     $deadline = [DateTime]::UtcNow.AddMilliseconds([Math]::Max(0, $WaitMilliseconds))
@@ -899,6 +1042,7 @@ function Wait-ForResult($Process, [string[]]$RootPaths, $Before, [datetime]$Star
   $stableLength = -1
   $stablePasses = 0
   $completionDetectedAt = $null
+  $revealAttempted = $false
   while ([DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 1000
     $completionVisible = Test-ExportCompletionDialog $Process
@@ -914,6 +1058,14 @@ function Wait-ForResult($Process, [string[]]$RootPaths, $Before, [datetime]$Star
       Sort-Object LastWriteTimeUtc -Descending
     $candidate = $candidates | Select-Object -First 1
     if (-not $candidate) {
+      if ($completionDetectedAt -and -not $revealAttempted -and [DateTime]::UtcNow -ge $completionDetectedAt.AddSeconds(5)) {
+        $revealAttempted = $true
+        $revealed = Reveal-CompletedExportResult $Process $StartedAt
+        if ($revealed.resultPath) { return [string]$revealed.resultPath }
+        if ($revealed.revealedPath -and [System.IO.Path]::GetExtension([string]$revealed.revealedPath) -ieq '.html') {
+          throw "Telegram completed an HTML export instead of the required JSON export: $($revealed.revealedPath)"
+        }
+      }
       if ($completionDetectedAt -and [DateTime]::UtcNow -ge $completionDetectedAt.AddSeconds(15)) {
         throw "Telegram reported that the export completed, but result.json was not found in: $($RootPaths -join ', ')."
       }
