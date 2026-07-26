@@ -15,6 +15,9 @@ assert.ok(automationScript.includes('Write-LabSuiteResult'), 'Telegram automatio
 assert.ok(automationScript.includes('Get-ExportSearchRoots'), 'Telegram automation should search configured and standard export folders');
 assert.ok(automationScript.includes('Data export completed'), 'Telegram automation should detect Telegram export completion');
 assert.ok(automationScript.includes('Dismiss-ExportCompletionDialog'), 'Telegram automation should dismiss the completion dialog');
+assert.ok(automationScript.includes('{374DE290-123F-4565-9164-39C4925E467B}'), 'Telegram automation should resolve the real Windows Downloads known folder');
+assert.ok(automationScript.includes('Telegram did not switch the export format to JSON'), 'Telegram automation should verify JSON selection before exporting');
+assert.ok(automationScript.includes('Reveal-CompletedExportResult'), 'Telegram automation should recover the exact completed export path through Explorer');
 
 const exportDir = path.join(tempRoot, 'ChatExport_test');
 fs.mkdirSync(path.join(exportDir, 'files'), { recursive: true });
