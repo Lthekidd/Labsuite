@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.2 - 2026-07-26
+
+### Fixed
+
+- Telegram Readable Archive: Open and select the JSON export format within one automation process, search all Telegram-owned Qt accessibility windows, and target the format hyperlink precisely.
+
 ## 2.3.1 - 2026-07-26
 
 ### Fixed
