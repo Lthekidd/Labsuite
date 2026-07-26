@@ -18,6 +18,8 @@ assert.ok(automationScript.includes('Dismiss-ExportCompletionDialog'), 'Telegram
 assert.ok(automationScript.includes('{374DE290-123F-4565-9164-39C4925E467B}'), 'Telegram automation should resolve the real Windows Downloads known folder');
 assert.ok(automationScript.includes('Telegram did not switch the export format to JSON'), 'Telegram automation should verify JSON selection before exporting');
 assert.ok(automationScript.includes('Reveal-CompletedExportResult'), 'Telegram automation should recover the exact completed export path through Explorer');
+assert.ok(automationScript.includes('Find-JsonFormatOption'), 'Telegram automation should find the JSON chooser across all Telegram process windows');
+assert.ok(automationScript.includes('$selection = if ($opened) { Select-JsonFormat $process }'), 'Telegram automation should open and select JSON in one process invocation');
 
 const exportDir = path.join(tempRoot, 'ChatExport_test');
 fs.mkdirSync(path.join(exportDir, 'files'), { recursive: true });

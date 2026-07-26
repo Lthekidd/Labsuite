@@ -293,19 +293,52 @@ function Get-DialogTextEntries($Root) {
   return $entries
 }
 
+function Get-ProcessAutomationElements($Process) {
+  $condition = [System.Windows.Automation.PropertyCondition]::new(
+    [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
+    $Process.Id
+  )
+  return @(
+    [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      $condition
+    )
+  )
+}
+
 function Get-ExportSettingsInfo($Root) {
   $format = ''
   $path = ''
   $formatElement = $null
+  $formatMatches = @()
   foreach ($entry in @(Get-DialogTextEntries $Root)) {
     $text = [string]$entry.Text
-    if (-not $format -and $text -match '(?is)(?:^|\s)Format\s*:\s*([^,\r\n]+)') {
-      $format = $Matches[1].Trim()
-      $formatElement = $entry.Element
+    if ($text -match '(?is)(?:^|\s)Format\s*:\s*([^,\r\n]+)') {
+      $detectedFormat = $Matches[1].Trim()
+      $area = [double]::PositiveInfinity
+      $isText = $false
+      try {
+        $rect = $entry.Element.Current.BoundingRectangle
+        if ($rect.Width -gt 0 -and $rect.Height -gt 0) { $area = $rect.Width * $rect.Height }
+        $isText = $entry.Element.Current.ControlType -eq [System.Windows.Automation.ControlType]::Text
+      } catch {}
+      $formatMatches += [pscustomobject]@{
+        format = $detectedFormat
+        element = $entry.Element
+        area = $area
+        isText = $isText
+      }
     }
     if (-not $path -and $text -match '(?is)(?:^|\s)Path\s*:\s*(.+?)\s*$') {
       $path = $Matches[1].Trim()
     }
+  }
+  $bestFormat = $formatMatches |
+    Sort-Object @{ Expression = { $_.isText }; Descending = $true }, @{ Expression = { $_.area }; Ascending = $true } |
+    Select-Object -First 1
+  if ($bestFormat) {
+    $format = [string]$bestFormat.format
+    $formatElement = $bestFormat.element
   }
   return [ordered]@{
     format = $format
@@ -659,45 +692,79 @@ function Open-JsonFormat($Root) {
   $shell = New-Object -ComObject WScript.Shell
   $shell.AppActivate($process.Id) | Out-Null
   Start-Sleep -Milliseconds 150
+
+  $formatLink = $null
+  $links = Get-Descendants $Root ([System.Windows.Automation.ControlType]::Hyperlink)
+  foreach ($link in $links) {
+    $linkText = (@(Get-ElementTextCandidates $link) -join ' ').Trim()
+    if ($linkText -eq [string]$settings.format) {
+      $formatLink = $link
+      break
+    }
+  }
+  if ($formatLink -and (Invoke-Element $formatLink)) {
+    Start-Sleep -Milliseconds 500
+    return $true
+  }
+
   $rect = $formatLabel.Current.BoundingRectangle
+  $formatLinkOffset = [Math]::Min(84, [Math]::Max(8, $rect.Width - 8))
   [LabSuiteTelegramAccessibility]::Click(
-    [int]($rect.X + [Math]::Min(60, $rect.Width / 3)),
+    [int]($rect.X + $formatLinkOffset),
     [int]($rect.Y + ($rect.Height / 2))
   )
   Start-Sleep -Milliseconds 500
   return $true
 }
 
+function Find-JsonFormatOption($Process) {
+  $radioButtons = @()
+  $textMatches = @()
+  foreach ($element in @(Get-ProcessAutomationElements $Process)) {
+    try {
+      if ($element.Current.IsOffscreen) { continue }
+      $text = (@(Get-ElementTextCandidates $element) -join ' ').Trim()
+      if ($element.Current.ControlType -eq [System.Windows.Automation.ControlType]::RadioButton) {
+        $radioButtons += $element
+        if ($text -match '(?i)\bJSON\b' -and $text -notmatch '(?i)\bHTML\b') {
+          return $element
+        }
+      }
+      if ($text -match '(?i)\bJSON\b' -and $text -notmatch '(?i)\bHTML\b') {
+        $textMatches += $element
+      }
+    } catch {}
+  }
+  if ($textMatches.Count -gt 0) { return $textMatches[0] }
+
+  # Telegram's official chooser orders its three radio rows as HTML, JSON,
+  # then HTML and JSON. Qt may expose the rows without accessible names.
+  $orderedRadios = @($radioButtons | Sort-Object { $_.Current.BoundingRectangle.Y })
+  if ($orderedRadios.Count -eq 3) { return $orderedRadios[1] }
+  return $null
+}
+
+function Find-ProcessButton($Process, [string[]]$Names) {
+  foreach ($element in @(Get-ProcessAutomationElements $Process)) {
+    try {
+      if ($element.Current.ControlType -ne [System.Windows.Automation.ControlType]::Button) { continue }
+      if ($Names -contains ([string]$element.Current.Name).Trim()) { return $element }
+    } catch {}
+  }
+  return $null
+}
+
 function Select-JsonFormat($Process) {
   Start-Sleep -Milliseconds 400
   $root = Get-Root $Process
-  $jsonOption = $null
-
-  # Telegram's official format dialog contains radio rows in this order:
-  # HTML, JSON, HTML and JSON. Prefer the explicitly named JSON-only row.
-  $radioButtons = @(Get-Descendants $root ([System.Windows.Automation.ControlType]::RadioButton)) |
-    Where-Object { -not $_.Current.IsOffscreen } |
-    Sort-Object { $_.Current.BoundingRectangle.Y }
-  foreach ($radio in $radioButtons) {
-    $text = (@(Get-ElementTextCandidates $radio) -join ' ')
-    if ($text -match '(?i)\bJSON\b' -and $text -notmatch '(?i)\bHTML\b') {
-      $jsonOption = $radio
-      break
-    }
-  }
-
+  $jsonOption = Find-JsonFormatOption $Process
   if (-not $jsonOption) {
-    foreach ($entry in @(Get-DialogTextEntries $root)) {
-      if ($entry.Text -match '(?i)\bJSON\b' -and $entry.Text -notmatch '(?i)\bHTML\b') {
-        $jsonOption = $entry.Element
-        break
-      }
+    $settings = Get-ExportSettingsInfo $root
+    if (-not (Test-JsonExportFormat ([string]$settings.format))) {
+      Open-JsonFormat $root | Out-Null
+      Start-Sleep -Milliseconds 500
+      $jsonOption = Find-JsonFormatOption $Process
     }
-  }
-
-  # Qt can omit radio names from UIA while retaining their ordering.
-  if (-not $jsonOption -and $radioButtons.Count -ge 2) {
-    $jsonOption = $radioButtons[1]
   }
   if (-not $jsonOption) { throw 'Telegram JSON-only export option was not found.' }
 
@@ -716,6 +783,9 @@ function Select-JsonFormat($Process) {
   $save = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'Save'
   if (-not $save) {
     $save = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'OK'
+  }
+  if (-not $save) {
+    $save = Find-ProcessButton $Process @('Save', 'OK')
   }
   if ($save) {
     if (-not (Invoke-Element $save)) {
@@ -1182,7 +1252,12 @@ if ($Action -eq 'open-format') {
   if (-not $title) { throw 'Telegram Chat export settings are not open.' }
   Set-MediaSelection $root ([bool]$payload.includeMedia)
   $opened = Open-JsonFormat $root
-  Write-LabSuiteResult ([ordered]@{ needsJsonSelection = [bool]$opened })
+  $selection = if ($opened) { Select-JsonFormat $process } else { [ordered]@{ selected = $true; format = 'JSON' } }
+  Write-LabSuiteResult ([ordered]@{
+    needsJsonSelection = $false
+    selected = [bool]$selection.selected
+    format = [string]$selection.format
+  })
   exit 0
 }
 
