@@ -12,6 +12,9 @@ console.log('Running Telegram readable archive verification tests...');
 
 assert.ok(automationScript.includes('[string]$ResultPath'), 'Telegram automation should accept a direct result-file path');
 assert.ok(automationScript.includes('Write-LabSuiteResult'), 'Telegram automation should persist machine-readable results outside PowerShell stdout');
+assert.ok(automationScript.includes('Get-ExportSearchRoots'), 'Telegram automation should search configured and standard export folders');
+assert.ok(automationScript.includes('Data export completed'), 'Telegram automation should detect Telegram export completion');
+assert.ok(automationScript.includes('Dismiss-ExportCompletionDialog'), 'Telegram automation should dismiss the completion dialog');
 
 const exportDir = path.join(tempRoot, 'ChatExport_test');
 fs.mkdirSync(path.join(exportDir, 'files'), { recursive: true });
@@ -92,6 +95,28 @@ assert.ok(
 assert.ok(
   !telegramArchive.__private.isRetryableScanOutputError({ telegramAction: 'open-export', message: 'Telegram automation returned no readable result.' }),
   'Only chat scans should automatically retry an empty response'
+);
+
+const scheduleNow = Date.parse('2026-07-26T12:00:00.000Z');
+assert.ok(
+  !telegramArchive.isDue({
+    selected: true,
+    enabled: true,
+    schedule: 'hourly',
+    last_backup_at: null,
+    last_attempt_at: new Date(scheduleNow - (5 * 60 * 1000)).toISOString()
+  }, scheduleNow),
+  'A recent failed attempt should not be retried by the one-minute scheduler'
+);
+assert.ok(
+  telegramArchive.isDue({
+    selected: true,
+    enabled: true,
+    schedule: 'hourly',
+    last_backup_at: null,
+    last_attempt_at: new Date(scheduleNow - (61 * 60 * 1000)).toISOString()
+  }, scheduleNow),
+  'A failed attempt should become due again after its configured interval'
 );
 
 telegramArchive.__private.appendDiagnosticEvent({

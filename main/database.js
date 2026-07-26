@@ -1649,6 +1649,7 @@ module.exports = {
           message_count: 0,
           media_count: 0,
           last_backup_at: null,
+          last_attempt_at: null,
           last_backup_status: null,
           last_error: null,
           checkpoint_date: null,
@@ -1672,7 +1673,7 @@ module.exports = {
 
     const booleanFields = ['selected', 'enabled', 'include_media'];
     const stringFields = [
-      'schedule', 'schedule_time', 'last_backup_at', 'last_backup_status',
+      'schedule', 'schedule_time', 'last_backup_at', 'last_attempt_at', 'last_backup_status',
       'last_error', 'checkpoint_date', 'telegram_chat_id', 'remote_path',
       'account_id', 'account_name', 'name', 'type', 'preview', 'preview_time'
     ];

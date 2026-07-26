@@ -771,41 +771,141 @@ function Select-FromDate($Process, $Payload) {
 function Resolve-ExportRoot($Process) {
   $root = Get-Root $Process
   $labels = Get-Descendants $root ([System.Windows.Automation.ControlType]::Text)
-  $pathText = ''
-  foreach ($label in $labels) {
-    if ($label.Current.Name -like 'Format:*Path:*') { $pathText = [string]$label.Current.Name; break }
+  $labelNames = @($labels | ForEach-Object { ([string]$_.Current.Name).Trim() })
+  $configured = ''
+  for ($index = 0; $index -lt $labelNames.Count; $index++) {
+    $labelName = $labelNames[$index]
+    if ($labelName -match '(?is)(?:^|\s)Path\s*:\s*(.+?)\s*$') {
+      $configured = $Matches[1].Trim()
+      break
+    }
+    if ($labelName -match '(?i)^\s*Path\s*:\s*$' -and $index + 1 -lt $labelNames.Count) {
+      $configured = $labelNames[$index + 1].Trim()
+      break
+    }
   }
+
+  $userProfile = [Environment]::GetFolderPath('UserProfile')
   $downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
-  if ($pathText -match 'Path:\s*(.+)$') {
-    $configured = $Matches[1].Trim()
-    if ($configured -match '^Downloads[\\/]*(.*)$') {
-      $tail = $Matches[1]
+  if ($configured) {
+    $configured = [Environment]::ExpandEnvironmentVariables($configured.Trim().Trim('"'))
+    if ($configured -match '(?i)^Downloads(?:[\\/](.*))?$') {
+      $tail = [string]$Matches[1]
       if ($tail) { return (Join-Path $downloads $tail) }
       return $downloads
     }
-    if ([System.IO.Path]::IsPathRooted($configured)) { return $configured }
+    if ($configured -match '^~[\\/](.*)$') {
+      return (Join-Path $userProfile ([string]$Matches[1]))
+    }
+    if ([System.IO.Path]::IsPathRooted($configured)) {
+      return [System.IO.Path]::GetFullPath($configured)
+    }
+    return (Join-Path $userProfile $configured)
   }
   return (Join-Path $downloads 'Telegram Desktop')
 }
 
-function Get-ResultSnapshot([string]$RootPath) {
+function Get-ExportSearchRoots([string]$ExportRoot) {
+  $downloads = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'
+  $candidatePaths = @(
+    $ExportRoot,
+    $downloads,
+    (Join-Path $downloads 'Telegram Desktop')
+  )
+  $seen = @{}
+  $roots = @()
+  foreach ($candidatePath in $candidatePaths) {
+    if (-not $candidatePath) { continue }
+    try {
+      $resolved = [System.IO.Path]::GetFullPath([string]$candidatePath)
+    } catch {
+      continue
+    }
+    if ($seen.ContainsKey($resolved)) { continue }
+    $seen[$resolved] = $true
+    $roots += $resolved
+  }
+  return $roots
+}
+
+function Get-ResultFiles([string[]]$RootPaths) {
+  $files = @{}
+  foreach ($rootPath in $RootPaths) {
+    if (-not $rootPath -or -not (Test-Path -LiteralPath $rootPath)) { continue }
+    Get-ChildItem -LiteralPath $rootPath -Filter result.json -File -Recurse -ErrorAction SilentlyContinue |
+      ForEach-Object { $files[$_.FullName] = $_ }
+  }
+  return @($files.Values)
+}
+
+function Get-ResultSnapshot([string[]]$RootPaths) {
   $snapshot = [ordered]@{}
-  if (Test-Path -LiteralPath $RootPath) {
-    Get-ChildItem -LiteralPath $RootPath -Filter result.json -File -Recurse -ErrorAction SilentlyContinue |
-      ForEach-Object { $snapshot[$_.FullName] = $_.LastWriteTimeUtc.Ticks }
+  foreach ($file in @(Get-ResultFiles $RootPaths)) {
+    $snapshot[$file.FullName] = $file.LastWriteTimeUtc.Ticks
   }
   return $snapshot
 }
 
-function Wait-ForResult([string]$RootPath, $Before, [datetime]$StartedAt, [int]$TimeoutSeconds) {
+function Test-ExportCompletionDialog($Process) {
+  try {
+    $root = Get-Root $Process
+    $elements = $root.FindAll(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )
+    foreach ($element in $elements) {
+      $name = ([string]$element.Current.Name).Trim()
+      if ($name -match '(?i)\b(?:Data export completed|Your data was successfully exported|Show my data)\b') {
+        return $true
+      }
+    }
+  } catch {}
+  return $false
+}
+
+function Dismiss-ExportCompletionDialog($Process, [int]$WaitMilliseconds = 0) {
+  try {
+    $deadline = [DateTime]::UtcNow.AddMilliseconds([Math]::Max(0, $WaitMilliseconds))
+    while ($true) {
+      if (Test-ExportCompletionDialog $Process) {
+        $shell = New-Object -ComObject WScript.Shell
+        $shell.AppActivate($Process.Id) | Out-Null
+        Start-Sleep -Milliseconds 100
+        [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+        Start-Sleep -Milliseconds 350
+        if (-not (Test-ExportCompletionDialog $Process)) { return $true }
+
+        $root = Get-Root $Process
+        foreach ($buttonName in @('Close', 'Done', 'OK')) {
+          $button = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) $buttonName
+          if (Invoke-Element $button) {
+            Start-Sleep -Milliseconds 250
+            if (-not (Test-ExportCompletionDialog $Process)) { return $true }
+          }
+        }
+        return $false
+      }
+      if ([DateTime]::UtcNow -ge $deadline) { return $false }
+      Start-Sleep -Milliseconds 250
+    }
+  } catch {
+    return $false
+  }
+}
+
+function Wait-ForResult($Process, [string[]]$RootPaths, $Before, [datetime]$StartedAt, [int]$TimeoutSeconds) {
   $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
   $stablePath = $null
   $stableLength = -1
   $stablePasses = 0
+  $completionDetectedAt = $null
   while ([DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 1000
-    if (-not (Test-Path -LiteralPath $RootPath)) { continue }
-    $candidates = Get-ChildItem -LiteralPath $RootPath -Filter result.json -File -Recurse -ErrorAction SilentlyContinue |
+    $completionVisible = Test-ExportCompletionDialog $Process
+    if ($completionVisible -and -not $completionDetectedAt) {
+      $completionDetectedAt = [DateTime]::UtcNow
+    }
+    $candidates = @(Get-ResultFiles $RootPaths) |
       Where-Object {
         -not $Before.Contains($_.FullName) -or
         $Before[$_.FullName] -ne $_.LastWriteTimeUtc.Ticks -or
@@ -813,7 +913,12 @@ function Wait-ForResult([string]$RootPath, $Before, [datetime]$StartedAt, [int]$
       } |
       Sort-Object LastWriteTimeUtc -Descending
     $candidate = $candidates | Select-Object -First 1
-    if (-not $candidate) { continue }
+    if (-not $candidate) {
+      if ($completionDetectedAt -and [DateTime]::UtcNow -ge $completionDetectedAt.AddSeconds(15)) {
+        throw "Telegram reported that the export completed, but result.json was not found in: $($RootPaths -join ', ')."
+      }
+      continue
+    }
     if ($stablePath -eq $candidate.FullName -and $stableLength -eq $candidate.Length) {
       $stablePasses++
     } else {
@@ -828,15 +933,20 @@ function Wait-ForResult([string]$RootPath, $Before, [datetime]$StartedAt, [int]$
 
 function Start-Export($Process, $Payload) {
   $exportRoot = Resolve-ExportRoot $Process
-  $before = Get-ResultSnapshot $exportRoot
+  $searchRoots = @(Get-ExportSearchRoots $exportRoot)
+  $before = Get-ResultSnapshot $searchRoots
   $startedAt = [DateTime]::UtcNow
   $root = Get-Root $Process
   $exportButton = Find-ByName $root ([System.Windows.Automation.ControlType]::Button) 'Export'
   if (-not (Invoke-Element $exportButton)) { throw 'Telegram Export button could not be invoked.' }
 
   $timeout = if ($Payload.timeoutSeconds) { [int]$Payload.timeoutSeconds } else { 1800 }
-  $resultPath = Wait-ForResult $exportRoot $before $startedAt $timeout
-  [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+  $resultPath = $null
+  try {
+    $resultPath = Wait-ForResult $Process $searchRoots $before $startedAt $timeout
+  } finally {
+    Dismiss-ExportCompletionDialog $Process 3000 | Out-Null
+  }
   return [ordered]@{
     resultPath = $resultPath
     exportRoot = $exportRoot
