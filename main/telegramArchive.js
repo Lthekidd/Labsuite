@@ -803,7 +803,11 @@ async function backupChat(chatId, onProgress) {
   if (!chat.selected) throw new Error('Select this chat before backing it up.');
 
   activeBackups.add(chatId);
-  db.updateTelegramArchiveChat(chatId, { last_backup_status: 'running', last_error: null });
+  db.updateTelegramArchiveChat(chatId, {
+    last_attempt_at: new Date().toISOString(),
+    last_backup_status: 'running',
+    last_error: null
+  });
   const progress = value => { if (onProgress) onProgress({ chatId, ...value }); };
   let failureStage = 'telegram-export';
   appendDiagnosticEvent({
@@ -884,6 +888,7 @@ async function backupChat(chatId, onProgress) {
     return { ...ingested, uploadError: uploadError ? uploadError.message : null };
   } catch (error) {
     db.updateTelegramArchiveChat(chatId, {
+      last_attempt_at: new Date().toISOString(),
       last_backup_status: 'failed',
       last_error: error.message
     });
@@ -967,7 +972,12 @@ function getMessages(chatId, options = {}) {
 
 function isDue(chat, now = Date.now()) {
   if (!chat.selected || chat.enabled === false || chat.schedule === 'manual') return false;
-  const last = chat.last_backup_at ? Date.parse(chat.last_backup_at) : 0;
+  const lastBackup = Date.parse(chat.last_backup_at || '');
+  const lastAttempt = Date.parse(chat.last_attempt_at || '');
+  const last = Math.max(
+    Number.isFinite(lastBackup) ? lastBackup : 0,
+    Number.isFinite(lastAttempt) ? lastAttempt : 0
+  );
   const elapsed = now - last;
   if (chat.schedule === 'hourly') return elapsed >= 60 * 60 * 1000;
   if (chat.schedule === '6hours') return elapsed >= 6 * 60 * 60 * 1000;

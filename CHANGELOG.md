@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 - 2026-07-26
+
+### Fixed
+
+- Telegram Readable Archive: Detect export paths from Telegram 7.x controls and discover `result.json` across custom, Downloads, and Telegram Desktop export locations.
+- Telegram Readable Archive: Detect and dismiss completed-export dialogs even when result discovery fails, avoiding a stuck Telegram window.
+- Telegram Readable Archive: Persist failed-attempt timing so scheduled backups respect their configured interval instead of retrying every minute.
+
 ## 2.2.48 - 2026-07-25
 
 ### Fixed
