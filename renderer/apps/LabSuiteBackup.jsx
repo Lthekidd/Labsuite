@@ -1,6 +1,7 @@
 // runtime_ref: 0x4c6162
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import FileTree from '../FileTree';
+import { invokeResource, invalidateResource } from '../resourceStore';
 
 const ipcRenderer = window.electron.ipcRenderer;
 
@@ -158,6 +159,11 @@ function restoreJobToActivityRow(job = {}) {
     filesTotal: Math.max(0, Number(job.filesTotal) || 0),
     percent: bytesTotal > 0 ? Math.min(100, Math.round((bytesDone / bytesTotal) * 100)) : 0,
     speed: Math.max(0, Number(job.speed) || 0),
+    currentFile: job.currentFile || (Array.isArray(job.transferring) && job.transferring[0] ? job.transferring[0].name : null),
+    currentFileBytes: Math.max(0, Number(job.currentFileBytes || (Array.isArray(job.transferring) && job.transferring[0] ? job.transferring[0].bytes : 0)) || 0),
+    currentFileSize: Math.max(0, Number(job.currentFileSize || (Array.isArray(job.transferring) && job.transferring[0] ? job.transferring[0].size : 0)) || 0),
+    currentFilePercent: Math.max(0, Number(job.currentFilePercent || (Array.isArray(job.transferring) && job.transferring[0] ? job.transferring[0].percentage : 0)) || 0),
+    transferring: Array.isArray(job.transferring) ? job.transferring : [],
     restoreKind: job.restoreKind || job.type || 'folder',
     resumable: job.resumable !== false && job.type !== 'packed_file',
     updatedAt: job.updatedAt || job.startedAt || new Date().toISOString(),
@@ -377,7 +383,7 @@ function getUniqueRestorableFolders(folders = []) {
   return [...byRemotePath.values()];
 }
 
-export default function LabSuiteBackup() {
+export default function LabSuiteBackup({ active = true }) {
   // App-level state
   const [setupComplete, setSetupComplete] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'folders', 'activity', 'restore', 'settings'
@@ -408,6 +414,13 @@ export default function LabSuiteBackup() {
   const [isPlanningRestorePoint, setIsPlanningRestorePoint] = useState(false);
   const [fileActivity, setFileActivity] = useState({});
   const fileActivityBufferRef = useRef(new Map());
+  const activeRef = useRef(active);
+  const hiddenProgressRef = useRef({
+    syncProgress: null,
+    overallProgress: null,
+    folderProgress: new Map(),
+    syncDetails: ''
+  });
 
   const fileActivityFlushTimerRef = useRef(null);
   const [activityTableScrollTop, setActivityTableScrollTop] = useState(0);
@@ -488,6 +501,7 @@ export default function LabSuiteBackup() {
   const [vaultDeleteStatus, setVaultDeleteStatus] = useState('');
   const restoreBrowseRequestRef = useRef(0);
   const loadAppConfigsInFlightRef = useRef(null);
+  const featureLoadInFlightRef = useRef(new Map());
   const [copiedLogs, setCopiedLogs] = useState(false);
   const [restoreTab, setRestoreTab] = useState('live'); // 'live' | 'trash' (version history)
   
@@ -529,7 +543,53 @@ export default function LabSuiteBackup() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [vaultAnalytics, setVaultAnalytics] = useState({ count: 0, bytes: 0 });
-  const [analyticsSummary, setAnalyticsSummary] = useState({ totalItems: 0, successCount: 0, failedCount: 0, totalBytes: 0, successRate: 100, graphData: [] });
+  const flushBufferedFileActivity = useCallback(() => {
+    const bufferedRows = [...fileActivityBufferRef.current.entries()];
+    fileActivityBufferRef.current.clear();
+    if (bufferedRows.length === 0) return;
+    setFileActivity(prev => {
+      const next = { ...prev };
+      for (const [id, row] of bufferedRows) {
+        next[id] = {
+          ...(next[id] || {}),
+          ...row
+        };
+      }
+      const retained = Object.values(next)
+        .sort(sortActivityRows)
+        .slice(0, MAX_FILE_ACTIVITY_ROWS);
+      return Object.fromEntries(retained.map(row => [row.id, row]));
+    });
+  }, []);
+
+  useEffect(() => {
+    activeRef.current = active;
+    if (!active) return;
+
+    flushBufferedFileActivity();
+    const pending = hiddenProgressRef.current;
+    if (pending.syncProgress) setSyncProgress(pending.syncProgress);
+    if (pending.overallProgress) setOverallProgress(pending.overallProgress);
+    if (pending.folderProgress.size > 0) {
+      setFolderProgress(previous => {
+        const next = { ...previous };
+        for (const [folderId, progress] of pending.folderProgress) {
+          next[folderId] = {
+            ...(next[folderId] || {}),
+            ...progress
+          };
+        }
+        return next;
+      });
+    }
+    if (pending.syncDetails) setSyncDetails(pending.syncDetails);
+    hiddenProgressRef.current = {
+      syncProgress: null,
+      overallProgress: null,
+      folderProgress: new Map(),
+      syncDetails: ''
+    };
+  }, [active, flushBufferedFileActivity]);
 
   // Load configuration and status
   const handleResumeRestore = async (rowOrJob) => {
@@ -556,7 +616,12 @@ export default function LabSuiteBackup() {
   };
 
   useEffect(() => {
-    loadAppConfigs();
+    loadAppConfigs({ force: false });
+    const subscriptions = [];
+    const listen = (channel, handler) => {
+      ipcRenderer.on(channel, handler);
+      subscriptions.push([channel, handler]);
+    };
 
     // Request notification permissions
     if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
@@ -564,12 +629,16 @@ export default function LabSuiteBackup() {
     }
 
     // Listen for sync events from backend IPC
-    ipcRenderer.on('winfsp:install-progress', (event, data) => {
+    listen('winfsp:install-progress', (event, data) => {
       setWinfspInstallStage(data.stage);
       setWinfspInstallPercent(data.percent || 0);
     });
 
-    ipcRenderer.on('status:change', (event, data) => {
+    listen('status:change', (event, data) => {
+      invalidateResource('folders:list');
+      invalidateResource('activity:get');
+      invalidateResource('backup:manifestSummary');
+      invalidateResource('backup:restorePoints');
       setSyncStatus(data.status);
       if (data.details !== undefined) {
         setSyncDetails(data.details || '');
@@ -578,16 +647,16 @@ export default function LabSuiteBackup() {
       }
     });
 
-    ipcRenderer.on('syncQueue:start', (event, data) => {
+    listen('syncQueue:start', (event, data) => {
       setSyncStatus('syncing');
       setSyncDetails(`Preparing to back up ${data.filesTotal} files`);
     });
 
-    ipcRenderer.on('syncQueue:item-start', (event, data) => {
+    listen('syncQueue:item-start', (event, data) => {
       setSyncDetails(`Backing up: ${data.filePath}`);
     });
 
-    ipcRenderer.on('syncQueue:item-complete', (event, data) => {
+    listen('syncQueue:item-complete', (event, data) => {
       const succeeded = Number(data.filesSucceeded ?? data.filesDone) || 0;
       const failed = Number(data.filesFailed) || 0;
       setSyncDetails(failed > 0
@@ -595,7 +664,7 @@ export default function LabSuiteBackup() {
         : `Backed up ${succeeded}/${data.filesTotal} files`);
     });
 
-    ipcRenderer.on('syncQueue:item-error', (event, data) => {
+    listen('syncQueue:item-error', (event, data) => {
       setSyncDetails(`Error: ${data.error}`);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const fileName = String(data.filePath || '').split(/[\\/]/).pop() || 'a file';
@@ -649,7 +718,7 @@ export default function LabSuiteBackup() {
       });
     };
 
-    ipcRenderer.on('syncQueue:complete', (event, data) => {
+    listen('syncQueue:complete', (event, data) => {
       const completedCount = Number(data && data.filesSynced) || 0;
       const failedCount = Number(data && data.filesFailed) || 0;
 
@@ -673,17 +742,36 @@ export default function LabSuiteBackup() {
       }
     });
 
-    ipcRenderer.on('sync:progress', (event, data) => {
+    listen('sync:progress', (event, data) => {
+      if (!activeRef.current) {
+        hiddenProgressRef.current.syncProgress = data;
+        hiddenProgressRef.current.syncDetails = data.stageLabel || (data.phase === 'initial' ? 'Initial backup in progress...' : 'Backing up changes to Google Drive...');
+        return;
+      }
       setSyncProgress(data);
       setSyncStatus(prev => (prev === 'paused' ? 'paused' : 'syncing'));
       setSyncDetails(data.stageLabel || (data.phase === 'initial' ? 'Initial backup in progress...' : 'Backing up changes to Google Drive...'));
     });
 
-    ipcRenderer.on('sync:overall-progress', (event, data) => {
+    listen('sync:overall-progress', (event, data) => {
+      if (!activeRef.current) {
+        hiddenProgressRef.current.overallProgress = data;
+        return;
+      }
       setOverallProgress(data);
     });
 
-    ipcRenderer.on('sync:folder-progress', (event, data) => {
+    listen('sync:folder-progress', (event, data) => {
+      if (!activeRef.current) {
+        hiddenProgressRef.current.folderProgress.set(data.folderId, {
+          ...data,
+          updatedAt: new Date().toISOString()
+        });
+        hiddenProgressRef.current.syncProgress = data.stage === 'complete' || data.stage === 'error' ? null : data;
+        hiddenProgressRef.current.syncDetails = data.stageLabel || data.currentItem || '';
+        if (data.stage === 'complete' || data.stage === 'error') loadAppConfigs();
+        return;
+      }
       setFolderProgress(prev => ({
         ...prev,
         [data.folderId]: {
@@ -715,34 +803,20 @@ export default function LabSuiteBackup() {
         });
       }
 
+      if (!activeRef.current) return;
       if (!fileActivityFlushTimerRef.current) {
         fileActivityFlushTimerRef.current = setTimeout(() => {
           fileActivityFlushTimerRef.current = null;
-          const bufferedRows = [...fileActivityBufferRef.current.entries()];
-          fileActivityBufferRef.current.clear();
-          if (bufferedRows.length === 0) return;
-
-          setFileActivity(prev => {
-            const next = { ...prev };
-            for (const [id, row] of bufferedRows) {
-              next[id] = {
-                ...(next[id] || {}),
-                ...row
-              };
-            }
-            const retained = Object.values(next)
-              .sort(sortActivityRows)
-              .slice(0, MAX_FILE_ACTIVITY_ROWS);
-            return Object.fromEntries(retained.map(row => [row.id, row]));
-          });
+          if (!activeRef.current) return;
+          flushBufferedFileActivity();
         }, FILE_ACTIVITY_RENDER_FLUSH_MS);
       }
     };
 
-    ipcRenderer.on('backup:file-activity', (event, data) => {
+    listen('backup:file-activity', (event, data) => {
       queueFileActivityRows([data]);
     });
-    ipcRenderer.on('backup:file-activity-batch', (event, rows) => {
+    listen('backup:file-activity-batch', (event, rows) => {
       queueFileActivityRows(Array.isArray(rows) ? rows : []);
     });
     const applyRestoreActivityUpdate = (data) => {
@@ -782,77 +856,59 @@ export default function LabSuiteBackup() {
       }
     };
 
-    ipcRenderer.on('restore:activity-update', (event, data) => {
+    listen('restore:activity-update', (event, data) => {
       applyRestoreActivityUpdate(data);
     });
-    ipcRenderer.on('restore:progress', (event, data) => {
+    listen('restore:progress', (event, data) => {
       applyRestoreActivityUpdate(restoreJobToActivityRow({ ...data, status: 'restoring' }));
     });
-    ipcRenderer.on('restore:complete', (event, data) => {
+    listen('restore:complete', (event, data) => {
       applyRestoreActivityUpdate(restoreJobToActivityRow({ ...data, status: 'restored' }));
     });
-    ipcRenderer.on('restore:error', (event, data) => {
+    listen('restore:error', (event, data) => {
       applyRestoreActivityUpdate(restoreJobToActivityRow({
         ...data,
         status: 'failed',
         errorMsg: data && data.error
       }));
     });
-    ipcRenderer.on('sync:complete', (event, data) => {
+    listen('sync:complete', (event, data) => {
       setSyncProgress(null);
       settleLiveActivityRows(data || {});
       loadAppConfigs();
     });
 
-    ipcRenderer.on('sync:conflict', (event, data) => {
+    listen('sync:conflict', (event, data) => {
       setConflictData(data);
       setShowConflictModal(true);
     });
 
-    ipcRenderer.on('health:verify-log', (event, data) => {
+    listen('health:verify-log', (event, data) => {
       setVerifyLogs(prev => {
         const newLogs = [...prev, data.logLine];
         return newLogs.slice(-10);
       });
     });
 
-    ipcRenderer.on('analytics:storage-updated', (event, data) => {
+    listen('analytics:storage-updated', (event, data) => {
       setVaultAnalytics(data);
     });
 
-    ipcRenderer.on('health:safety-update', (event, data) => {
+    listen('health:safety-update', (event, data) => {
       setHealthInfo(prev => ({
         ...prev,
         remoteSafety: data
       }));
     });
 
-    ipcRenderer.on('vault:transfer-progress', (event, data) => {
+    listen('vault:transfer-progress', (event, data) => {
       setVaultTransferProgress(data);
     });
 
     return () => {
-      ipcRenderer.removeAllListeners('status:change');
-      ipcRenderer.removeAllListeners('syncQueue:start');
-      ipcRenderer.removeAllListeners('syncQueue:item-start');
-      ipcRenderer.removeAllListeners('syncQueue:item-complete');
-      ipcRenderer.removeAllListeners('syncQueue:complete');
-      ipcRenderer.removeAllListeners('sync:progress');
-      ipcRenderer.removeAllListeners('sync:folder-progress');
-      ipcRenderer.removeAllListeners('sync:overall-progress');
-      ipcRenderer.removeAllListeners('backup:file-activity');
-      ipcRenderer.removeAllListeners('backup:file-activity-batch');
-      ipcRenderer.removeAllListeners('restore:activity-update');
-      ipcRenderer.removeAllListeners('restore:progress');
-      ipcRenderer.removeAllListeners('restore:complete');
-      ipcRenderer.removeAllListeners('restore:error');
-      ipcRenderer.removeAllListeners('sync:complete');
-      ipcRenderer.removeAllListeners('sync:conflict');
-      ipcRenderer.removeAllListeners('health:verify-log');
-      ipcRenderer.removeAllListeners('analytics:storage-updated');
-      ipcRenderer.removeAllListeners('winfsp:install-progress');
-      ipcRenderer.removeAllListeners('health:safety-update');
-      ipcRenderer.removeAllListeners('vault:transfer-progress');
+      for (const [channel, handler] of subscriptions) {
+        ipcRenderer.removeListener(channel, handler);
+      }
       if (fileActivityFlushTimerRef.current) {
         clearTimeout(fileActivityFlushTimerRef.current);
         fileActivityFlushTimerRef.current = null;
@@ -1023,7 +1079,56 @@ export default function LabSuiteBackup() {
     }).slice(0, MAX_ACTIVITY_TABLE_ROWS);
   }, [fileActivity, logs]);
 
-  const loadAppConfigs = async () => {
+  const loadBackupFeatureData = async (tab, { force = false } = {}) => {
+    const feature = tab === 'folders' ? 'dashboard' : tab;
+    const existing = featureLoadInFlightRef.current.get(feature);
+    if (existing && !force) return existing;
+
+    const request = (async () => {
+      if (feature === 'dashboard') {
+        const manifestSummary = await invokeResource('backup:manifestSummary', [], {
+          ttl: 30000,
+          force
+        });
+        setBackupManifestSummary(manifestSummary || []);
+        return;
+      }
+
+      if (feature === 'health') {
+        const [health, destinations] = await Promise.all([
+          invokeResource('health:get', [], { ttl: 60000, force }),
+          invokeResource('vault:destinations', [], { ttl: Infinity, force })
+        ]);
+        setHealthInfo(health || { status: 'unknown' });
+        setVaultDestinations(destinations || []);
+        return;
+      }
+
+      if (feature === 'restore') {
+        const [analytics, points, mount] = await Promise.all([
+          invokeResource('analytics:storage', [], {
+            ttl: 30 * 60 * 1000,
+            force,
+            staleWhileRevalidate: true
+          }),
+          invokeResource('backup:restorePoints', [], { ttl: 30000, force }),
+          invokeResource('vault:getMountStatus', [], { ttl: 5000, force })
+        ]);
+        setVaultAnalytics(analytics || {});
+        setRestorePoints(points || []);
+        setMountInfo(mount || { status: 'unmounted' });
+      }
+    })().finally(() => {
+      if (featureLoadInFlightRef.current.get(feature) === request) {
+        featureLoadInFlightRef.current.delete(feature);
+      }
+    });
+
+    featureLoadInFlightRef.current.set(feature, request);
+    return request;
+  };
+
+  const loadAppConfigs = async ({ force = true } = {}) => {
     if (loadAppConfigsInFlightRef.current) {
       return loadAppConfigsInFlightRef.current;
     }
@@ -1031,10 +1136,10 @@ export default function LabSuiteBackup() {
     const task = (async () => {
       try {
         const [activeFolders, logsList, appSettings, version] = await Promise.all([
-          safeInvoke('folders:list'),
-          safeInvoke('activity:get'),
-          safeInvoke('settings:get'),
-          safeInvoke('app:getVersion')
+          invokeResource('folders:list', [], { ttl: 30000, force }),
+          invokeResource('activity:get', [], { ttl: 10000, force }),
+          invokeResource('settings:get', [], { ttl: Infinity, force }),
+          invokeResource('app:getVersion')
         ]);
 
         const resolvedSettings = appSettings || {};
@@ -1048,36 +1153,14 @@ export default function LabSuiteBackup() {
         setAppVersion(version || 'Unknown');
 
         if (resolvedSettings.setup_complete === '1') {
-          const [
-            info,
-            health,
-            analytics,
-            summary,
-            manifestSummary,
-            points,
-            mount,
-            destinations,
-            activeRestoreJobs
-          ] = await Promise.all([
-            safeInvoke('auth:getGDriveInfo'),
-            safeInvoke('health:get'),
-            safeInvoke('analytics:storage'),
-            safeInvoke('analytics:summary'),
-            safeInvoke('backup:manifestSummary'),
-            safeInvoke('backup:restorePoints'),
-            safeInvoke('vault:getMountStatus'),
-            safeInvoke('vault:destinations'),
-            safeInvoke('restore:getActiveJobs')
+          const [info, health, activeRestoreJobs] = await Promise.all([
+            invokeResource('auth:getGDriveInfo', [], { ttl: 60000, force }),
+            invokeResource('health:get', [], { ttl: 60000, force }),
+            invokeResource('restore:getActiveJobs', [], { ttl: 2000, force })
           ]);
 
           setGDriveInfo(info || null);
           setHealthInfo(health || { status: 'unknown' });
-          setVaultAnalytics(analytics || {});
-          setAnalyticsSummary(summary || {});
-          setBackupManifestSummary(manifestSummary || []);
-          setRestorePoints(points || []);
-          setMountInfo(mount || { status: 'unmounted' });
-          setVaultDestinations(destinations || []);
           const restoreJobs = activeRestoreJobs || [];
           setActiveRestores(restoreJobs);
           if (restoreJobs.length > 0) {
@@ -1093,6 +1176,9 @@ export default function LabSuiteBackup() {
               return next;
             });
           }
+          loadBackupFeatureData(activeTab, { force }).catch(error => {
+            console.warn(`Failed to load ${activeTab} backup data:`, error.message);
+          });
         } else {
           await refreshGDriveConnection();
         }
@@ -1110,6 +1196,13 @@ export default function LabSuiteBackup() {
       }
     }
   };
+
+  useEffect(() => {
+    if (setupComplete !== true) return;
+    loadBackupFeatureData(activeTab).catch(error => {
+      console.warn(`Failed to load ${activeTab} backup data:`, error.message);
+    });
+  }, [activeTab, setupComplete]);
 
   // Advanced Features Handlers
   const handleManageExclusions = (folder) => {
@@ -3280,6 +3373,40 @@ export default function LabSuiteBackup() {
                       </div>
                     </div>
                   </div>
+
+                  {(currentRestoreJob.currentFile || (Array.isArray(currentRestoreJob.transferring) && currentRestoreJob.transferring.length > 0)) && (
+                    <div style={{
+                      marginTop: '14px',
+                      padding: '10px 14px',
+                      background: 'rgba(15, 23, 42, 0.65)',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px',
+                      flexWrap: 'wrap'
+                    }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: '10px', color: '#f59e0b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '2px' }}>
+                          Currently Downloading File
+                        </div>
+                        <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }} title={currentRestoreJob.currentFile || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.name)}>
+                          {currentRestoreJob.currentFile || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.name)}
+                        </div>
+                      </div>
+                      {((currentRestoreJob.currentFileSize > 0) || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.size > 0)) && (
+                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                          <div style={{ fontSize: '12px', fontWeight: 700, color: '#fbbf24', fontFamily: 'monospace' }}>
+                            {formatBytes(currentRestoreJob.currentFileBytes || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.bytes) || 0)} / {formatBytes(currentRestoreJob.currentFileSize || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.size) || 0)}
+                          </div>
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '1px' }}>
+                            {currentRestoreJob.currentFilePercent || (currentRestoreJob.transferring && currentRestoreJob.transferring[0]?.percentage) || 0}% complete
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '10px' }}>
                     Closing the window keeps this running in the tray. Quitting or restarting interrupts it; Activity will offer Resume. Totals exclude files already present at the destination.
                   </div>

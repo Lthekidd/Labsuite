@@ -388,7 +388,7 @@ function Sparkline({ data = [], change24h }) {
   );
 }
 
-export default function CryptoPortfolioTracker() {
+export default function CryptoPortfolioTracker({ active = true }) {
   const [activeSubTab, setActiveSubTab] = useState('portfolio'); // portfolio, market, transactions, settings
   const [transactions, setTransactions] = useState([]);
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
@@ -465,8 +465,9 @@ export default function CryptoPortfolioTracker() {
   // Pause polling while the app is hidden so tray operation does not keep
   // waking the renderer and network.
   useEffect(() => {
+    if (!active) return undefined;
     const refreshWhenVisible = () => {
-      if (!document.hidden) fetchAllPrices();
+      if (active && !document.hidden) fetchAllPrices();
     };
     refreshWhenVisible();
     const interval = setInterval(refreshWhenVisible, 60000);
@@ -475,12 +476,13 @@ export default function CryptoPortfolioTracker() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [transactions, watchlist, symbolGeckoIds]);
+  }, [active, transactions, watchlist, symbolGeckoIds]);
 
   // Fetch historical data for charts
   useEffect(() => {
+    if (!active) return;
     fetchHistoricalData();
-  }, [transactions, timeframe, symbolGeckoIds]);
+  }, [active, transactions, timeframe, symbolGeckoIds]);
 
   // Compute reverse mapping for lookup, always keeping defaults as fallback
   const geckoIdToSymbol = useMemo(() => {

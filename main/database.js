@@ -1141,6 +1141,11 @@ module.exports = {
       bytesDone: numericValue('bytesDone'),
       bytesTotal: numericValue('bytesTotal'),
       speed: numericValue('speed'),
+      currentFile: restoreJob.currentFile !== undefined ? restoreJob.currentFile : (existing && existing.currentFile) || null,
+      currentFileBytes: numericValue('currentFileBytes'),
+      currentFileSize: numericValue('currentFileSize'),
+      currentFilePercent: numericValue('currentFilePercent'),
+      transferring: restoreJob.transferring !== undefined ? restoreJob.transferring : (existing && existing.transferring) || [],
       startedAt: restoreJob.startedAt || (existing && existing.startedAt) || now,
       updatedAt: now,
       errorMsg: restoreJob.errorMsg === undefined

@@ -56,12 +56,16 @@ async function main() {
 
   const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'apps', 'LabSuiteBackup.jsx'), 'utf8');
   assert.ok(
-    rendererSource.includes("ipcRenderer.on('backup:file-activity-batch'"),
+    rendererSource.includes("listen('backup:file-activity-batch'"),
     'the Activity panel must consume batched backup activity'
   );
   assert.ok(
-    rendererSource.includes("ipcRenderer.on('restore:activity-update'"),
+    rendererSource.includes("listen('restore:activity-update'"),
     'the Activity panel must consume restore activity'
+  );
+  assert.ok(
+    rendererSource.includes('ipcRenderer.removeListener(channel, handler)'),
+    'the Activity panel must remove only the listeners it registered'
   );
   assert.ok(
     rendererSource.includes("'restoring', 'interrupted'"),

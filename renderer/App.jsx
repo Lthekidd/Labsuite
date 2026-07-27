@@ -1,16 +1,49 @@
-import React, { lazy, Suspense, useState, useEffect, useCallback } from 'react';
-import LabSuiteBackup from './apps/LabSuiteBackup';
+import React, { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import AppHub, { HUB_APPS, renderSmallIcon } from './apps/AppHub';
+import { invokeResource, invalidateResource } from './resourceStore';
 
-const LanPeerDrive = lazy(() => import('./apps/LanPeerDrive'));
-const VMProtect = lazy(() => import('./apps/VMProtect'));
-const LabSuiteSheets = lazy(() => import('./apps/LabSuiteSheets'));
-const LabSuiteNotebook = lazy(() => import('./apps/LabSuiteNotebook'));
-const LabSuiteTodo = lazy(() => import('./apps/LabSuiteTodo'));
-const LabSuiteSettings = lazy(() => import('./apps/LabSuiteSettings'));
-const CryptoPortfolioTracker = lazy(() => import('./apps/CryptoPortfolioTracker'));
-const TelegramBackup = lazy(() => import('./apps/TelegramBackup'));
+function createModuleLoader(importModule) {
+  let modulePromise = null;
+  return () => {
+    if (!modulePromise) modulePromise = importModule();
+    return modulePromise;
+  };
+}
+
+const WORKSPACE_LOADERS = {
+  backup: createModuleLoader(() => import('./apps/LabSuiteBackup')),
+  telegram: createModuleLoader(() => import('./apps/TelegramBackup')),
+  crypto: createModuleLoader(() => import('./apps/CryptoPortfolioTracker')),
+  notebook: createModuleLoader(() => import('./apps/LabSuiteNotebook')),
+  settings: createModuleLoader(() => import('./apps/LabSuiteSettings')),
+  sheets: createModuleLoader(() => import('./apps/LabSuiteSheets')),
+  todo: createModuleLoader(() => import('./apps/LabSuiteTodo')),
+  lan: createModuleLoader(() => import('./apps/LanPeerDrive')),
+  'vm-protect': createModuleLoader(() => import('./apps/VMProtect'))
+};
+
+const LabSuiteBackup = React.memo(lazy(WORKSPACE_LOADERS.backup));
+const LabSuiteNotebook = React.memo(lazy(WORKSPACE_LOADERS.notebook));
+const LabSuiteSettings = React.memo(lazy(WORKSPACE_LOADERS.settings));
+const CryptoPortfolioTracker = React.memo(lazy(WORKSPACE_LOADERS.crypto));
+const TelegramBackup = React.memo(lazy(WORKSPACE_LOADERS.telegram));
+const MemoizedAppHub = React.memo(AppHub);
+
+const WORKSPACE_REGISTRY = {
+  hub: { id: 'hub', mode: 'embedded', retention: 'light' },
+  backup: { id: 'backup', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.backup },
+  telegram: { id: 'telegram', mode: 'embedded', retention: 'heavy', loader: WORKSPACE_LOADERS.telegram },
+  crypto: { id: 'crypto', mode: 'embedded', retention: 'heavy', loader: WORKSPACE_LOADERS.crypto },
+  notebook: { id: 'notebook', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.notebook },
+  settings: { id: 'settings', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.settings },
+  sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
+  todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
+  lan: { id: 'lan', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.lan },
+  'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] }
+};
+
+const MAX_HEAVY_WORKSPACES = 4;
 
 function LtcIcon({ size = 16 }) {
   return (
@@ -110,11 +143,55 @@ export default function App() {
   const [globalStatusDetail, setGlobalStatusDetail] = useState('All enabled backups on this PC are healthy.');
   const [globalFailureCount, setGlobalFailureCount] = useState(0);
   const [installedApps, setInstalledApps] = useState([]);
+  const [mountedWorkspaces, setMountedWorkspaces] = useState(['backup']);
+  const [launchingApps, setLaunchingApps] = useState([]);
+  const workspaceLastUsedRef = useRef(new Map([['backup', Date.now()]]));
 
-  const refreshGlobalStatus = () => {
+  const prefetchWorkspace = useCallback((id) => {
+    const definition = WORKSPACE_REGISTRY[id];
+    const loader = definition?.mode === 'embedded' ? definition.loader : null;
+    if (loader) loader().catch(error => {
+      console.warn(`Failed to prefetch ${id}:`, error.message);
+    });
+  }, []);
+
+  const activateWorkspace = useCallback((id) => {
+    const definition = WORKSPACE_REGISTRY[id] || WORKSPACE_REGISTRY.hub;
+    if (definition.mode !== 'embedded') return;
+
+    try {
+      performance.clearMarks(`workspace-nav-${id}-start`);
+      performance.mark(`workspace-nav-${id}-start`);
+    } catch (_) {}
+
+    workspaceLastUsedRef.current.set(id, Date.now());
+    setMountedWorkspaces(previous => {
+      const next = previous.includes(id) ? [...previous] : [...previous, id];
+      const heavy = next.filter(workspaceId => {
+        const retention = WORKSPACE_REGISTRY[workspaceId]?.retention;
+        return retention === 'heavy' || retention === 'pinned';
+      });
+      if (heavy.length <= MAX_HEAVY_WORKSPACES) return next;
+
+      const removable = heavy
+        .filter(workspaceId => (
+          workspaceId !== id &&
+          WORKSPACE_REGISTRY[workspaceId]?.retention !== 'pinned'
+        ))
+        .sort((a, b) => (
+          (workspaceLastUsedRef.current.get(a) || 0) -
+          (workspaceLastUsedRef.current.get(b) || 0)
+        ));
+      const evict = removable.slice(0, heavy.length - MAX_HEAVY_WORKSPACES);
+      return next.filter(workspaceId => !evict.includes(workspaceId));
+    });
+    setActiveTab(id);
+  }, []);
+
+  const refreshGlobalStatus = ({ force = false } = {}) => {
     Promise.all([
-      safeInvoke('folders:list'),
-      safeInvoke('settings:get')
+      invokeResource('folders:list', [], { ttl: 30000, force }),
+      invokeResource('settings:get', [], { ttl: Infinity, force })
     ]).then(([foldersList, s]) => {
       if (s && s.setup_complete !== '1') {
         setGlobalStatus('pending');
@@ -145,7 +222,11 @@ export default function App() {
   useEffect(() => {
     refreshGlobalStatus();
     const handleStatusChange = () => {
-      refreshGlobalStatus();
+      invalidateResource('folders:list');
+      invalidateResource('activity:get');
+      invalidateResource('backup:manifestSummary');
+      invalidateResource('backup:restorePoints');
+      refreshGlobalStatus({ force: true });
     };
     ipcRenderer.on('status:change', handleStatusChange);
     return () => {
@@ -165,50 +246,63 @@ export default function App() {
 
   const triggerLegacyBackupTab = (subTab) => {
     window.__legacyBackupTabPending = subTab;
-    setActiveTab('backup');
+    activateWorkspace('backup');
     window.dispatchEvent(new CustomEvent('legacy-backup-tab', { detail: subTab }));
   };
 
 
   useEffect(() => {
-    safeInvoke('settings:get').then(s => {
+    invokeResource('settings:get').then(s => {
       if (s) setInstalledApps(parseInstalledApps(s.installed_apps));
       if (s && s.setup_complete !== '1') {
-        setActiveTab('backup');
+        activateWorkspace('backup');
       }
     });
 
-    safeInvoke('app:getVersion').then(v => {
+    invokeResource('app:getVersion').then(v => {
       if (v) setAppVersion(v);
     });
 
-    safeInvoke('device:getIdentity').then(identity => {
+    invokeResource('device:getIdentity').then(identity => {
       if (identity && identity.computerName) setDeviceName(identity.computerName);
     });
 
-    ipcRenderer.on('notepad:open-file', (event, filePath) => {
-      setActiveTab('notebook');
+    const handleOpenNotepadFile = (event, filePath) => {
+      activateWorkspace('notebook');
       setExternalFilePath(filePath);
-    });
+    };
+    ipcRenderer.on('notepad:open-file', handleOpenNotepadFile);
 
-    safeInvoke('auth:getGDriveInfo').then(info => {
+    invokeResource('auth:getGDriveInfo', [], { ttl: 60000 }).then(info => {
       if (info) setGlobalGDriveInfo(info);
     });
-    safeInvoke('health:get').then(health => {
+    invokeResource('health:get', [], { ttl: 60000 }).then(health => {
       if (health && health.gdriveStatus) setHealthStatus(health.gdriveStatus);
     });
 
     const intervalId = setInterval(() => {
-      safeInvoke('auth:getGDriveInfo').then(info => { if (info) setGlobalGDriveInfo(info); });
-      safeInvoke('health:get').then(health => { if (health && health.gdriveStatus) setHealthStatus(health.gdriveStatus); });
-      refreshGlobalStatus();
+      invokeResource('auth:getGDriveInfo', [], { ttl: 60000, force: true }).then(info => { if (info) setGlobalGDriveInfo(info); });
+      invokeResource('health:get', [], { ttl: 60000, force: true }).then(health => { if (health && health.gdriveStatus) setHealthStatus(health.gdriveStatus); });
+      refreshGlobalStatus({ force: true });
     }, 60000);
 
     return () => {
-      ipcRenderer.removeAllListeners('notepad:open-file');
+      ipcRenderer.removeListener('notepad:open-file', handleOpenNotepadFile);
       clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    const prefetch = () => {
+      ['telegram', 'crypto', 'settings', 'notebook'].forEach(prefetchWorkspace);
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(prefetch, { timeout: 1500 });
+      return () => window.cancelIdleCallback?.(idleId);
+    }
+    const timer = window.setTimeout(prefetch, 300);
+    return () => window.clearTimeout(timer);
+  }, [prefetchWorkspace]);
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -238,6 +332,7 @@ export default function App() {
     setInstalledApps(nextInstalled);
     try {
       await safeInvoke('settings:set', { key: 'installed_apps', value: JSON.stringify(nextInstalled) });
+      invalidateResource('settings:get');
     } catch (err) {
       console.error('Failed to save installed apps:', err);
     }
@@ -253,45 +348,50 @@ export default function App() {
     if (CORE_APP_IDS.has(appId)) return;
     const next = installedApps.filter(id => id !== appId);
     updateInstalledApps(next);
-    if (activeTab === appId) setActiveTab('hub');
-  }, [installedApps, activeTab, updateInstalledApps]);
+    setMountedWorkspaces(previous => previous.filter(id => id !== appId));
+    if (activeTab === appId) activateWorkspace('hub');
+  }, [installedApps, activeTab, updateInstalledApps, activateWorkspace]);
 
   const handleLaunchStandalone = useCallback((appId) => {
-    safeInvoke('app:launchStandalone', { appId });
+    setLaunchingApps(previous => previous.includes(appId) ? previous : [...previous, appId]);
+    safeInvoke('app:launchStandalone', { appId }).finally(() => {
+      window.setTimeout(() => {
+        setLaunchingApps(previous => previous.filter(id => id !== appId));
+      }, 250);
+    });
   }, []);
 
-  const renderContent = () => {
-    switch (activeTab) {
+  const handleOpenApp = useCallback((id) => {
+    if (STANDALONE_APP_IDS.has(id)) handleLaunchStandalone(id);
+    else activateWorkspace(id);
+  }, [activateWorkspace, handleLaunchStandalone]);
+
+  const renderWorkspace = (workspaceId) => {
+    const active = activeTab === workspaceId;
+    switch (workspaceId) {
       case 'hub':
         return (
-          <AppHub
+          <MemoizedAppHub
+            active={active}
             installedApps={installedApps}
             onInstall={handleInstallApp}
             onUninstall={handleUninstallApp}
-            onOpenApp={(id) => STANDALONE_APP_IDS.has(id) ? handleLaunchStandalone(id) : setActiveTab(id)}
+            onOpenApp={handleOpenApp}
             onLaunchStandalone={handleLaunchStandalone}
           />
         );
       case 'backup':
-        return <LabSuiteBackup />;
+        return <LabSuiteBackup active={active} />;
       case 'telegram':
-        return <TelegramBackup />;
+        return <TelegramBackup active={active} />;
       case 'crypto':
-        return <CryptoPortfolioTracker />;
+        return <CryptoPortfolioTracker active={active} />;
       case 'notebook':
-        return isAppInstalled('notebook') ? <LabSuiteNotebook externalFilePath={externalFilePath} /> : null;
+        return isAppInstalled('notebook') ? <LabSuiteNotebook active={active} externalFilePath={externalFilePath} /> : null;
       case 'settings':
-        return <LabSuiteSettings />;
+        return <LabSuiteSettings active={active} />;
       default:
-        return (
-          <AppHub
-            installedApps={installedApps}
-            onInstall={handleInstallApp}
-            onUninstall={handleUninstallApp}
-            onOpenApp={(id) => STANDALONE_APP_IDS.has(id) ? handleLaunchStandalone(id) : setActiveTab(id)}
-            onLaunchStandalone={handleLaunchStandalone}
-          />
-        );
+        return null;
     }
   };
 
@@ -318,16 +418,16 @@ export default function App() {
             <button className={`nav-item ${(activeTab === 'backup' && backupSubTab === 'folders') ? 'active' : ''}`} onClick={() => triggerLegacyBackupTab('folders')}>My Computer</button>
             <button className={`nav-item ${(activeTab === 'backup' && backupSubTab === 'health') ? 'active' : ''}`} onClick={() => triggerLegacyBackupTab('health')}>Backup Health</button>
             <button className={`nav-item ${(activeTab === 'backup' && backupSubTab === 'restore') ? 'active' : ''}`} onClick={() => triggerLegacyBackupTab('restore')}>Restore Files</button>
-            <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); }}>Settings</button>
+            <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { activateWorkspace('settings'); }}>Settings</button>
           </div>
 
           <div className="suite-sidebar-menu">
             <div style={{ marginBottom: '30px', padding: '0 10px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
-              <NavItem id="hub" icon="🏠" label="App Hub" activeTab={activeTab} setTab={setActiveTab} />
-              <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={setActiveTab} />
-              <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={setActiveTab} />
-              <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={setActiveTab} />
+              <NavItem id="hub" icon="🏠" label="App Hub" activeTab={activeTab} setTab={activateWorkspace} />
+              <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
             </div>
 
             {/* Installed hub apps — show in sidebar */}
@@ -345,8 +445,9 @@ export default function App() {
                       icon={renderSmallIcon(hubApp.icon, 16)}
                       label={hubApp.label}
                       activeTab={activeTab}
-                      setTab={isStandalone ? () => handleLaunchStandalone(appId) : setActiveTab}
-                      suffix={isStandalone ? '↗' : null}
+                      setTab={isStandalone ? () => handleLaunchStandalone(appId) : activateWorkspace}
+                      suffix={isStandalone ? (launchingApps.includes(appId) ? '…' : '↗') : null}
+                      onPrefetch={prefetchWorkspace}
                     />
                   );
                 })}
@@ -355,7 +456,7 @@ export default function App() {
           </div>
 
           <div className="suite-sidebar-footer">
-            <NavItem id="settings" icon="⚙️" label="Suite Settings" activeTab={activeTab} setTab={setActiveTab} />
+            <NavItem id="settings" icon="⚙️" label="Suite Settings" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
             {/* Global Google Drive Status */}
             <div className="suite-status-card">
               <div className="suite-status-header">
@@ -402,15 +503,64 @@ export default function App() {
         </nav>
 
         <main className="suite-content-area" style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-          <ErrorBoundary key={activeTab} compact>
-            <Suspense fallback={<AppLoadingState />}>
-              {renderContent()}
-            </Suspense>
-          </ErrorBoundary>
+          {mountedWorkspaces.map(workspaceId => {
+            const active = activeTab === workspaceId;
+            return (
+              <WorkspacePanel key={workspaceId} id={workspaceId} active={active}>
+                <ErrorBoundary compact>
+                  <Suspense fallback={<AppLoadingState />}>
+                    <WorkspaceReady id={workspaceId} active={active}>
+                      {renderWorkspace(workspaceId)}
+                    </WorkspaceReady>
+                  </Suspense>
+                </ErrorBoundary>
+              </WorkspacePanel>
+            );
+          })}
         </main>
       </div>
     </div>
   );
+}
+
+function WorkspacePanel({ id, active, children }) {
+  return (
+    <section
+      className="suite-workspace-panel"
+      data-workspace-id={id}
+      data-workspace-active={active ? 'true' : 'false'}
+      aria-hidden={active ? undefined : true}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: active ? 'block' : 'none',
+        overflow: 'hidden',
+        contain: 'layout paint style'
+      }}
+    >
+      {children}
+    </section>
+  );
+}
+
+function WorkspaceReady({ id, active, children }) {
+  useEffect(() => {
+    if (!active) return;
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const startMark = `workspace-nav-${id}-start`;
+        const readyMark = `workspace-nav-${id}-ready`;
+        performance.clearMarks(readyMark);
+        performance.mark(readyMark);
+        if (performance.getEntriesByName(startMark).length > 0) {
+          performance.clearMeasures(`workspace-nav-${id}`);
+          performance.measure(`workspace-nav-${id}`, startMark, readyMark);
+        }
+      } catch (_) {}
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [id, active]);
+  return children;
 }
 
 function AppLoadingState() {
@@ -424,12 +574,14 @@ function AppLoadingState() {
   );
 }
 
-function NavItem({ id, icon, label, activeTab, setTab, suffix }) {
+function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
   const active = activeTab === id;
   return (
     <button
       className={active ? 'nav-item active' : 'nav-item'}
       onClick={() => setTab(id)}
+      onPointerEnter={() => onPrefetch?.(id)}
+      onFocus={() => onPrefetch?.(id)}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -441,7 +593,7 @@ function NavItem({ id, icon, label, activeTab, setTab, suffix }) {
         borderRadius: '8px',
         color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
         cursor: 'pointer',
-        transition: 'all 0.2s',
+        transition: 'background-color 120ms ease, color 120ms ease',
         textAlign: 'left',
         fontWeight: active ? 600 : 500,
       }}

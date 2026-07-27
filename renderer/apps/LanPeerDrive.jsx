@@ -108,7 +108,7 @@ function getPeerHealthView(peer, health, checking) {
   };
 }
 
-export default function LanPeerDrive() {
+export default function LanPeerDrive({ active = true }) {
   const [accessStatus, setAccessStatus] = useState({ enabled: false, port: null });
   const [lanSettings, setLanSettings] = useState({ deviceName: '', autoStart: false, firewallRule: true, trustedDevices: [] });
   const [draftDeviceName, setDraftDeviceName] = useState('');
@@ -216,8 +216,8 @@ export default function LanPeerDrive() {
       })
       .catch(err => setError(err.message));
 
-    const dropSettingsTimer = setInterval(() => {
-      if (mounted) {
+    const dropSettingsTimer = active ? setInterval(() => {
+      if (mounted && active) {
         safeInvoke('lan:getDropSettings')
           .then(ds => {
             if (mounted && ds) {
@@ -226,11 +226,11 @@ export default function LanPeerDrive() {
           })
           .catch(() => {});
       }
-    }, 10000);
+    }, 10000) : null;
 
     return () => {
       mounted = false;
-      clearInterval(dropSettingsTimer);
+      if (dropSettingsTimer) clearInterval(dropSettingsTimer);
       if (transferUpdateTimerRef.current) window.clearTimeout(transferUpdateTimerRef.current);
       transferUpdateTimerRef.current = null;
       pendingTransferRef.current = null;
@@ -239,7 +239,7 @@ export default function LanPeerDrive() {
       ipcRenderer.removeListener('lan:transfer-progress', handleTransfer);
       ipcRenderer.removeListener('lan:transfer-queue', handleTransferQueue);
     };
-  }, []);
+  }, [active]);
 
   useEffect(() => {
     if (selectedPeerId && !selectedPeer) {
@@ -263,7 +263,7 @@ export default function LanPeerDrive() {
   }, [activePeerSignature, activePeers]);
 
   useEffect(() => {
-    if (!accessStatus.enabled || activePeers.length === 0) return undefined;
+    if (!active || !accessStatus.enabled || activePeers.length === 0) return undefined;
 
     let cancelled = false;
     pingPeers(activePeers, { quiet: true });
@@ -275,7 +275,7 @@ export default function LanPeerDrive() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [accessStatus.enabled, activePeerSignature]);
+  }, [active, accessStatus.enabled, activePeerSignature]);
 
   const loadSettings = async () => {
     try {

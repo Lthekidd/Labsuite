@@ -81,7 +81,7 @@ function formatShutdownDuration(totalSeconds = 0) {
   return `${secs}s`;
 }
 
-function ShutdownTimerPanel() {
+function ShutdownTimerPanel({ active = true }) {
   const [selectedPreset, setSelectedPreset] = useState(SHUTDOWN_PRESETS[0]);
   const [schedule, setSchedule] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -97,10 +97,11 @@ function ShutdownTimerPanel() {
   };
 
   useEffect(() => {
+    if (!active) return undefined;
     refreshSchedule();
     const interval = setInterval(refreshSchedule, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [active]);
 
   const scheduleShutdown = async () => {
     if (!selectedPreset) return;
@@ -249,7 +250,7 @@ function ShutdownTimerPanel() {
 
 // ── Main Component ──────────────────────────────────────────────────────────
 
-export default function AppHub({ installedApps, onInstall, onUninstall, onOpenApp, onLaunchStandalone }) {
+export default function AppHub({ active = true, installedApps, onInstall, onUninstall, onOpenApp, onLaunchStandalone }) {
   const installedSet = new Set(installedApps || []);
 
   const installedHubApps = HUB_APPS.filter(a => installedSet.has(a.id));
@@ -266,7 +267,7 @@ export default function AppHub({ installedApps, onInstall, onUninstall, onOpenAp
       </div>
 
       {/* PC Shutdown / Restart Timer Panel */}
-      <ShutdownTimerPanel />
+      <ShutdownTimerPanel active={active} />
 
       {/* Core Apps — always visible */}
       <div style={{ marginBottom: '36px' }}>

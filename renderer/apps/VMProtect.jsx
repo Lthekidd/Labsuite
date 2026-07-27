@@ -197,7 +197,7 @@ function SummaryCard({ label, title, detail, good, action }) {
   );
 }
 
-export default function VMProtect() {
+export default function VMProtect({ active = true }) {
   const [discovery, setDiscovery] = useState(EMPTY_DISCOVERY);
   const [vmState, setVmState] = useState(EMPTY_STATE);
   const [loading, setLoading] = useState(true);
@@ -273,6 +273,7 @@ export default function VMProtect() {
   }, [loadEverything]);
 
   useEffect(() => {
+    if (!active) return undefined;
     let refreshInFlight = false;
     let disposed = false;
     const refreshDiscovery = async () => {
@@ -296,7 +297,7 @@ export default function VMProtect() {
       window.removeEventListener('focus', refreshDiscovery);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [loadEverything]);
+  }, [active, loadEverything]);
 
   useEffect(() => {
     if (!ipcRenderer) return undefined;

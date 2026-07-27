@@ -1732,6 +1732,13 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
     let latestProgress = initialJob;
     const transfer = rclone.restore(remotePath, localDestination, (stats) => {
+      const transferringList = Array.isArray(stats.transferring) ? stats.transferring : [];
+      const primaryTransfer = transferringList[0] || null;
+      const currentFile = primaryTransfer ? (primaryTransfer.name || null) : null;
+      const currentFileBytes = primaryTransfer ? (primaryTransfer.bytes || 0) : 0;
+      const currentFileSize = primaryTransfer ? (primaryTransfer.size || 0) : 0;
+      const currentFilePercent = primaryTransfer ? (primaryTransfer.percentage || 0) : 0;
+
       const progressData = {
         id,
         remotePath,
@@ -1742,7 +1749,18 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
         bytesDone: stats.bytes || 0,
         speed: stats.speed || 0,
         status: 'restoring',
-        errorMsg: null
+        errorMsg: null,
+        currentFile,
+        currentFileBytes,
+        currentFileSize,
+        currentFilePercent,
+        transferring: transferringList.map(t => ({
+          name: t.name,
+          bytes: t.bytes || 0,
+          size: t.size || 0,
+          speed: t.speed || 0,
+          percentage: t.percentage || 0
+        }))
       };
       latestProgress = { ...latestProgress, ...progressData };
       checkpointRestoreProgress(progressData);

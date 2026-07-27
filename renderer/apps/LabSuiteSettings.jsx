@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { invokeResource, invalidateResource } from '../resourceStore';
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -55,10 +56,10 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
     return () => ipcRenderer.removeListener('updates:status', handleUpdateStatus);
   }, []);
 
-  const loadSettings = async () => {
+  const loadSettings = async ({ force = false } = {}) => {
     try {
       setIsLoading(true);
-      const data = await ipcRenderer.invoke('settings:get');
+      const data = await invokeResource('settings:get', [], { ttl: Infinity, force });
       setSettings(data || {});
     } catch (e) {
       console.error('Failed to load settings:', e);
@@ -101,9 +102,10 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
     setSettings(prev => ({ ...prev, [key]: value }));
     try {
       await ipcRenderer.invoke('settings:set', { key, value: String(value) });
+      invalidateResource('settings:get');
     } catch (e) {
       console.error(`Failed to update ${key}:`, e);
-      loadSettings(); // revert on fail
+      loadSettings({ force: true }); // revert on fail
     }
   };
 

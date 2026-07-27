@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.5 - 2026-07-27
+
+### Added
+
+- Restore UI: Added active file progress banner to the Current Restore card showing the file currently being downloaded, its individual downloaded bytes / size, and per-file completion percentage.
+
 ## 2.3.4 - 2026-07-27
 
 ### Improved
