@@ -5,6 +5,7 @@ import { X } from '@phosphor-icons/react/X';
 import ErrorBoundary from './ErrorBoundary';
 import AppHub, { HUB_APPS, renderSmallIcon } from './apps/AppHub';
 import AppIcon from './AppIcon';
+import BrandMark from './BrandMark';
 import { invokeResource, invalidateResource } from './resourceStore';
 
 function createModuleLoader(importModule) {
@@ -362,8 +363,9 @@ export default function App() {
   return (
     <div className={`app-container ${theme} suite-layout`}>
       <div className="titlebar drag-region app-header" style={{ WebkitAppRegion: 'drag', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '16px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-color)', width: '100%', boxSizing: 'border-box' }}>
-        <div className="titlebar-title" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
-          <span style={{ fontWeight: 800, color: 'var(--accent-primary)', marginRight: '6px' }}>Lab</span>Suite
+        <div className="titlebar-title suite-wordmark" style={{ fontSize: '13px', letterSpacing: '0.5px' }}>
+          <BrandMark size={20} className="suite-wordmark-mark" />
+          <span><strong>Lab</strong>Suite</span>
           <span className="app-title" style={{ position: 'absolute', left: '-9999px', opacity: 0, display: 'inline !important' }}>LabSuite</span>
         </div>
         <div className="titlebar-controls" style={{ WebkitAppRegion: 'no-drag', display: 'flex', height: '100%' }}>

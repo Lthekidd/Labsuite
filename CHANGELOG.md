@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.7 - 2026-07-28
+
+### Changed
+
+- Branding & Assets: Updated application brand mark, tray icons, app icons, and index styling across the suite.
+
 ## 2.3.6 - 2026-07-27
 
 ### Changed

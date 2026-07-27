@@ -4,6 +4,7 @@ import { ArrowSquareOut } from '@phosphor-icons/react/ArrowSquareOut';
 import { DownloadSimple } from '@phosphor-icons/react/DownloadSimple';
 import { Trash } from '@phosphor-icons/react/Trash';
 import AppIcon from '../AppIcon';
+import BrandMark from '../BrandMark';
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -230,11 +231,14 @@ export default function AppHub({ active = true, installedApps, onInstall, onUnin
   return (
     <div className="apphub-container" style={{ padding: '40px', height: '100%', overflowY: 'auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: '36px' }}>
-        <h1 style={{ fontSize: '32px', marginBottom: '8px', background: 'linear-gradient(90deg, #B0E4CC, #408A71)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-          Welcome to LabSuite
-        </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '16px', margin: 0 }}>Your unified encrypted workspace and backup solution.</p>
+      <div className="apphub-brand-header">
+        <BrandMark size={58} className="apphub-brand-mark" />
+        <div>
+          <h1 style={{ fontSize: '32px', marginBottom: '8px', background: 'linear-gradient(90deg, #B0E4CC, #408A71)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            Welcome to LabSuite
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '16px', margin: 0 }}>Your unified encrypted workspace and backup solution.</p>
+        </div>
       </div>
 
       {/* PC Shutdown / Restart Timer Panel */}
