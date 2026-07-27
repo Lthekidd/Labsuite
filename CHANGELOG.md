@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.3 - 2026-07-27
+
+### Fixed
+
+- Bandwidth Throttling: Dynamically push bandwidth limits to running rclone transfer processes via RC port when modified in Settings panel.
+- Settings: Updated Network Bandwidth Limit UI label to explicitly state "Upload & Download Speed".
+
 ## 2.3.2 - 2026-07-26
 
 ### Fixed

@@ -365,7 +365,7 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload Speed, MB/s)</label>
+              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload &amp; Download Speed, MB/s)</label>
               <select 
                 value={settings.bwlimit || '0'}
                 onChange={(e) => updateSetting('bwlimit', e.target.value)}

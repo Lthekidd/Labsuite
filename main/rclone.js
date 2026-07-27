@@ -721,6 +721,37 @@ function stopSmartThrottleMonitor() {
   lastAppliedBwlimit = null;
 }
 
+/**
+ * Immediately push a bandwidth limit to all active rclone transfer processes
+ * via their RC ports. Called when the user changes the bwlimit setting so that
+ * already-running backups and restores respect the new limit without needing a
+ * restart.
+ * @param {string} limit - rclone bwlimit string e.g. '6M', '0' (unlimited)
+ */
+function applyBwlimitToActiveProcesses(limit) {
+  if (activeRcloneProcesses.size === 0) return;
+  const { rcloneBin, configPath } = getPaths();
+  const effectiveLimit = (limit && limit !== '0') ? limit : 'off';
+  console.log(`rclone: Pushing bwlimit=${effectiveLimit} to ${activeRcloneProcesses.size} active process(es)`);
+  for (const [id, procInfo] of activeRcloneProcesses.entries()) {
+    if (!procInfo.rcPort) continue;
+    try {
+      const rcProc = spawn(rcloneBin, [
+        'rc',
+        'core/bwlimit',
+        `limit=${effectiveLimit}`,
+        '--rc-addr', `127.0.0.1:${procInfo.rcPort}`,
+        '--config', configPath
+      ], { windowsHide: true });
+      rcProc.on('error', err =>
+        console.warn(`rclone: Failed to push bwlimit to process ${id} on port ${procInfo.rcPort}:`, err.message)
+      );
+    } catch (err) {
+      console.warn(`rclone: Error pushing bwlimit to process ${id}:`, err.message);
+    }
+  }
+}
+
 function getCurrentBwlimit() {
   const db = require('./database');
   const settings = db.getDb().settings || {};
@@ -819,12 +850,11 @@ function runRclone(args, options = {}) {
     if (bwlimit && bwlimit !== '0') {
       finalArgs.push(`--bwlimit=${bwlimit}`);
     }
-    const db = require('./database');
-    const settings = db.getDb().settings || {};
-    if (settings.smart_throttle_enabled === '1') {
-      allocatedPort = getFreeRcPort();
-      finalArgs.push('--rc', '--rc-no-auth', '--rc-addr', `127.0.0.1:${allocatedPort}`);
-    }
+    // Always open an RC port for transfer commands so bwlimit can be updated
+    // dynamically on running processes (e.g. when the user changes the setting
+    // mid-transfer) — not just when smart throttle is active.
+    allocatedPort = getFreeRcPort();
+    finalArgs.push('--rc', '--rc-no-auth', '--rc-addr', `127.0.0.1:${allocatedPort}`);
   }
   
   console.log(`Spawning rclone: ${rcloneBin} ${finalArgs.map(redactRcloneArg).join(' ')}`);
@@ -2320,6 +2350,7 @@ module.exports = {
   stopHttpServer,
   copyFileRemoteToLocal,
   getPaths,
+  applyBwlimitToActiveProcesses,
   __private: {
     getRemote,
     getRemotePath,

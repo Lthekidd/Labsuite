@@ -1288,6 +1288,11 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       return { success: applied, enabled: actual };
     }
     db.setSetting(key, value);
+    // If the bandwidth limit changed, immediately apply it to any running
+    // backup or restore processes so the user doesn't have to restart them.
+    if (key === 'bwlimit' || key === 'bwlimit_scheduled_value') {
+      rclone.applyBwlimitToActiveProcesses(value);
+    }
     if (key === 'setup_complete') {
       if (value === '1' && !backupsArePaused()) {
         watcher.initWatcher();
