@@ -1,6 +1,10 @@
 import React, { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Minus } from '@phosphor-icons/react/Minus';
+import { Square } from '@phosphor-icons/react/Square';
+import { X } from '@phosphor-icons/react/X';
 import ErrorBoundary from './ErrorBoundary';
 import AppHub, { HUB_APPS, renderSmallIcon } from './apps/AppHub';
+import AppIcon from './AppIcon';
 import { invokeResource, invalidateResource } from './resourceStore';
 
 function createModuleLoader(importModule) {
@@ -44,46 +48,6 @@ const WORKSPACE_REGISTRY = {
 };
 
 const MAX_HEAVY_WORKSPACES = 4;
-
-function LtcIcon({ size = 16 }) {
-  return (
-    <svg 
-      width={size} 
-      height={size} 
-      viewBox="0 0 24 24" 
-      style={{ display: 'inline-block', verticalAlign: 'middle', overflow: 'visible' }}
-    >
-      <circle cx="12" cy="12" r="12" fill="#345d9d" />
-      <path d="M10.11 5.548h2.242v8.031h3.535v1.932h-5.777V5.548z" fill="white" />
-      <polygon points="8.473,13.682 16.504,9.436 17.356,11.05 9.325,15.296" fill="white" />
-    </svg>
-  );
-}
-
-function VmIcon({ size = 16 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      style={{ display: 'inline-block', verticalAlign: 'middle' }}
-    >
-      <rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="m10 8 5 2.5-5 2.5V8Z" fill="currentColor" />
-    </svg>
-  );
-}
-
-function PcIcon({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
 
 const ipcRenderer = window.electron.ipcRenderer;
 
@@ -403,9 +367,9 @@ export default function App() {
           <span className="app-title" style={{ position: 'absolute', left: '-9999px', opacity: 0, display: 'inline !important' }}>LabSuite</span>
         </div>
         <div className="titlebar-controls" style={{ WebkitAppRegion: 'no-drag', display: 'flex', height: '100%' }}>
-          <button onClick={handleMinimize} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer' }}>−</button>
-          <button onClick={handleMaximize} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer' }}>□</button>
-          <button onClick={handleClose} className="close-btn" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer' }}>×</button>
+          <button aria-label="Minimize" onClick={handleMinimize} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><Minus size={15} weight="bold" /></button>
+          <button aria-label="Maximize" onClick={handleMaximize} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><Square size={13} weight="regular" /></button>
+          <button aria-label="Close" onClick={handleClose} className="close-btn" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', width: '46px', height: '100%', cursor: 'pointer', display: 'grid', placeItems: 'center' }}><X size={15} weight="bold" /></button>
         </div>
       </div>
 
@@ -424,10 +388,10 @@ export default function App() {
           <div className="suite-sidebar-menu">
             <div style={{ marginBottom: '30px', padding: '0 10px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
-              <NavItem id="hub" icon="🏠" label="App Hub" activeTab={activeTab} setTab={activateWorkspace} />
-              <NavItem id="backup" icon="🛡️" label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
-              <NavItem id="telegram" icon="✈️" label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
-              <NavItem id="crypto" icon={<LtcIcon size={16} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              <NavItem id="hub" icon={<AppIcon appId="hub" size={18} />} label="App Hub" activeTab={activeTab} setTab={activateWorkspace} />
+              <NavItem id="backup" icon={<AppIcon appId="backup" size={18} />} label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              <NavItem id="telegram" icon={<AppIcon appId="telegram" size={18} />} label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              <NavItem id="crypto" icon={<AppIcon appId="crypto" size={18} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
             </div>
 
             {/* Installed hub apps — show in sidebar */}
@@ -456,7 +420,7 @@ export default function App() {
           </div>
 
           <div className="suite-sidebar-footer">
-            <NavItem id="settings" icon="⚙️" label="Suite Settings" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+            <NavItem id="settings" icon={<AppIcon appId="settings" size={18} />} label="Suite Settings" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
             {/* Global Google Drive Status */}
             <div className="suite-status-card">
               <div className="suite-status-header">
@@ -469,7 +433,7 @@ export default function App() {
                 </span>
               </div>
               <div className="suite-device-identity" title={`This PC: ${deviceName}`}>
-                <span className="suite-device-icon"><PcIcon /></span>
+                <span className="suite-device-icon"><AppIcon appId="device" size={16} weight="duotone" /></span>
                 <span className="suite-device-copy">
                   <span className="suite-device-label">This PC</span>
                   <strong className="suite-device-name">{deviceName}</strong>
@@ -604,7 +568,7 @@ function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
         if (!active) e.currentTarget.style.background = 'transparent';
       }}
     >
-      <span style={{ marginRight: '12px', fontSize: '16px' }}>{icon}</span>
+      <span style={{ width: '20px', height: '20px', marginRight: '12px', display: 'grid', placeItems: 'center', flex: '0 0 20px' }}>{icon}</span>
       <span style={{ flex: 1 }}>{label}</span>
       {suffix && <span style={{ fontSize: '12px', opacity: 0.5, marginLeft: '4px' }}>{suffix}</span>}
     </button>

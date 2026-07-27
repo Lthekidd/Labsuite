@@ -1,4 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { ArrowRight } from '@phosphor-icons/react/ArrowRight';
+import { ArrowSquareOut } from '@phosphor-icons/react/ArrowSquareOut';
+import { DownloadSimple } from '@phosphor-icons/react/DownloadSimple';
+import { Trash } from '@phosphor-icons/react/Trash';
+import AppIcon from '../AppIcon';
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -7,59 +12,25 @@ const ipcRenderer = window.electron?.ipcRenderer;
 // Hub apps can be installed/uninstalled from the App Hub.
 
 const CORE_APPS = [
-  { id: 'backup', icon: '🛡️', label: 'Backup Engine', description: 'Manage your encrypted cloud backups, configure local folders, and monitor real-time sync activity.', color: '#3b82f6', category: 'Backup' },
-  { id: 'telegram', icon: '✈️', label: 'Telegram Backup', description: 'Automatically back up your Telegram Desktop data including all messages, images, and videos.', color: '#0088cc', category: 'Backup' },
+  { id: 'backup', icon: 'backup', label: 'Backup Engine', description: 'Manage your encrypted cloud backups, configure local folders, and monitor real-time sync activity.', color: '#3b82f6', category: 'Backup' },
+  { id: 'telegram', icon: 'telegram', label: 'Telegram Backup', description: 'Automatically back up your Telegram Desktop data including all messages, images, and videos.', color: '#0088cc', category: 'Backup' },
   { id: 'crypto', icon: 'crypto', label: 'Crypto Portfolio', description: 'Track your holdings and transactions with live market rates and custom SVG charts.', color: '#408A71', category: 'Productivity' },
 ];
 
 const HUB_APPS = [
-  { id: 'notebook', icon: '📓', label: 'Secure Notebook', description: 'Maintain a private, distraction-free markdown knowledge base. Also opens as a standalone editor for .txt files.', color: '#f59e0b', category: 'Productivity', mode: 'dual' },
-  { id: 'sheets', icon: '📊', label: 'Encrypted Tables', description: 'Keep structured rows and columns in your encrypted cloud workspace.', color: '#8b5cf6', category: 'Productivity', mode: 'standalone' },
-  { id: 'lan', icon: '📡', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'standalone' },
-  { id: 'vm-protect', icon: 'vm', label: 'VM Protect', description: 'Protect selected files inside VMware guests without backing up their entire virtual disks.', color: '#2dd4bf', category: 'Security', mode: 'standalone' },
-  { id: 'todo', icon: '📋', label: 'Task Board', description: 'Organize your life with an encrypted Kanban board using native drag-and-drop mechanics.', color: '#ec4899', category: 'Productivity', mode: 'standalone' },
+  { id: 'notebook', icon: 'notebook', label: 'Secure Notebook', description: 'Maintain a private, distraction-free markdown knowledge base. Also opens as a standalone editor for .txt files.', color: '#f59e0b', category: 'Productivity', mode: 'dual' },
+  { id: 'sheets', icon: 'sheets', label: 'Encrypted Tables', description: 'Keep structured rows and columns in your encrypted cloud workspace.', color: '#8b5cf6', category: 'Productivity', mode: 'standalone' },
+  { id: 'lan', icon: 'lan', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'standalone' },
+  { id: 'vm-protect', icon: 'vm-protect', label: 'VM Protect', description: 'Protect selected files inside VMware guests without backing up their entire virtual disks.', color: '#2dd4bf', category: 'Security', mode: 'standalone' },
+  { id: 'todo', icon: 'todo', label: 'Task Board', description: 'Organize your life with an encrypted Kanban board using native drag-and-drop mechanics.', color: '#ec4899', category: 'Productivity', mode: 'standalone' },
 ];
 
-function LtcIconSmall({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', overflow: 'visible' }}>
-      <circle cx="12" cy="12" r="12" fill="#345d9d" />
-      <path d="M10.11 5.548h2.242v8.031h3.535v1.932h-5.777V5.548z" fill="white" />
-      <polygon points="8.473,13.682 16.504,9.436 17.356,11.05 9.325,15.296" fill="white" />
-    </svg>
-  );
-}
-
-function LtcIconLarge({ size = 32 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'inline-block', verticalAlign: 'middle', overflow: 'visible' }}>
-      <circle cx="12" cy="12" r="12" fill="#345d9d" />
-      <path d="M10.11 5.548h2.242v8.031h3.535v1.932h-5.777V5.548z" fill="white" />
-      <polygon points="8.473,13.682 16.504,9.436 17.356,11.05 9.325,15.296" fill="white" />
-    </svg>
-  );
-}
-
-function VmIconHub({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-      <rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="m10 8 5 2.5-5 2.5V8Z" fill="currentColor" />
-    </svg>
-  );
-}
-
 function renderIcon(icon, size = 32) {
-  if (icon === 'crypto') return <LtcIconLarge size={size} />;
-  if (icon === 'vm') return <VmIconHub size={size} />;
-  return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{icon}</span>;
+  return <AppIcon appId={icon} size={size} weight="duotone" />;
 }
 
 function renderSmallIcon(icon, size = 16) {
-  if (icon === 'crypto') return <LtcIconSmall size={size} />;
-  if (icon === 'vm') return <VmIconHub size={size} />;
-  return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{icon}</span>;
+  return <AppIcon appId={icon} size={size} weight="regular" />;
 }
 
 const SHUTDOWN_PRESETS = [
@@ -385,9 +356,9 @@ function AppCard({ app, installed, isCore, onOpen, onInstall, onUninstall, isSta
               onClick={onOpen}
             >
               {isStandalone ? (
-                <><span className="apphub-btn-icon">↗</span> Launch</>
+                <><ArrowSquareOut className="apphub-btn-icon" size={15} weight="bold" /> Launch</>
               ) : (
-                <><span className="apphub-btn-icon">→</span> Open</>
+                <><ArrowRight className="apphub-btn-icon" size={15} weight="bold" /> Open</>
               )}
             </button>
             {!isCore && (
@@ -396,7 +367,7 @@ function AppCard({ app, installed, isCore, onOpen, onInstall, onUninstall, isSta
                 onClick={onUninstall}
                 title="Uninstall"
               >
-                ×
+                <Trash size={15} weight="bold" />
               </button>
             )}
           </>
@@ -409,7 +380,7 @@ function AppCard({ app, installed, isCore, onOpen, onInstall, onUninstall, isSta
             {isInstalling ? (
               <><span className="apphub-install-spinner"></span> Installing...</>
             ) : (
-              <><span className="apphub-btn-icon">↓</span> Install</>
+              <><DownloadSimple className="apphub-btn-icon" size={15} weight="bold" /> Install</>
             )}
           </button>
         )}

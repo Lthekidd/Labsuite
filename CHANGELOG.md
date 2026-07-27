@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.6 - 2026-07-27
+
+### Changed
+
+- App Icons: Updated application navigation and app hub icons across the suite.
+
 ## 2.3.5 - 2026-07-27
 
 ### Added
