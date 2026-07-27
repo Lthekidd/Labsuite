@@ -11,6 +11,9 @@ const LabSuiteNotebook = lazy(() => import('./apps/LabSuiteNotebook'));
 const LabSuiteTodo = lazy(() => import('./apps/LabSuiteTodo'));
 const LanPeerDrive = lazy(() => import('./apps/LanPeerDrive'));
 const VMProtect = lazy(() => import('./apps/VMProtect'));
+const LabShot = lazy(() => import('./apps/LabShot'));
+const LabShotOverlay = lazy(() => import('./apps/LabShotOverlay'));
+const LabShotPin = lazy(() => import('./apps/LabShotPin'));
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -21,6 +24,7 @@ const APP_META = {
   todo:         { title: 'Task Board', icon: 'todo', color: '#ec4899' },
   lan:          { title: 'Network Drive', icon: 'lan', color: '#10b981' },
   'vm-protect': { title: 'VM Protect', icon: 'vm-protect', color: '#2dd4bf' },
+  labshot:      { title: 'LabShot', icon: 'labshot', color: '#06b6d4' }
 };
 
 // ── Standalone App Shell ────────────────────────────────────────────────────
@@ -28,6 +32,26 @@ const APP_META = {
 // It renders a minimal titlebar + the app component, with no sidebar.
 
 export default function StandaloneApp({ appId, filePath }) {
+  if (appId === 'labshot-overlay') {
+    return (
+      <ErrorBoundary compact>
+        <Suspense fallback={null}>
+          <LabShotOverlay />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  if (appId === 'labshot-pin') {
+    return (
+      <ErrorBoundary compact>
+        <Suspense fallback={null}>
+          <LabShotPin />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
   const meta = APP_META[appId] || { title: appId, icon: 'package', color: '#408A71' };
 
   const handleMinimize = () => ipcRenderer?.send('window:minimize');
@@ -46,6 +70,8 @@ export default function StandaloneApp({ appId, filePath }) {
         return <LanPeerDrive />;
       case 'vm-protect':
         return <VMProtect />;
+      case 'labshot':
+        return <LabShot />;
       default:
         return (
           <div style={{ padding: '40px', color: 'var(--text-secondary)', textAlign: 'center' }}>

@@ -25,7 +25,8 @@ const WORKSPACE_LOADERS = {
   sheets: createModuleLoader(() => import('./apps/LabSuiteSheets')),
   todo: createModuleLoader(() => import('./apps/LabSuiteTodo')),
   lan: createModuleLoader(() => import('./apps/LanPeerDrive')),
-  'vm-protect': createModuleLoader(() => import('./apps/VMProtect'))
+  'vm-protect': createModuleLoader(() => import('./apps/VMProtect')),
+  labshot: createModuleLoader(() => import('./apps/LabShot'))
 };
 
 const LabSuiteBackup = React.memo(lazy(WORKSPACE_LOADERS.backup));
@@ -42,6 +43,7 @@ const WORKSPACE_REGISTRY = {
   crypto: { id: 'crypto', mode: 'embedded', retention: 'heavy', loader: WORKSPACE_LOADERS.crypto },
   notebook: { id: 'notebook', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.notebook },
   settings: { id: 'settings', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.settings },
+  labshot: { id: 'labshot', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.labshot },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
   lan: { id: 'lan', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.lan },

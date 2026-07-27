@@ -24,6 +24,7 @@ STATUS_COLORS = {
     "paused": "#F3B64C",
     "error": "#FF667A",
     "setup": "#94A3B8",
+    "labshot": "#06B6D4",
 }
 
 

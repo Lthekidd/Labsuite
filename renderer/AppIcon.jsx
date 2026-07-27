@@ -1,4 +1,5 @@
 import React from 'react';
+import { Crosshair } from '@phosphor-icons/react/Crosshair';
 import { CurrencyBtc } from '@phosphor-icons/react/CurrencyBtc';
 import { DesktopTower } from '@phosphor-icons/react/DesktopTower';
 import { GearSix } from '@phosphor-icons/react/GearSix';
@@ -21,6 +22,7 @@ const APP_ICONS = {
   lan: HardDrives,
   'vm-protect': DesktopTower,
   todo: Kanban,
+  labshot: Crosshair,
   settings: GearSix,
   device: DesktopTower,
   package: Package

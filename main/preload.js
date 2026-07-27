@@ -128,6 +128,17 @@ const INVOKE_CHANNELS = new Set([
   'lan:startDiscovery',
   'lan:stopDiscovery',
   'lan:getPeers',
+
+  // LabShot API
+  'labshot:startCapture',
+  'labshot:getCapturedScreen',
+  'labshot:closeOverlay',
+  'labshot:copyToClipboard',
+  'labshot:saveToFile',
+  'labshot:saveToVault',
+  'labshot:pinToScreen',
+  'labshot:getGallery',
+  'labshot:deleteScreenshot',
   'lan:pingPeer',
   'lan:pingPeers',
   'lan:enableFileAccess',

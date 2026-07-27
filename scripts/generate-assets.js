@@ -10,6 +10,7 @@ const REQUIRED_FILES = [
   'tray-paused.png',
   'tray-error.png',
   'tray-setup.png',
+  'tray-labshot.png',
   path.join('brand', 'labsuite-mark.png'),
   path.join('brand', 'labsuite-mark-ui.png')
 ];

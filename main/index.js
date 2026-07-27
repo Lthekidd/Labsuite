@@ -643,6 +643,12 @@ app.on('ready', () => {
 
   createWindow();
 
+  try {
+    require('./labShot').init();
+  } catch (err) {
+    console.warn('LabSuite: Failed to initialize LabShot:', err.message);
+  }
+
   let hasVmProtectGuests = false;
   try {
     const storedGuests = JSON.parse(db.getSetting('vm_protect_guests') || '[]');

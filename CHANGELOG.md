@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.0 - 2026-07-28
+
+### Added
+
+- **LabShot Screenshot App**: Integrated new Flameshot-inspired screen capture, live annotation, and encrypted vault storage application into LabSuite App Hub.
+- **Dedicated System Tray Icon**: Added native LabShot camera tray icon (`tray-labshot.png`) with left-click instant selection capture and right-click context menu.
+- **Global Hotkey**: Registered `Alt+Shift+S` global shortcut for instant desktop screen selection.
+- **Flameshot Annotation Toolbar**: Included Pen, Arrow, Rectangle, Circle, Step Counter Badges (`1, 2, 3`), Privacy Blur/Pixelate obfuscation tool, Color Palette, and Line thickness controls.
+- **Output Actions**: Copy to Clipboard, Save to File, Save to Encrypted Vault, and Pin Snippet to Screen floating widget.
+
 ## 2.3.9 - 2026-07-28
 
 ### Fixed
