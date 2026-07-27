@@ -98,6 +98,7 @@ const DEFAULT_SETTINGS = {
   sync_on_file_change: '1',
   start_on_login: '1',
   notifications_enabled: '1',
+  speed_unit: 'bits',         // 'bits' (Mbps/Kbps Steam-style) or 'bytes' (MB/s)
   bwlimit: '0',              // 0 = unlimited, otherwise e.g. '5M'
   bwlimit_scheduler_enabled: '0',
   bwlimit_scheduled_value: '1M',

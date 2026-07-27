@@ -2747,6 +2747,18 @@ export default function LabSuiteBackup({ active = true }) {
 
   const formatSpeed = (bytesPerSec) => {
     if (!bytesPerSec || bytesPerSec <= 0) return '';
+    const unitMode = (settings && settings.speed_unit) || 'bits';
+    if (unitMode === 'bits') {
+      const bitsPerSec = bytesPerSec * 8;
+      if (bitsPerSec < 1000000) {
+        return (bitsPerSec / 1000).toFixed(1) + ' Kbps';
+      }
+      if (bitsPerSec < 1000000000) {
+        const mbps = bitsPerSec / 1000000;
+        return (mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)) + ' Mbps';
+      }
+      return (bitsPerSec / 1000000000).toFixed(2) + ' Gbps';
+    }
     return formatBytes(bytesPerSec) + '/s';
   };
 

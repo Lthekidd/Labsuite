@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.8 - 2026-07-28
+
+### Added
+
+- Unified Speed Units (Steam / Fiber Style): Added Speed Display Unit toggle in Settings (`Bits (Mbps)` vs `Bytes (MB/s)`). Defaulted all live transfer speed indicators and bandwidth options to bits-per-second (`Mbps` / `Kbps`), matching ISP internet bandwidth ratings (e.g. 100 Mbps fiber line).
+
 ## 2.3.7 - 2026-07-28
 
 ### Changed

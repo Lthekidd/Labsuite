@@ -75,6 +75,7 @@ const RENDERER_WRITABLE_SETTINGS = new Set([
   'sync_on_file_change',
   'start_on_login',
   'notifications_enabled',
+  'speed_unit',
   'bwlimit',
   'bwlimit_scheduler_enabled',
   'bwlimit_scheduled_value',

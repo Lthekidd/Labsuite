@@ -367,18 +367,52 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload &amp; Download Speed, MB/s)</label>
+              <label style={{ fontSize: '14px' }}>Speed Display Unit</label>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  className={`btn ${settings.speed_unit !== 'bytes' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => updateSetting('speed_unit', 'bits')}
+                  style={{ flex: 1, padding: '8px 14px', fontSize: '13px' }}
+                >
+                  Bits (Mbps) — Fiber / Steam Style
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${settings.speed_unit === 'bytes' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => updateSetting('speed_unit', 'bytes')}
+                  style={{ flex: 1, padding: '8px 14px', fontSize: '13px' }}
+                >
+                  Bytes (MB/s) — File Size Style
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontSize: '14px' }}>Network Bandwidth Limit (Upload &amp; Download Speed)</label>
               <select 
                 value={settings.bwlimit || '0'}
                 onChange={(e) => updateSetting('bwlimit', e.target.value)}
                 style={inputStyle}
               >
                 <option value="0">Unlimited (Fastest)</option>
-                <option value="1M">1 MB/s (about 8 Mbps)</option>
-                <option value="5M">5 MB/s (about 40 Mbps)</option>
-                <option value="6M">6 MB/s (about 50 Mbps)</option>
-                <option value="10M">10 MB/s (about 80 Mbps)</option>
-                <option value="50M">50 MB/s (about 400 Mbps)</option>
+                {settings.speed_unit === 'bytes' ? (
+                  <>
+                    <option value="1M">1 MB/s (8 Mbps)</option>
+                    <option value="5M">5 MB/s (40 Mbps)</option>
+                    <option value="6M">6 MB/s (50 Mbps)</option>
+                    <option value="10M">10 MB/s (80 Mbps)</option>
+                    <option value="50M">50 MB/s (400 Mbps)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="1M">8 Mbps (1 MB/s)</option>
+                    <option value="5M">40 Mbps (5 MB/s)</option>
+                    <option value="6M">50 Mbps (6.25 MB/s)</option>
+                    <option value="10M">80 Mbps (10 MB/s)</option>
+                    <option value="50M">400 Mbps (50 MB/s)</option>
+                  </>
+                )}
               </select>
             </div>
 

@@ -21,8 +21,18 @@ function formatProgress(bytesDone, bytesTotal) {
   return `${formatBytes(bytesDone)} / ${formatBytes(bytesTotal)}`;
 }
 
-function formatSpeed(bytesPerSecond) {
-  return bytesPerSecond ? `${formatBytes(bytesPerSecond)}/s` : '';
+function formatSpeed(bytesPerSecond, speedUnit = 'bits') {
+  if (!bytesPerSecond || bytesPerSecond <= 0) return '';
+  if (speedUnit === 'bits') {
+    const bits = bytesPerSecond * 8;
+    if (bits < 1000000) return `${(bits / 1000).toFixed(1)} Kbps`;
+    if (bits < 1000000000) {
+      const mbps = bits / 1000000;
+      return `${mbps >= 100 ? mbps.toFixed(0) : mbps.toFixed(1)} Mbps`;
+    }
+    return `${(bits / 1000000000).toFixed(2)} Gbps`;
+  }
+  return `${formatBytes(bytesPerSecond)}/s`;
 }
 
 function getJobPercent(job) {
