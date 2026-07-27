@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.4 - 2026-07-27
+
+### Improved
+
+- Restore: Use `--inplace` so partially downloaded files survive app restarts instead of being silently discarded as temp files.
+- Restore: Added automatic retries (`--retries 5`, `--low-level-retries 20`) to handle transient network failures without losing transfer progress.
+- Restore: Enabled multi-threaded downloads (`--multi-thread-streams 4`) for large files (>200 MB) to improve throughput on high-latency connections.
+
 ## 2.3.3 - 2026-07-27
 
 ### Fixed

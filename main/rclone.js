@@ -1586,8 +1586,22 @@ function restore(remotePath, localDestination, onProgress, options = {}) {
     'copy',
     getRemotePath(remotePath),
     localDestination,
+    // Write directly to the destination file instead of a temp file.
+    // This means partially downloaded files survive app restarts — on resume,
+    // rclone sees the incomplete file (wrong size) and re-downloads it, while
+    // fully completed files (correct size) are skipped instantly.
+    '--inplace',
     ...(options.overwrite === true ? [] : ['--ignore-existing']),
     ...getTransferFlagArgs(),
+    // Automatic retries within the same process — handles transient network
+    // failures without losing the entire transfer's progress.
+    '--retries', '5',
+    '--low-level-retries', '20',
+    '--retries-sleep', '5s',
+    // Download large files using multiple parallel streams for better
+    // throughput on high-latency connections.
+    '--multi-thread-streams', '4',
+    '--multi-thread-cutoff', '200M',
     '--stats=1s',
     '--stats-log-level', 'NOTICE',
     '--use-json-log'
