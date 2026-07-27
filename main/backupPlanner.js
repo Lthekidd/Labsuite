@@ -258,12 +258,22 @@ function walkFolder(folder, plan, entries) {
         continue;
       }
 
-      if (child.isDirectory()) {
+      let isDir = child.isDirectory();
+      let isFile = child.isFile();
+      if (!isDir && !isFile) {
+        try {
+          const st = fs.statSync(childPath);
+          isDir = st.isDirectory();
+          isFile = st.isFile();
+        } catch (_) {}
+      }
+
+      if (isDir) {
         stack.push(childPath);
         continue;
       }
 
-      if (!child.isFile()) {
+      if (!isFile) {
         plan.skipped += 1;
         continue;
       }
@@ -330,12 +340,22 @@ async function walkFolderAsync(folder, plan, entries) {
         continue;
       }
 
-      if (child.isDirectory()) {
+      let isDir = child.isDirectory();
+      let isFile = child.isFile();
+      if (!isDir && !isFile) {
+        try {
+          const st = fs.statSync(childPath);
+          isDir = st.isDirectory();
+          isFile = st.isFile();
+        } catch (_) {}
+      }
+
+      if (isDir) {
         stack.push(childPath);
         continue;
       }
 
-      if (!child.isFile()) {
+      if (!isFile) {
         plan.skipped += 1;
         continue;
       }

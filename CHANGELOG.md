@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.9 - 2026-07-28
+
+### Fixed
+
+- File Explorer / Folder Detection: Resolved an issue where Windows directory junctions, symlinked folders, and reparse points (such as virtual machine directories like `vmwares`) were misclassified as files `📄` instead of navigable folders `📁`.
+- Backup Planner: Enabled full scanning and traversal of junction/symlinked directories during backup passes.
+
 ## 2.3.8 - 2026-07-28
 
 ### Added

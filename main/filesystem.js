@@ -398,7 +398,14 @@ async function listDir(dirPath, options = {}) {
       if (process.platform === 'win32' && SKIP_TREE_WINDOWS.has(entry.name)) continue;
 
       const fullPath = path.join(dirPath, entry.name);
-      const isDir = entry.isDirectory();
+      let isDir = entry.isDirectory();
+      if (!isDir) {
+        try {
+          const st = await fs.promises.stat(fullPath);
+          isDir = st.isDirectory();
+        } catch (_) {}
+      }
+
       candidates.push({ path: fullPath, name: entry.name, isDir, isDrive: false });
     }
 
@@ -424,7 +431,6 @@ async function listDir(dirPath, options = {}) {
         try {
           const sub = await fs.promises.readdir(item.path, { withFileTypes: true });
           hasChildren = sub.some(e =>
-            e.isDirectory() &&
             !e.name.startsWith('.') &&
             !(process.platform === 'win32' && SKIP_TREE_WINDOWS.has(e.name))
           );
