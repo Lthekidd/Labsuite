@@ -140,6 +140,7 @@ const INVOKE_CHANNELS = new Set([
   'labshot:pinToScreen',
   'labshot:getGallery',
   'labshot:deleteScreenshot',
+  'labshot:openScreenshotsFolder',
   'lan:pingPeer',
   'lan:pingPeers',
   'lan:enableFileAccess',

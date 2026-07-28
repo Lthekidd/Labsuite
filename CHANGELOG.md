@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.4.5 - 2026-07-28
+
+### Added
+
+- **Multi-Monitor Display Support**: Updated LabShot screen capture (`captureAllScreens`) to detect all connected display monitors and span the transparent Flameshot overlay across your entire multi-monitor setup (`totalWidth × totalHeight`).
+- **Open Screenshots Folder Action**: Added an "Open Screenshots Folder" action button in LabShot header to immediately open your local disk & vault screenshots directory (`Documents/LabSuite/Screenshots`) in Windows File Explorer.
+
 ## 2.4.4 - 2026-07-28
 
 ### Fixed

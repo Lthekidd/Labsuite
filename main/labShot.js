@@ -54,29 +54,46 @@ function focusLabShotApp() {
 }
 
 /**
- * Capture full screen data URL from the primary display
+ * Capture full screen data URLs from all connected display monitors
  */
-async function capturePrimaryScreen() {
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.bounds;
-  const scale = primaryDisplay.scaleFactor || 1;
+async function captureAllScreens() {
+  const displays = screen.getAllDisplays();
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  displays.forEach(d => {
+    minX = Math.min(minX, d.bounds.x);
+    minY = Math.min(minY, d.bounds.y);
+    maxX = Math.max(maxX, d.bounds.x + d.bounds.width);
+    maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
+  });
+  const totalWidth = maxX - minX;
+  const totalHeight = maxY - minY;
 
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: {
-      width: Math.round(width * scale),
-      height: Math.round(height * scale)
-    }
+    thumbnailSize: { width: 3840, height: 2160 }
   });
 
-  const primarySource = sources[0] || sources.find(s => s.id.includes('screen:0'));
-  if (!primarySource) throw new Error('No screen capture source available.');
+  const displayCaptures = displays.map((d, index) => {
+    const source = sources.find(s => s.display_id === String(d.id)) || sources[index] || sources[0];
+    return {
+      id: d.id,
+      x: d.bounds.x - minX,
+      y: d.bounds.y - minY,
+      width: d.bounds.width,
+      height: d.bounds.height,
+      dataUrl: source ? source.thumbnail.toDataURL() : null
+    };
+  });
 
-  return primarySource.thumbnail.toDataURL();
+  return {
+    bounds: { x: minX, y: minY, width: totalWidth, height: totalHeight },
+    displays: displayCaptures
+  };
 }
 
 /**
- * Open fullscreen Flameshot-style overlay for area selection & editing
+ * Open fullscreen Flameshot-style overlay for area selection & editing spanning all displays
  */
 async function startCapture({ delayMs = 0 } = {}) {
   if (delayMs > 0) {
@@ -84,27 +101,28 @@ async function startCapture({ delayMs = 0 } = {}) {
   }
 
   try {
-    const dataUrl = await capturePrimaryScreen();
-    capturedDataUrlCache = dataUrl;
+    const screenData = await captureAllScreens();
+    capturedDataUrlCache = screenData;
 
     if (activeOverlayWindow && !activeOverlayWindow.isDestroyed()) {
       activeOverlayWindow.close();
     }
 
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { x, y, width, height } = primaryDisplay.bounds;
+    const { x, y, width, height } = screenData.bounds;
 
     const overlayWin = new BrowserWindow({
       x,
       y,
       width,
       height,
-      fullscreen: true,
+      enableLargerThanScreen: true,
+      fullscreen: false,
       frame: false,
       transparent: true,
       alwaysOnTop: true,
       skipTaskbar: true,
       resizable: false,
+      icon: resolveAssetPath('labshot-icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -271,7 +289,14 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:getCapturedScreen', async () => {
-    return { dataUrl: capturedDataUrlCache };
+    return capturedDataUrlCache || { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, displays: [] };
+  });
+
+  ipcMain.handle('labshot:openScreenshotsFolder', async () => {
+    const labshotDir = path.join(app.getPath('documents'), 'LabSuite', 'Screenshots');
+    await fs.promises.mkdir(labshotDir, { recursive: true });
+    require('electron').shell.openPath(labshotDir);
+    return { success: true };
   });
 
   ipcMain.handle('labshot:getPinnedSnippet', async (event) => {

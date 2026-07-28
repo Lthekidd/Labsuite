@@ -3,6 +3,7 @@ import { Camera } from '@phosphor-icons/react/Camera';
 import { Clock } from '@phosphor-icons/react/Clock';
 import { Copy } from '@phosphor-icons/react/Copy';
 import { DownloadSimple } from '@phosphor-icons/react/DownloadSimple';
+import { FolderOpen } from '@phosphor-icons/react/FolderOpen';
 import { LockSimple } from '@phosphor-icons/react/LockSimple';
 import { PushPin } from '@phosphor-icons/react/PushPin';
 import { Trash } from '@phosphor-icons/react/Trash';
@@ -15,6 +16,10 @@ export default function LabShot() {
   const [gallery, setGallery] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('gallery'); // gallery, settings
+
+  const handleOpenFolder = async () => {
+    await ipcRenderer?.invoke('labshot:openScreenshotsFolder');
+  };
 
   const fetchGallery = async () => {
     try {
@@ -116,6 +121,25 @@ export default function LabShot() {
             }}
           >
             <Clock size={16} /> 3s Delay
+          </button>
+
+          <button
+            onClick={handleOpenFolder}
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255,255,255,0.15)',
+              background: '#1e293b',
+              color: '#e2e8f0',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+            title="Open local & vault screenshots folder on disk"
+          >
+            <FolderOpen size={16} /> Open Screenshots Folder
           </button>
         </div>
       </div>

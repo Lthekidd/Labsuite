@@ -39,13 +39,17 @@ export default function LabShotOverlay() {
   const bgImageRef = useRef(null);
   const canvasRef = useRef(null);
 
+  const [screenData, setScreenData] = useState(null);
+
   // Load screen snapshot on mount
   useEffect(() => {
     async function loadScreen() {
       try {
         const res = await ipcRenderer?.invoke('labshot:getCapturedScreen');
-        if (res?.dataUrl) {
-          setScreenDataUrl(res.dataUrl);
+        if (res) {
+          setScreenData(res);
+          if (res.dataUrl) setScreenDataUrl(res.dataUrl);
+          else if (res.displays && res.displays[0]?.dataUrl) setScreenDataUrl(res.displays[0].dataUrl);
         }
       } catch (err) {
         console.error('Failed to load screen capture:', err);
@@ -401,15 +405,33 @@ export default function LabShotOverlay() {
         overflow: 'hidden'
       }}
     >
-      {/* 1. Fullscreen background screen image */}
-      {screenDataUrl && (
+      {/* 1. Fullscreen background screen images for all displays */}
+      {screenData?.displays && screenData.displays.length > 0 ? (
+        screenData.displays.map(d => (
+          d.dataUrl && (
+            <img
+              key={d.id}
+              src={d.dataUrl}
+              alt="Display Capture"
+              style={{
+                position: 'absolute',
+                left: `${d.x}px`,
+                top: `${d.y}px`,
+                width: `${d.width}px`,
+                height: `${d.height}px`,
+                objectFit: 'cover'
+              }}
+            />
+          )
+        ))
+      ) : screenDataUrl ? (
         <img
           ref={bgImageRef}
           src={screenDataUrl}
           alt="Screen Capture"
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
         />
-      )}
+      ) : null}
 
       {/* 2. Interactive Annotation Canvas */}
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0 }} />
