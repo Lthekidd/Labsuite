@@ -14,6 +14,7 @@ const VMProtect = lazy(() => import('./apps/VMProtect'));
 const LabShot = lazy(() => import('./apps/LabShot'));
 const LabShotOverlay = lazy(() => import('./apps/LabShotOverlay'));
 const LabShotPin = lazy(() => import('./apps/LabShotPin'));
+const LabHWMonitor = lazy(() => import('./apps/LabHWMonitor'));
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -24,7 +25,8 @@ const APP_META = {
   todo:         { title: 'Task Board', icon: 'todo', color: '#ec4899' },
   lan:          { title: 'Network Drive', icon: 'lan', color: '#10b981' },
   'vm-protect': { title: 'VM Protect', icon: 'vm-protect', color: '#2dd4bf' },
-  labshot:      { title: 'LabShot', icon: 'labshot', color: '#a78bfa' }
+  labshot:      { title: 'LabShot', icon: 'labshot', color: '#a78bfa' },
+  hwmonitor:    { title: 'LabHWMonitor', icon: 'hwmonitor', color: '#10b981' }
 };
 
 // ── Standalone App Shell ────────────────────────────────────────────────────
@@ -72,6 +74,8 @@ export default function StandaloneApp({ appId, filePath }) {
         return <VMProtect />;
       case 'labshot':
         return <LabShot />;
+      case 'hwmonitor':
+        return <LabHWMonitor />;
       default:
         return (
           <div style={{ padding: '40px', color: 'var(--text-secondary)', textAlign: 'center' }}>

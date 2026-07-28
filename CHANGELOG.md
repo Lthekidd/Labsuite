@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.0 - 2026-07-28
+
+### Added
+
+- **LabHWMonitor Application**: Introduced `LabHWMonitor`, an advanced zero-idle hardware monitoring app focusing on metrics beyond standard Task Manager (per-core clocks, GPU specs, storage S.M.A.R.T. health, network ping latency, system uptime).
+- **Zero-Idle Overhead Architecture**: Subscription-based IPC engine (`hwmonitor:subscribe` / `hwmonitor:unsubscribe`) that completely stops hardware sampling when the view is closed or unmounted (0% idle CPU usage, 0 MB memory growth).
+
 ## 2.4.5 - 2026-07-28
 
 ### Added

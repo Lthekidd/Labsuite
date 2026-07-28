@@ -141,6 +141,11 @@ const INVOKE_CHANNELS = new Set([
   'labshot:getGallery',
   'labshot:deleteScreenshot',
   'labshot:openScreenshotsFolder',
+
+  // LabHWMonitor API
+  'hwmonitor:subscribe',
+  'hwmonitor:unsubscribe',
+  'hwmonitor:getSnapshot',
   'lan:pingPeer',
   'lan:pingPeers',
   'lan:enableFileAccess',

@@ -653,6 +653,12 @@ app.on('ready', () => {
     console.warn('LabSuite: Failed to initialize LabShot:', err.message);
   }
 
+  try {
+    require('./labHwMonitor').init();
+  } catch (err) {
+    console.warn('LabSuite: Failed to initialize LabHWMonitor:', err.message);
+  }
+
   let hasVmProtectGuests = false;
   try {
     const storedGuests = JSON.parse(db.getSetting('vm_protect_guests') || '[]');

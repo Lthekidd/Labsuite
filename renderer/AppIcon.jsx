@@ -1,4 +1,4 @@
-import React from 'react';
+import { Cpu } from '@phosphor-icons/react/Cpu';
 import { CurrencyBtc } from '@phosphor-icons/react/CurrencyBtc';
 import { DesktopTower } from '@phosphor-icons/react/DesktopTower';
 import { GearSix } from '@phosphor-icons/react/GearSix';
@@ -22,6 +22,7 @@ const APP_ICONS = {
   lan: HardDrives,
   'vm-protect': DesktopTower,
   todo: Kanban,
+  hwmonitor: Cpu,
   settings: GearSix,
   device: DesktopTower,
   package: Package

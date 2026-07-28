@@ -26,7 +26,8 @@ const WORKSPACE_LOADERS = {
   todo: createModuleLoader(() => import('./apps/LabSuiteTodo')),
   lan: createModuleLoader(() => import('./apps/LanPeerDrive')),
   'vm-protect': createModuleLoader(() => import('./apps/VMProtect')),
-  labshot: createModuleLoader(() => import('./apps/LabShot'))
+  labshot: createModuleLoader(() => import('./apps/LabShot')),
+  hwmonitor: createModuleLoader(() => import('./apps/LabHWMonitor'))
 };
 
 const LabSuiteBackup = React.memo(lazy(WORKSPACE_LOADERS.backup));
@@ -35,6 +36,7 @@ const LabSuiteSettings = React.memo(lazy(WORKSPACE_LOADERS.settings));
 const CryptoPortfolioTracker = React.memo(lazy(WORKSPACE_LOADERS.crypto));
 const TelegramBackup = React.memo(lazy(WORKSPACE_LOADERS.telegram));
 const LabShot = React.memo(lazy(WORKSPACE_LOADERS.labshot));
+const LabHWMonitor = React.memo(lazy(WORKSPACE_LOADERS.hwmonitor));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -45,6 +47,7 @@ const WORKSPACE_REGISTRY = {
   notebook: { id: 'notebook', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.notebook },
   settings: { id: 'settings', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.settings },
   labshot: { id: 'labshot', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.labshot },
+  hwmonitor: { id: 'hwmonitor', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.hwmonitor },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
   lan: { id: 'lan', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.lan },
@@ -358,6 +361,8 @@ export default function App() {
         return isAppInstalled('notebook') ? <LabSuiteNotebook active={active} externalFilePath={externalFilePath} /> : null;
       case 'labshot':
         return isAppInstalled('labshot') ? <LabShot active={active} /> : null;
+      case 'hwmonitor':
+        return isAppInstalled('hwmonitor') ? <LabHWMonitor active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:
