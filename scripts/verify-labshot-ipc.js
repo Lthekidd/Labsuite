@@ -12,10 +12,21 @@ async function verifyLabShot() {
   assert(typeof labShot.init === 'function', 'labShot.init must be a function');
   assert(typeof labShot.startCapture === 'function', 'labShot.startCapture must be a function');
   assert(typeof labShot.pinToScreen === 'function', 'labShot.pinToScreen must be a function');
+  assert(typeof labShot.getVirtualDesktopBounds === 'function', 'labShot.getVirtualDesktopBounds must be a function');
+
+  const virtualBounds = labShot.getVirtualDesktopBounds([
+    { bounds: { x: -1920, y: 0, width: 1920, height: 1080 } },
+    { bounds: { x: 0, y: -200, width: 2560, height: 1440 } }
+  ]);
+  assert.deepStrictEqual(
+    virtualBounds,
+    { x: -1920, y: -200, width: 4480, height: 1440 },
+    'LabShot must cover the full virtual desktop, including negative monitor coordinates'
+  );
 
   // 2. Check tray asset exists
-  const trayAssetPath = path.join(__dirname, '../assets/tray-labshot.png');
-  assert(fs.existsSync(trayAssetPath), 'assets/tray-labshot.png must exist');
+  const trayAssetPath = path.join(__dirname, '../assets/brand/labshot-mark-ui.png');
+  assert(fs.existsSync(trayAssetPath), 'assets/brand/labshot-mark-ui.png must exist');
 
   // 3. Verify preload IPC channels
   const preloadPath = path.join(__dirname, '../main/preload.js');

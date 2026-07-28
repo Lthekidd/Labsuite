@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.1 - 2026-07-28
+
+### Fixed
+
+- **Virtual Desktop Multi-Monitor Capture & DPI Scaling**:
+  - Implemented `getVirtualDesktopBounds` in `main/labShot.js` to calculate total screen bounds across negative monitor coordinates.
+  - Added high-DPI resolution scaling (`sourceScaleX`, `sourceScaleY`) in `getCroppedDataUrl` to prevent cropped screenshot blurriness on high-DPI displays.
+  - Updated snapshot rendering to `objectFit: 'fill'` for exact pixel boundary alignment.
+  - Adjusted pin widget coordinates to match target overlay window origin.
+
 ## 2.6.0 - 2026-07-28
 
 ### Added

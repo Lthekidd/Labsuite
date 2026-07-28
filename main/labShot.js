@@ -52,8 +52,28 @@ function focusLabShotApp() {
   }
 }
 
+function getVirtualDesktopBounds(displays) {
+  if (!Array.isArray(displays) || displays.length === 0) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+
+  const left = Math.min(...displays.map(display => display.bounds.x));
+  const top = Math.min(...displays.map(display => display.bounds.y));
+  const right = Math.max(...displays.map(display => display.bounds.x + display.bounds.width));
+  const bottom = Math.max(...displays.map(display => display.bounds.y + display.bounds.height));
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top)
+  };
+}
+
 /**
- * Open native fullscreen Flameshot overlay window on each connected display monitor
+ * Open one borderless overlay across the complete virtual desktop. A single
+ * window avoids Windows placing multiple fullscreen BrowserWindows on the same
+ * monitor and allows selections to cross display boundaries.
  */
 async function startCapture({ delayMs = 0 } = {}) {
   if (delayMs > 0) {
@@ -68,50 +88,76 @@ async function startCapture({ delayMs = 0 } = {}) {
     activeOverlayWindows = [];
 
     const displays = screen.getAllDisplays();
+    const virtualBounds = getVirtualDesktopBounds(displays);
+    const maxCaptureWidth = Math.max(
+      1,
+      ...displays.map(display => Math.ceil(display.bounds.width * (display.scaleFactor || 1)))
+    );
+    const maxCaptureHeight = Math.max(
+      1,
+      ...displays.map(display => Math.ceil(display.bounds.height * (display.scaleFactor || 1)))
+    );
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
-      thumbnailSize: { width: 3840, height: 2160 }
+      thumbnailSize: { width: maxCaptureWidth, height: maxCaptureHeight },
+      fetchWindowIcons: false
     });
 
-    for (let index = 0; index < displays.length; index++) {
-      const display = displays[index];
+    const displayCaptures = displays.map((display, index) => {
       const source = sources.find(s => s.display_id === String(display.id)) || sources[index] || sources[0];
-      const dataUrl = source ? source.thumbnail.toDataURL() : null;
-
-      const overlayWin = new BrowserWindow({
-        x: display.bounds.x,
-        y: display.bounds.y,
+      return {
+        id: String(display.id),
+        dataUrl: source && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null,
+        x: display.bounds.x - virtualBounds.x,
+        y: display.bounds.y - virtualBounds.y,
         width: display.bounds.width,
         height: display.bounds.height,
-        fullscreen: true,
-        frame: false,
-        transparent: true,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: false,
-        icon: resolveAssetPath('labshot-icon.png'),
-        webPreferences: {
-          preload: path.join(__dirname, 'preload.js'),
-          contextIsolation: true,
-          nodeIntegration: false
-        }
-      });
+        scaleFactor: display.scaleFactor || 1
+      };
+    });
 
-      overlayWin.displayId = String(display.id);
-      overlayWin.overlayDataUrl = dataUrl;
-      overlayWin.isLabShotOverlay = true;
+    capturedDataUrlCache = displayCaptures.find(capture => capture.dataUrl)?.dataUrl || null;
 
-      const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
-      if (isDev) {
-        overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay&displayId=${display.id}`);
-      } else {
-        overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay', displayId: String(display.id) } });
+    const overlayWin = new BrowserWindow({
+      x: virtualBounds.x,
+      y: virtualBounds.y,
+      width: virtualBounds.width,
+      height: virtualBounds.height,
+      fullscreen: false,
+      fullscreenable: false,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      icon: resolveAssetPath('labshot-icon.png'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false
       }
+    });
 
-      activeOverlayWindows.push(overlayWin);
+    overlayWin.overlayDataUrl = capturedDataUrlCache;
+    overlayWin.overlayScreenData = {
+      displays: displayCaptures,
+      width: virtualBounds.width,
+      height: virtualBounds.height
+    };
+    overlayWin.isLabShotOverlay = true;
+    overlayWin.setAlwaysOnTop(true, 'screen-saver');
+    overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+    const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
+    if (isDev) {
+      overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay`);
+    } else {
+      overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay' } });
     }
 
-    return { success: true };
+    activeOverlayWindows.push(overlayWin);
+    return { success: true, displayCount: displayCaptures.length };
   } catch (error) {
     console.error('LabShot: failed to capture screen:', error.message);
     throw error;
@@ -123,8 +169,12 @@ async function startCapture({ delayMs = 0 } = {}) {
  */
 function pinToScreen({ dataUrl, width = 320, height = 240, x, y }) {
   const primaryDisplay = screen.getPrimaryDisplay();
-  const defaultX = x !== undefined ? x : Math.round(primaryDisplay.bounds.width / 2 - width / 2);
-  const defaultY = y !== undefined ? y : Math.round(primaryDisplay.bounds.height / 2 - height / 2);
+  const defaultX = x !== undefined
+    ? x
+    : primaryDisplay.bounds.x + Math.round(primaryDisplay.bounds.width / 2 - width / 2);
+  const defaultY = y !== undefined
+    ? y
+    : primaryDisplay.bounds.y + Math.round(primaryDisplay.bounds.height / 2 - height / 2);
 
   const pinWin = new BrowserWindow({
     x: defaultX,
@@ -256,6 +306,9 @@ function initIpc() {
 
   ipcMain.handle('labshot:getCapturedScreen', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && win.overlayScreenData) {
+      return win.overlayScreenData;
+    }
     if (win && win.overlayDataUrl) {
       return { dataUrl: win.overlayDataUrl };
     }
@@ -345,7 +398,15 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:pinToScreen', async (event, { dataUrl, width, height, x, y }) => {
-    return pinToScreen({ dataUrl, width, height, x, y });
+    const sourceWin = BrowserWindow.fromWebContents(event.sender);
+    const sourceBounds = sourceWin?.isLabShotOverlay ? sourceWin.getBounds() : null;
+    return pinToScreen({
+      dataUrl,
+      width,
+      height,
+      x: x !== undefined && sourceBounds ? sourceBounds.x + x : x,
+      y: y !== undefined && sourceBounds ? sourceBounds.y + y : y
+    });
   });
 
   ipcMain.handle('labshot:getGallery', async () => {
@@ -422,5 +483,6 @@ function init() {
 module.exports = {
   init,
   startCapture,
-  pinToScreen
+  pinToScreen,
+  getVirtualDesktopBounds
 };

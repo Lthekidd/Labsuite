@@ -52,7 +52,7 @@ export default function LabShotOverlay() {
         if (res) {
           setScreenData(res);
           if (res.dataUrl) setScreenDataUrl(res.dataUrl);
-          else if (res.displays && res.displays[0]?.dataUrl) setScreenDataUrl(res.displays[0].dataUrl);
+          else if (res.displays) setScreenDataUrl(res.displays.find(display => display.dataUrl)?.dataUrl || null);
         }
       } catch (err) {
         console.error('Failed to load screen capture:', err);
@@ -101,13 +101,24 @@ export default function LabShotOverlay() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selection, annotations]);
 
+  const loadCaptureImage = (dataUrl) => new Promise(resolve => {
+    if (!dataUrl) {
+      resolve(null);
+      return;
+    }
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = dataUrl;
+  });
+
   const closeOverlay = () => {
     ipcRenderer?.invoke('labshot:closeOverlay');
   };
 
   // Canvas redraw loop
   useEffect(() => {
-    if (!canvasRef.current || !screenDataUrl) return;
+    if (!canvasRef.current || (!screenDataUrl && !screenData?.displays?.some(display => display.dataUrl))) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     canvas.width = window.innerWidth;
@@ -187,7 +198,7 @@ export default function LabShotOverlay() {
         ctx.fillText(ann.text, ann.x, ann.y);
       }
     });
-  }, [screenDataUrl, selection, annotations]);
+  }, [screenDataUrl, screenData, selection, annotations]);
 
   // Mouse selection / drawing handlers
   const handleMouseDown = (e) => {
@@ -318,20 +329,65 @@ export default function LabShotOverlay() {
 
   // Crop snippet to canvas data URL
   const getCroppedDataUrl = async () => {
-    if (!screenDataUrl) return null;
+    const displayCaptures = screenData?.displays?.filter(display => display.dataUrl) || [];
+    if (!screenDataUrl && displayCaptures.length === 0) return null;
     const crop = selection || { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
 
-    const img = new Image();
-    img.src = screenDataUrl;
-    await new Promise(resolve => { img.onload = resolve; });
-
     const cropCanvas = document.createElement('canvas');
-    cropCanvas.width = Math.max(1, crop.w);
-    cropCanvas.height = Math.max(1, crop.h);
+    cropCanvas.width = Math.max(1, Math.round(crop.w));
+    cropCanvas.height = Math.max(1, Math.round(crop.h));
     const ctx = cropCanvas.getContext('2d');
 
-    // Draw background image cropped
-    ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+    if (displayCaptures.length > 0) {
+      const loadedDisplays = await Promise.all(
+        displayCaptures.map(async display => ({
+          display,
+          image: await loadCaptureImage(display.dataUrl)
+        }))
+      );
+
+      loadedDisplays.forEach(({ display, image }) => {
+        if (!image) return;
+        const intersectionLeft = Math.max(crop.x, display.x);
+        const intersectionTop = Math.max(crop.y, display.y);
+        const intersectionRight = Math.min(crop.x + crop.w, display.x + display.width);
+        const intersectionBottom = Math.min(crop.y + crop.h, display.y + display.height);
+        if (intersectionRight <= intersectionLeft || intersectionBottom <= intersectionTop) return;
+
+        const intersectionWidth = intersectionRight - intersectionLeft;
+        const intersectionHeight = intersectionBottom - intersectionTop;
+        const sourceScaleX = image.naturalWidth / display.width;
+        const sourceScaleY = image.naturalHeight / display.height;
+
+        ctx.drawImage(
+          image,
+          (intersectionLeft - display.x) * sourceScaleX,
+          (intersectionTop - display.y) * sourceScaleY,
+          intersectionWidth * sourceScaleX,
+          intersectionHeight * sourceScaleY,
+          intersectionLeft - crop.x,
+          intersectionTop - crop.y,
+          intersectionWidth,
+          intersectionHeight
+        );
+      });
+    } else {
+      const image = await loadCaptureImage(screenDataUrl);
+      if (!image) return null;
+      const sourceScaleX = image.naturalWidth / window.innerWidth;
+      const sourceScaleY = image.naturalHeight / window.innerHeight;
+      ctx.drawImage(
+        image,
+        crop.x * sourceScaleX,
+        crop.y * sourceScaleY,
+        crop.w * sourceScaleX,
+        crop.h * sourceScaleY,
+        0,
+        0,
+        crop.w,
+        crop.h
+      );
+    }
 
     // Draw annotations offset by crop.x, crop.y
     annotations.forEach(ann => {
@@ -455,7 +511,7 @@ export default function LabShotOverlay() {
                 top: `${d.y}px`,
                 width: `${d.width}px`,
                 height: `${d.height}px`,
-                objectFit: 'cover'
+                objectFit: 'fill'
               }}
             />
           )
@@ -465,7 +521,7 @@ export default function LabShotOverlay() {
           ref={bgImageRef}
           src={screenDataUrl}
           alt="Screen Capture"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'fill' }}
         />
       ) : null}
 
