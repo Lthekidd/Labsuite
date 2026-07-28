@@ -89,14 +89,10 @@ async function startCapture({ delayMs = 0 } = {}) {
 
     const displays = screen.getAllDisplays();
     const virtualBounds = getVirtualDesktopBounds(displays);
-    const maxCaptureWidth = Math.max(
-      1,
-      ...displays.map(display => Math.ceil(display.bounds.width * (display.scaleFactor || 1)))
-    );
-    const maxCaptureHeight = Math.max(
-      1,
-      ...displays.map(display => Math.ceil(display.bounds.height * (display.scaleFactor || 1)))
-    );
+    const maxScale = Math.max(1, ...displays.map(d => d.scaleFactor || 1));
+    const maxCaptureWidth = Math.ceil(virtualBounds.width * maxScale);
+    const maxCaptureHeight = Math.ceil(virtualBounds.height * maxScale);
+    
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: maxCaptureWidth, height: maxCaptureHeight },
@@ -104,7 +100,9 @@ async function startCapture({ delayMs = 0 } = {}) {
     });
 
     const displayCaptures = displays.map((display, index) => {
-      const source = sources.find(s => s.display_id === String(display.id)) || sources[index] || sources[0];
+      const source = sources.find(s => s.display_id === String(display.id)) || 
+                     sources.find(s => s.name && s.name.includes(String(display.id))) || 
+                     sources[index] || sources[0];
       return {
         id: String(display.id),
         dataUrl: source && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null,

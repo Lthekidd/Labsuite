@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.2 - 2026-07-28
+
+### Fixed
+
+- **LabShot Multi-Monitor Detection & Selection UX**:
+  - Fixed multi-display screen detection in `main/labShot.js` by calculating full virtual desktop bounds for thumbnail capture and improving display ID matching.
+  - Added 8 interactive resize handles around the screenshot selection bounding box in `LabShotOverlay.jsx`.
+  - Added `Ctrl+X` (or `Cmd+X`) keyboard shortcut support to immediately close/exit the LabShot screenshot overlay.
+
 ## 2.6.1 - 2026-07-28
 
 ### Fixed

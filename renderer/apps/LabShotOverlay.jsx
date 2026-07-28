@@ -30,6 +30,8 @@ export default function LabShotOverlay() {
   const [stepCount, setStepCount] = useState(1);
   const [selection, setSelection] = useState(null); // { x, y, w, h }
   const [isSelecting, setIsSelecting] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [activeHandle, setActiveHandle] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [annotations, setAnnotations] = useState([]);
@@ -76,7 +78,7 @@ export default function LabShotOverlay() {
   useEffect(() => {
     function handleKeyDown(e) {
       const key = e.key.toLowerCase();
-      if (key === 'escape') {
+      if (key === 'escape' || (key === 'x' && (e.ctrlKey || e.metaKey))) {
         closeOverlay();
       } else if (key === 'e') {
         setActiveTool('eyedropper');
@@ -200,6 +202,13 @@ export default function LabShotOverlay() {
     });
   }, [screenDataUrl, screenData, selection, annotations]);
 
+  const handleStartResize = (e, handle) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    setActiveHandle(handle);
+    setStartPos({ x: e.clientX, y: e.clientY });
+  };
+
   // Mouse selection / drawing handlers
   const handleMouseDown = (e) => {
     const x = e.clientX;
@@ -253,6 +262,46 @@ export default function LabShotOverlay() {
       } catch (_) {}
     }
 
+    if (isResizing && selection && activeHandle) {
+      const dx = x - startPos.x;
+      const dy = y - startPos.y;
+      
+      let newX = selection.x;
+      let newY = selection.y;
+      let newW = selection.w;
+      let newH = selection.h;
+
+      if (activeHandle.includes('w')) {
+        newX += dx;
+        newW -= dx;
+      }
+      if (activeHandle.includes('e')) {
+        newW += dx;
+      }
+      if (activeHandle.includes('n')) {
+        newY += dy;
+        newH -= dy;
+      }
+      if (activeHandle.includes('s')) {
+        newH += dy;
+      }
+
+      if (newW < 0) {
+        newX += newW;
+        newW = Math.abs(newW);
+        setActiveHandle(activeHandle.replace('w', 'X').replace('e', 'w').replace('X', 'e'));
+      }
+      if (newH < 0) {
+        newY += newH;
+        newH = Math.abs(newH);
+        setActiveHandle(activeHandle.replace('n', 'X').replace('s', 'n').replace('X', 's'));
+      }
+
+      setSelection({ x: newX, y: newY, w: newW, h: newH });
+      setStartPos({ x, y });
+      return;
+    }
+
     if (isSelecting) {
       const rectX = Math.min(startPos.x, x);
       const rectY = Math.min(startPos.y, y);
@@ -302,12 +351,14 @@ export default function LabShotOverlay() {
   };
 
   const handleMouseUp = () => {
+    if (isResizing) {
+      setIsResizing(false);
+      setActiveHandle(null);
+      return;
+    }
     if (isSelecting) {
       setIsSelecting(false);
-      // Auto-switch to pen tool once area is selected
-      if (selection && selection.w > 20 && selection.h > 20) {
-        setActiveTool('pen');
-      }
+      // Let user resize before auto-switching tools. Tool is kept as 'select'.
     }
     if (isDrawing) {
       setIsDrawing(false);
@@ -548,6 +599,49 @@ export default function LabShotOverlay() {
         >
           {Math.round(selection.w)} × {Math.round(selection.h)} px
         </div>
+      )}
+
+      {/* 3.5 Selection Handles */}
+      {selection && selection.w > 0 && selection.h > 0 && activeTool === 'select' && (
+        <>
+          {['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se'].map(handle => {
+            const size = 8;
+            let hx = selection.x;
+            let hy = selection.y;
+            let cursor = '';
+            
+            if (handle.includes('w')) hx = selection.x - size / 2;
+            else if (handle.includes('e')) hx = selection.x + selection.w - size / 2;
+            else hx = selection.x + selection.w / 2 - size / 2;
+
+            if (handle.includes('n')) hy = selection.y - size / 2;
+            else if (handle.includes('s')) hy = selection.y + selection.h - size / 2;
+            else hy = selection.y + selection.h / 2 - size / 2;
+
+            if (handle === 'nw' || handle === 'se') cursor = 'nwse-resize';
+            else if (handle === 'ne' || handle === 'sw') cursor = 'nesw-resize';
+            else if (handle === 'n' || handle === 's') cursor = 'ns-resize';
+            else cursor = 'ew-resize';
+
+            return (
+              <div
+                key={handle}
+                onMouseDown={(e) => handleStartResize(e, handle)}
+                style={{
+                  position: 'absolute',
+                  left: hx,
+                  top: hy,
+                  width: size,
+                  height: size,
+                  background: '#ffffff',
+                  border: '1px solid #8b5cf6',
+                  cursor,
+                  zIndex: 90
+                }}
+              />
+            );
+          })}
+        </>
       )}
 
       {/* 4. Status Toast Notification */}
@@ -825,7 +919,7 @@ export default function LabShotOverlay() {
               cursor: 'pointer',
               marginLeft: '4px'
             }}
-            title="Cancel (Esc)"
+            title="Cancel (Esc / Ctrl+X)"
           >
             <X size={18} weight="bold" />
           </button>
