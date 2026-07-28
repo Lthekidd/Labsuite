@@ -4,7 +4,7 @@ const path = require('path');
 const db = require('./database');
 
 let labShotTray = null;
-let activeOverlayWindow = null;
+let activeOverlayWindows = [];
 const pinnedWindows = new Set();
 let capturedDataUrlCache = null;
 
@@ -26,7 +26,6 @@ function getLabShotTrayImage() {
     if (typeof trayImage.setTemplateImage === 'function') trayImage.setTemplateImage(false);
     return trayImage;
   }
-  // Fallback 16x16 purple native image
   const size = 16;
   const data = Buffer.alloc(size * size * 4);
   for (let i = 0; i < size * size * 4; i += 4) {
@@ -54,46 +53,7 @@ function focusLabShotApp() {
 }
 
 /**
- * Capture full screen data URLs from all connected display monitors
- */
-async function captureAllScreens() {
-  const displays = screen.getAllDisplays();
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  displays.forEach(d => {
-    minX = Math.min(minX, d.bounds.x);
-    minY = Math.min(minY, d.bounds.y);
-    maxX = Math.max(maxX, d.bounds.x + d.bounds.width);
-    maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
-  });
-  const totalWidth = maxX - minX;
-  const totalHeight = maxY - minY;
-
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: { width: 3840, height: 2160 }
-  });
-
-  const displayCaptures = displays.map((d, index) => {
-    const source = sources.find(s => s.display_id === String(d.id)) || sources[index] || sources[0];
-    return {
-      id: d.id,
-      x: d.bounds.x - minX,
-      y: d.bounds.y - minY,
-      width: d.bounds.width,
-      height: d.bounds.height,
-      dataUrl: source ? source.thumbnail.toDataURL() : null
-    };
-  });
-
-  return {
-    bounds: { x: minX, y: minY, width: totalWidth, height: totalHeight },
-    displays: displayCaptures
-  };
-}
-
-/**
- * Open fullscreen Flameshot-style overlay for area selection & editing spanning all displays
+ * Open native fullscreen Flameshot overlay window on each connected display monitor
  */
 async function startCapture({ delayMs = 0 } = {}) {
   if (delayMs > 0) {
@@ -101,49 +61,55 @@ async function startCapture({ delayMs = 0 } = {}) {
   }
 
   try {
-    const screenData = await captureAllScreens();
-    capturedDataUrlCache = screenData;
+    // Close existing overlay windows
+    activeOverlayWindows.forEach(win => {
+      if (win && !win.isDestroyed()) win.close();
+    });
+    activeOverlayWindows = [];
 
-    if (activeOverlayWindow && !activeOverlayWindow.isDestroyed()) {
-      activeOverlayWindow.close();
-    }
+    const displays = screen.getAllDisplays();
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 3840, height: 2160 }
+    });
 
-    const { x, y, width, height } = screenData.bounds;
+    for (let index = 0; index < displays.length; index++) {
+      const display = displays[index];
+      const source = sources.find(s => s.display_id === String(display.id)) || sources[index] || sources[0];
+      const dataUrl = source ? source.thumbnail.toDataURL() : null;
 
-    const overlayWin = new BrowserWindow({
-      x,
-      y,
-      width,
-      height,
-      enableLargerThanScreen: true,
-      fullscreen: false,
-      frame: false,
-      transparent: true,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      resizable: false,
-      icon: resolveAssetPath('labshot-icon.png'),
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false
+      const overlayWin = new BrowserWindow({
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width,
+        height: display.bounds.height,
+        fullscreen: true,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        icon: resolveAssetPath('labshot-icon.png'),
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false
+        }
+      });
+
+      overlayWin.displayId = String(display.id);
+      overlayWin.overlayDataUrl = dataUrl;
+      overlayWin.isLabShotOverlay = true;
+
+      const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
+      if (isDev) {
+        overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay&displayId=${display.id}`);
+      } else {
+        overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay', displayId: String(display.id) } });
       }
-    });
 
-    overlayWin.isLabShotOverlay = true;
-
-    const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
-    if (isDev) {
-      overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay`);
-    } else {
-      overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay' } });
+      activeOverlayWindows.push(overlayWin);
     }
-
-    activeOverlayWindow = overlayWin;
-
-    overlayWin.on('closed', () => {
-      if (activeOverlayWindow === overlayWin) activeOverlayWindow = null;
-    });
 
     return { success: true };
   } catch (error) {
@@ -288,8 +254,12 @@ function initIpc() {
     return startCapture(args);
   });
 
-  ipcMain.handle('labshot:getCapturedScreen', async () => {
-    return capturedDataUrlCache || { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, displays: [] };
+  ipcMain.handle('labshot:getCapturedScreen', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && win.overlayDataUrl) {
+      return { dataUrl: win.overlayDataUrl };
+    }
+    return { dataUrl: capturedDataUrlCache };
   });
 
   ipcMain.handle('labshot:openScreenshotsFolder', async () => {
@@ -308,10 +278,10 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:closeOverlay', async () => {
-    if (activeOverlayWindow && !activeOverlayWindow.isDestroyed()) {
-      activeOverlayWindow.close();
-      activeOverlayWindow = null;
-    }
+    activeOverlayWindows.forEach(win => {
+      if (win && !win.isDestroyed()) win.close();
+    });
+    activeOverlayWindows = [];
     return { success: true };
   });
 

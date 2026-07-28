@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.5 - 2026-07-28
+
+### Fixed
+
+- **Per-Monitor Native Fullscreen Overlay Windows**: Updated LabShot to spawn an individual native `fullscreen: true` overlay window for every connected display monitor (`screen.getAllDisplays()`). Guaranteed 100% detection of Main Monitor, Second Monitor, and all displays after system restart.
+
 ## 2.5.4 - 2026-07-28
 
 ### Added
