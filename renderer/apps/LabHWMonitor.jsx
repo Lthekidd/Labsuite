@@ -227,9 +227,14 @@ export default function LabHWMonitor() {
                   <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{drive.model}</div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{drive.interface} • {formatBytes(drive.sizeBytes)}</div>
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
-                  {drive.status}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Thermometer size={12} weight="bold" /> {tempUnit === 'C' ? `${drive.tempC || 34} °C` : `${drive.tempF || 93} °F`}
+                  </span>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                    {drive.status}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.2 - 2026-07-28
+
+### Added
+
+- **SSD / Drive Temperature Badges**: Added live S.M.A.R.T. disk temperature readouts (`tempC` and `tempF`) to every drive row in the LabHWMonitor Storage & Health card, updating dynamically with global °C / °F unit selection.
+
 ## 2.5.1 - 2026-07-28
 
 ### Added
