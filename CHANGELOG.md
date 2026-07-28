@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.4 - 2026-07-28
+
+### Added
+
+- **Dynamic Temperature Color Coding**: Replaced static salmon-red badge colors with dynamic temperature color coding across CPU and storage readouts:
+  - 🟢 **Cool & Optimal (< 55 °C)**: Emerald Green (`#34d399`)
+  - 🟡 **Warm (55 °C – 70 °C)**: Amber Yellow (`#fbbf24`)
+  - 🔴 **Hot (> 70 °C)**: Crimson Red (`#f87171`)
+
 ## 2.5.3 - 2026-07-28
 
 ### Fixed

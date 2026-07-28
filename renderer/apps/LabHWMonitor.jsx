@@ -18,6 +18,17 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(1024, idx)).toFixed(1)} ${units[idx]}`;
 }
 
+function getTempColor(tempC) {
+  const c = Number(tempC) || 0;
+  if (c < 55) {
+    return { color: '#34d399', bg: 'rgba(52, 211, 153, 0.15)', border: 'rgba(52, 211, 153, 0.3)' };
+  } else if (c <= 70) {
+    return { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)', border: 'rgba(251, 191, 36, 0.3)' };
+  } else {
+    return { color: '#f87171', bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.3)' };
+  }
+}
+
 export default function LabHWMonitor() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -117,7 +128,7 @@ export default function LabHWMonitor() {
                 </span>
                 <button
                   onClick={() => setTempUnit(tempUnit === 'C' ? 'F' : 'C')}
-                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                  style={{ background: getTempColor(metrics?.cpu?.tempC || 36).bg, border: `1px solid ${getTempColor(metrics?.cpu?.tempC || 36).border}`, color: getTempColor(metrics?.cpu?.tempC || 36).color, borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                   title="Toggle °C / °F"
                 >
                   °{tempUnit}
@@ -128,7 +139,7 @@ export default function LabHWMonitor() {
             {/* Thermal Temperature Readout */}
             <div style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Thermometer size={20} color="#f87171" weight="bold" />
+                <Thermometer size={20} color={getTempColor(metrics?.cpu?.tempC || 36).color} weight="bold" />
                 <div>
                   <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>CPU Temperature</div>
                   <div style={{ fontSize: '16px', fontWeight: 800, color: '#f8fafc' }}>
@@ -221,22 +232,25 @@ export default function LabHWMonitor() {
               <span style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>Storage & S.M.A.R.T. Health</span>
             </div>
 
-            {metrics?.storage?.map((drive, i) => (
-              <div key={i} style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', gap: '12px' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={drive.model}>{drive.model}</div>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>{drive.interface} • {formatBytes(drive.sizeBytes)}</div>
+            {metrics?.storage?.map((drive, i) => {
+              const driveTheme = getTempColor(drive.tempC);
+              return (
+                <div key={i} style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', gap: '12px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={drive.model}>{drive.model}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>{drive.interface} • {formatBytes(drive.sizeBytes)}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: driveTheme.color, background: driveTheme.bg, border: `1px solid ${driveTheme.border}`, padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+                      <Thermometer size={12} weight="bold" /> {tempUnit === 'C' ? `${drive.tempC || 34} °C` : `${drive.tempF || 93} °F`}
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                      {drive.status}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
-                    <Thermometer size={12} weight="bold" /> {tempUnit === 'C' ? `${drive.tempC || 34} °C` : `${drive.tempF || 93} °F`}
-                  </span>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                    {drive.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Card 5: Network Latency */}
