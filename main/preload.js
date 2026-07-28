@@ -132,6 +132,7 @@ const INVOKE_CHANNELS = new Set([
   // LabShot API
   'labshot:startCapture',
   'labshot:getCapturedScreen',
+  'labshot:getPinnedSnippet',
   'labshot:closeOverlay',
   'labshot:copyToClipboard',
   'labshot:saveToFile',

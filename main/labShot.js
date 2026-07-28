@@ -274,6 +274,14 @@ function initIpc() {
     return { dataUrl: capturedDataUrlCache };
   });
 
+  ipcMain.handle('labshot:getPinnedSnippet', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win && win.pinDataUrl) {
+      return { dataUrl: win.pinDataUrl };
+    }
+    return { dataUrl: null };
+  });
+
   ipcMain.handle('labshot:closeOverlay', async () => {
     if (activeOverlayWindow && !activeOverlayWindow.isDestroyed()) {
       activeOverlayWindow.close();

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.3 - 2026-07-28
+
+### Fixed
+
+- **LabShot Pin Snippet Crop**: Fixed screen pin widget to display the exact cropped section snippet with user annotations instead of the full uncropped screen background. Added `labshot:getPinnedSnippet` IPC channel.
+
 ## 2.4.2 - 2026-07-28
 
 ### Added

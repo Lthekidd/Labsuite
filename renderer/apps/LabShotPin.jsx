@@ -10,7 +10,7 @@ export default function LabShotPin() {
 
   useEffect(() => {
     async function loadData() {
-      const res = await ipcRenderer?.invoke('labshot:getCapturedScreen');
+      const res = await ipcRenderer?.invoke('labshot:getPinnedSnippet');
       if (res?.dataUrl) {
         setDataUrl(res.dataUrl);
       }
