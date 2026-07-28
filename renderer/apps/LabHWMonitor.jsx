@@ -222,16 +222,16 @@ export default function LabHWMonitor() {
             </div>
 
             {metrics?.storage?.map((drive, i) => (
-              <div key={i} style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{drive.model}</div>
+              <div key={i} style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', gap: '12px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={drive.model}>{drive.model}</div>
                   <div style={{ fontSize: '11px', color: '#64748b' }}>{drive.interface} • {formatBytes(drive.sizeBytes)}</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171', background: 'rgba(239, 68, 68, 0.15)', padding: '2px 8px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                     <Thermometer size={12} weight="bold" /> {tempUnit === 'C' ? `${drive.tempC || 34} °C` : `${drive.tempF || 93} °F`}
                   </span>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
                     {drive.status}
                   </span>
                 </div>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.5.3 - 2026-07-28
+
+### Fixed
+
+- **LabHWMonitor Storage Row Layout**: Added `whiteSpace: 'nowrap'` and `textOverflow: 'ellipsis'` to storage drive model names so long drive names (e.g. `SSK SSD Portable SSD SCSI Disk Device`) no longer wrap the temperature badge onto multiple lines.
+
 ## 2.5.2 - 2026-07-28
 
 ### Added
