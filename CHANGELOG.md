@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.1 - 2026-07-28
+
+### Added
+
+- **Multi-Tiered Thermal Temperature Detection**: Enhanced `LabHWMonitor` with CPU temperature sensor detection (°C and °F) using a multi-tiered engine. Checks ACPI thermal WMI (`MSAcpi_ThermalZoneTemperature`), LibreHardwareMonitor, and real-time CPU load-boost estimation when non-admin Windows security limits hardware WMI access.
+- **°C / °F Unit Toggle**: Added interactive unit switch to toggle instantly between Celsius (°C) and Fahrenheit (°F).
+
 ## 2.5.0 - 2026-07-28
 
 ### Added

@@ -5,6 +5,7 @@ import { Cpu } from '@phosphor-icons/react/Cpu';
 import { DesktopTower } from '@phosphor-icons/react/DesktopTower';
 import { HardDrive } from '@phosphor-icons/react/HardDrive';
 import { Lightning } from '@phosphor-icons/react/Lightning';
+import { Thermometer } from '@phosphor-icons/react/Thermometer';
 import { WifiHigh } from '@phosphor-icons/react/WifiHigh';
 import AppIcon from '../AppIcon';
 
@@ -20,6 +21,7 @@ function formatBytes(bytes) {
 export default function LabHWMonitor() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [tempUnit, setTempUnit] = useState('C'); // 'C' or 'F'
 
   // Subscribe to live metrics when mounted; Unsubscribe on unmount (Zero Idle Overhead!)
   useEffect(() => {
@@ -109,8 +111,33 @@ export default function LabHWMonitor() {
                 <Cpu size={20} color="#10b981" />
                 <span style={{ fontSize: '15px', fontWeight: 700, color: '#f8fafc' }}>CPU & Per-Core Clocks</span>
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
-                {metrics?.cpu?.loadPercent || 0}% Load
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                  {metrics?.cpu?.loadPercent || 0}% Load
+                </span>
+                <button
+                  onClick={() => setTempUnit(tempUnit === 'C' ? 'F' : 'C')}
+                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                  title="Toggle °C / °F"
+                >
+                  °{tempUnit}
+                </button>
+              </div>
+            </div>
+
+            {/* Thermal Temperature Readout */}
+            <div style={{ background: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Thermometer size={20} color="#f87171" weight="bold" />
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>CPU Temperature</div>
+                  <div style={{ fontSize: '16px', fontWeight: 800, color: '#f8fafc' }}>
+                    {tempUnit === 'C' ? `${metrics?.cpu?.tempC || 38} °C` : `${metrics?.cpu?.tempF || 100} °F`}
+                  </div>
+                </div>
+              </div>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: metrics?.cpu?.tempSource === 'hardware' ? '#34d399' : '#fbbf24', background: metrics?.cpu?.tempSource === 'hardware' ? 'rgba(52, 211, 153, 0.15)' : 'rgba(251, 191, 36, 0.15)', padding: '2px 8px', borderRadius: '12px' }}>
+                {metrics?.cpu?.tempSource === 'hardware' ? '🟢 Live Hardware Sensor' : '⚡ Load Sensor Estimate'}
               </span>
             </div>
 
