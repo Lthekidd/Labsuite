@@ -51,6 +51,7 @@ const aliases = require('./aliases');
 const tray = require('./tray');
 const telegramBackup = require('./telegramBackup');
 const telegramArchive = require('./telegramArchive');
+const routerInternet = require('./routerInternet');
 
 let storageAnalyticsRefresh = null;
 let gDriveInfoRefresh = null;
@@ -2198,6 +2199,170 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     await runExecutable('shutdown.exe', ['/a']);
     await clearShutdownSchedule();
     return true;
+  });
+
+  const ROUTER_PROFILES_SETTING = 'router_internet_profiles';
+  const ROUTER_ACTIVE_PROFILE_SETTING = 'router_internet_active_profile';
+  let routerRestartInFlight = false;
+
+  const loadRouterProfileOrigins = () => {
+    let stored = [];
+    try {
+      stored = JSON.parse(db.getSetting(ROUTER_PROFILES_SETTING) || '[]');
+    } catch (_) {
+      stored = [];
+    }
+    if (!Array.isArray(stored)) return [];
+    const origins = [];
+    for (const value of stored) {
+      try {
+        const origin = routerInternet.normalizeRouterOrigin(value);
+        if (!origins.includes(origin)) origins.push(origin);
+      } catch (_) {}
+      if (origins.length >= 10) break;
+    }
+    return origins;
+  };
+
+  const saveRouterProfileOrigins = async (origins, activeOrigin) => {
+    const normalizedOrigins = [];
+    for (const value of origins || []) {
+      try {
+        const origin = routerInternet.normalizeRouterOrigin(value);
+        if (!normalizedOrigins.includes(origin)) normalizedOrigins.push(origin);
+      } catch (_) {}
+      if (normalizedOrigins.length >= 10) break;
+    }
+    const normalizedActive = routerInternet.normalizeRouterOrigin(
+      activeOrigin || normalizedOrigins[0] || routerInternet.DEFAULT_ROUTER_ORIGIN
+    );
+    await db.withWriteBatch(async () => {
+      db.setSetting(ROUTER_PROFILES_SETTING, JSON.stringify(normalizedOrigins));
+      db.setSetting(ROUTER_ACTIVE_PROFILE_SETTING, normalizedActive);
+    });
+    return { origins: normalizedOrigins, activeOrigin: normalizedActive };
+  };
+
+  const getActiveRouterOrigin = () => {
+    const origins = loadRouterProfileOrigins();
+    const storedActive = db.getSetting(ROUTER_ACTIVE_PROFILE_SETTING);
+    let activeOrigin;
+    try {
+      activeOrigin = routerInternet.normalizeRouterOrigin(storedActive || origins[0] || routerInternet.DEFAULT_ROUTER_ORIGIN);
+    } catch (_) {
+      activeOrigin = origins[0] || routerInternet.DEFAULT_ROUTER_ORIGIN;
+    }
+    return { origins, activeOrigin };
+  };
+
+  const readRouterCredential = async (origin) => {
+    const account = routerInternet.getRouterCredentialAccount(origin);
+    const rawCredential = await keychain.getCredential(routerInternet.ROUTER_CREDENTIAL_SERVICE, account);
+    if (!rawCredential) return null;
+    try {
+      const credential = JSON.parse(rawCredential);
+      const username = String(credential?.username || '').trim();
+      const password = String(credential?.password || '');
+      return username && password ? { username, password } : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const writeRouterCredential = async (origin, username, password) => {
+    const account = routerInternet.getRouterCredentialAccount(origin);
+    await keychain.setCredential(
+      routerInternet.ROUTER_CREDENTIAL_SERVICE,
+      account,
+      JSON.stringify({
+        version: 1,
+        username: String(username || '').trim(),
+        password: String(password || '')
+      })
+    );
+  };
+
+  const getRouterInternetStatus = async () => {
+    const { origins, activeOrigin } = getActiveRouterOrigin();
+    const profiles = await Promise.all(origins.map(async origin => ({
+      routerUrl: origin,
+      hasCredentials: !!(await readRouterCredential(origin))
+    })));
+    const activeProfile = profiles.find(profile => profile.routerUrl === activeOrigin);
+    return {
+      routerUrl: activeOrigin,
+      hasCredentials: !!activeProfile?.hasCredentials,
+      profiles
+    };
+  };
+
+  ipcMain.handle('routerInternet:getStatus', async () => getRouterInternetStatus());
+
+  ipcMain.handle('routerInternet:getPublicIp', async () => routerInternet.getPublicIp());
+
+  ipcMain.handle('routerInternet:setActiveProfile', async (_event, { routerUrl } = {}) => {
+    const origin = routerInternet.normalizeRouterOrigin(routerUrl);
+    const origins = loadRouterProfileOrigins();
+    if (!origins.includes(origin)) throw new Error('That router profile is not saved.');
+    await saveRouterProfileOrigins(origins, origin);
+    return getRouterInternetStatus();
+  });
+
+  ipcMain.handle('routerInternet:forgetProfile', async (_event, { routerUrl } = {}) => {
+    const origin = routerInternet.normalizeRouterOrigin(routerUrl);
+    const account = routerInternet.getRouterCredentialAccount(origin);
+    await keychain.deleteCredential(routerInternet.ROUTER_CREDENTIAL_SERVICE, account);
+    const remaining = loadRouterProfileOrigins().filter(value => value !== origin);
+    await saveRouterProfileOrigins(remaining, remaining[0] || routerInternet.DEFAULT_ROUTER_ORIGIN);
+    return getRouterInternetStatus();
+  });
+
+  ipcMain.handle('routerInternet:restart', async (_event, payload = {}) => {
+    if (routerRestartInFlight) throw new Error('An internet restart is already in progress.');
+    routerRestartInFlight = true;
+    try {
+      const suppliedUsername = String(payload?.username || '').trim();
+      const suppliedPassword = String(payload?.password || '');
+      const hasSuppliedCredential = !!(suppliedUsername || suppliedPassword);
+      let origin;
+      let credential;
+      let client;
+
+      if (hasSuppliedCredential) {
+        if (!suppliedUsername || !suppliedPassword) throw new Error('Enter both the router username and password.');
+        origin = routerInternet.normalizeRouterOrigin(payload?.routerUrl);
+        credential = { username: suppliedUsername, password: suppliedPassword };
+        client = new routerInternet.HuaweiRouterClient(origin);
+        await client.login(credential.username, credential.password);
+
+        // Save only after the router confirms the login. The secret stays in the
+        // operating-system credential vault and is never written to LabSuite data.
+        await writeRouterCredential(origin, credential.username, credential.password);
+        const origins = loadRouterProfileOrigins();
+        if (!origins.includes(origin)) origins.push(origin);
+        await saveRouterProfileOrigins(origins, origin);
+      } else {
+        const active = getActiveRouterOrigin();
+        origin = active.activeOrigin;
+        credential = await readRouterCredential(origin);
+        if (!credential) {
+          const error = new Error('Router login is required before restarting the internet.');
+          error.code = 'ROUTER_CREDENTIALS_REQUIRED';
+          throw error;
+        }
+        client = new routerInternet.HuaweiRouterClient(origin);
+        await client.login(credential.username, credential.password);
+      }
+
+      const result = await client.restartInternet();
+      return {
+        ...result,
+        routerUrl: origin,
+        status: await getRouterInternetStatus()
+      };
+    } finally {
+      routerRestartInFlight = false;
+    }
   });
 
   const getSheetsRecoveryDir = () => {

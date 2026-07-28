@@ -168,6 +168,22 @@ async function run() {
   }
 
   const timedNavigation = async (label, workspaceId) => {
+    const alreadyActive = await evaluate(
+      `document.querySelector('[data-workspace-id="${workspaceId}"]')?.dataset.workspaceActive === 'true'`
+    );
+    if (alreadyActive) {
+      const fallbackLabel = workspaceId === 'hub' ? 'Backup Engine' : 'App Hub';
+      const movedAway = await evaluate(`(() => {
+        const fallback = [...document.querySelectorAll('.suite-sidebar .nav-item')]
+          .find(item => item.textContent.includes(${JSON.stringify(fallbackLabel)}));
+        if (!fallback) return false;
+        fallback.click();
+        return true;
+      })()`);
+      assert.strictEqual(movedAway, true, `Could not leave ${label} before measuring navigation.`);
+      await wait(100);
+    }
+
     const duration = await evaluate(`new Promise((resolve, reject) => {
       const button = [...document.querySelectorAll('.suite-sidebar .nav-item')]
         .find(item => item.textContent.includes(${JSON.stringify(label)}));
@@ -191,7 +207,15 @@ async function run() {
           return;
         }
         if (performance.now() - startedAt > 3000) {
-          reject(new Error('Timed out navigating to ${workspaceId}'));
+          const panel = document.querySelector('[data-workspace-id="${workspaceId}"]');
+          const marks = performance.getEntriesByName(
+            ${JSON.stringify(`workspace-nav-${workspaceId}-start`)},
+            'mark'
+          ).length;
+          reject(new Error(
+            'Timed out navigating to ${workspaceId} (active=' +
+            panel?.dataset.workspaceActive + ', startMarks=' + marks + ')'
+          ));
           return;
         }
         requestAnimationFrame(check);
@@ -208,6 +232,28 @@ async function run() {
   await timedNavigation('Crypto Portfolio', 'crypto');
   await timedNavigation('Suite Settings', 'settings');
   await timedNavigation('App Hub', 'hub');
+  assert.strictEqual(await evaluate(`(() => {
+    const panel = document.querySelector('[data-workspace-id="hub"]');
+    const restartButton = [...panel.querySelectorAll('button')]
+      .find(item => item.textContent.trim() === 'Restart Internet');
+    const refreshPublicIpButton = panel.querySelector('button[aria-label="Refresh public IP"]');
+    if (!restartButton || !refreshPublicIpButton) return false;
+    restartButton.click();
+    return true;
+  })()`), true, 'App Hub did not render the Restart Internet action and public-IP refresh control.');
+  await wait(100);
+  assert.strictEqual(await evaluate(`(() => {
+    const dialog = document.querySelector('[role="dialog"][aria-labelledby="router-login-title"]');
+    const address = dialog?.querySelector('#router-address')?.value;
+    return !!dialog
+      && address === 'http://192.168.100.1'
+      && dialog.textContent.includes('Windows Credential Manager');
+  })()`), true, 'Restart Internet did not open the secure router-login dialog.');
+  await evaluate(`(() => {
+    const dialog = document.querySelector('[role="dialog"][aria-labelledby="router-login-title"]');
+    const cancel = [...dialog.querySelectorAll('button')].find(item => item.textContent.trim() === 'Cancel');
+    cancel.click();
+  })()`);
   await timedNavigation('Secure Notebook', 'notebook');
   await evaluate(`window.__labsuiteLongTasks = []`);
 

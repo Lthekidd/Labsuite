@@ -5,6 +5,7 @@ import { DownloadSimple } from '@phosphor-icons/react/DownloadSimple';
 import { Trash } from '@phosphor-icons/react/Trash';
 import AppIcon from '../AppIcon';
 import BrandMark from '../BrandMark';
+import RestartInternetPanel from '../RestartInternetPanel';
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -245,6 +246,8 @@ export default function AppHub({ active = true, installedApps, onInstall, onUnin
 
       {/* PC Shutdown / Restart Timer Panel */}
       <ShutdownTimerPanel active={active} />
+
+      <RestartInternetPanel active={active} />
 
       {/* Core Apps — always visible */}
       <div style={{ marginBottom: '36px' }}>

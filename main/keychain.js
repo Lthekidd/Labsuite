@@ -17,11 +17,12 @@ function encodePowerShell(script) {
 }
 
 function runPowerShell(script, input = '') {
+  const quietScript = `$ProgressPreference = 'SilentlyContinue'\n${script}`;
   return execFileSync('powershell.exe', [
     '-NoProfile',
     '-NonInteractive',
     '-EncodedCommand',
-    encodePowerShell(script)
+    encodePowerShell(quietScript)
   ], {
     input,
     encoding: 'utf8',
@@ -29,12 +30,24 @@ function runPowerShell(script, input = '') {
   }).trim();
 }
 
+function normalizeCredentialKey(value, label) {
+  const normalized = String(value || '').trim();
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(normalized)) {
+    throw new Error(`Invalid ${label} for secure credential storage.`);
+  }
+  return normalized;
+}
+
 /**
- * Save password to secure OS keychain
+ * Save a value to the secure OS keychain.
  */
-async function setPassword(password) {
+async function setCredential(serviceName, accountName, password) {
+  const service = normalizeCredentialKey(serviceName, 'service name');
+  const account = normalizeCredentialKey(accountName, 'account name');
+  const secret = String(password || '');
+
   if (keytar) {
-    return keytar.setPassword(SERVICE_NAME, ACCOUNT_NAME, password);
+    return keytar.setPassword(service, account, secret);
   }
 
   if (process.platform === 'win32') {
@@ -43,19 +56,19 @@ async function setPassword(password) {
       $password = [Console]::In.ReadToEnd()
       $vault = [Windows.Security.Credentials.PasswordVault]::new()
       try {
-        $existing = $vault.Retrieve('${SERVICE_NAME}', '${ACCOUNT_NAME}')
+        $existing = $vault.Retrieve('${service}', '${account}')
         $vault.Remove($existing)
       } catch {}
-      $cred = [Windows.Security.Credentials.PasswordCredential]::new('${SERVICE_NAME}', '${ACCOUNT_NAME}', $password)
+      $cred = [Windows.Security.Credentials.PasswordCredential]::new('${service}', '${account}', $password)
       $vault.Add($cred)
-    `, password);
+    `, secret);
     return true;
   } else if (process.platform === 'darwin') {
     execFileSync('security', [
       'add-generic-password',
-      '-a', ACCOUNT_NAME,
-      '-s', SERVICE_NAME,
-      '-w', password,
+      '-a', account,
+      '-s', service,
+      '-w', secret,
       '-U'
     ], { windowsHide: true });
     return true;
@@ -65,11 +78,14 @@ async function setPassword(password) {
 }
 
 /**
- * Retrieve password from secure OS keychain
+ * Retrieve a value from the secure OS keychain.
  */
-async function getPassword() {
+async function getCredential(serviceName, accountName) {
+  const service = normalizeCredentialKey(serviceName, 'service name');
+  const account = normalizeCredentialKey(accountName, 'account name');
+
   if (keytar) {
-    return keytar.getPassword(SERVICE_NAME, ACCOUNT_NAME);
+    return keytar.getPassword(service, account);
   }
 
   try {
@@ -78,7 +94,8 @@ async function getPassword() {
         [void][Windows.Security.Credentials.PasswordVault, Windows.Security.Credentials, ContentType = WindowsRuntime]
         $vault = [Windows.Security.Credentials.PasswordVault]::new()
         try {
-          $cred = $vault.Retrieve('${SERVICE_NAME}', '${ACCOUNT_NAME}')
+          $cred = $vault.Retrieve('${service}', '${account}')
+          $cred.RetrievePassword()
           Write-Output $cred.Password
         } catch {
           exit 1
@@ -88,8 +105,8 @@ async function getPassword() {
     } else if (process.platform === 'darwin') {
       const result = execFileSync('security', [
         'find-generic-password',
-        '-a', ACCOUNT_NAME,
-        '-s', SERVICE_NAME,
+        '-a', account,
+        '-s', service,
         '-w'
       ], { encoding: 'utf8', windowsHide: true }).trim();
       return result || null;
@@ -102,11 +119,14 @@ async function getPassword() {
 }
 
 /**
- * Delete password from secure OS keychain
+ * Delete a value from the secure OS keychain.
  */
-async function deletePassword() {
+async function deleteCredential(serviceName, accountName) {
+  const service = normalizeCredentialKey(serviceName, 'service name');
+  const account = normalizeCredentialKey(accountName, 'account name');
+
   if (keytar) {
-    return keytar.deletePassword(SERVICE_NAME, ACCOUNT_NAME);
+    return keytar.deletePassword(service, account);
   }
 
   try {
@@ -115,7 +135,7 @@ async function deletePassword() {
         [void][Windows.Security.Credentials.PasswordVault, Windows.Security.Credentials, ContentType = WindowsRuntime]
         $vault = [Windows.Security.Credentials.PasswordVault]::new()
         try {
-          $cred = $vault.Retrieve('${SERVICE_NAME}', '${ACCOUNT_NAME}')
+          $cred = $vault.Retrieve('${service}', '${account}')
           $vault.Remove($cred)
           Write-Output 'true'
         } catch {
@@ -125,8 +145,8 @@ async function deletePassword() {
     } else if (process.platform === 'darwin') {
       execFileSync('security', [
         'delete-generic-password',
-        '-a', ACCOUNT_NAME,
-        '-s', SERVICE_NAME
+        '-a', account,
+        '-s', service
       ], { windowsHide: true });
       return true;
     }
@@ -136,8 +156,23 @@ async function deletePassword() {
   return false;
 }
 
+async function setPassword(password) {
+  return setCredential(SERVICE_NAME, ACCOUNT_NAME, password);
+}
+
+async function getPassword() {
+  return getCredential(SERVICE_NAME, ACCOUNT_NAME);
+}
+
+async function deletePassword() {
+  return deleteCredential(SERVICE_NAME, ACCOUNT_NAME);
+}
+
 module.exports = {
   setPassword,
   getPassword,
-  deletePassword
+  deletePassword,
+  setCredential,
+  getCredential,
+  deleteCredential
 };

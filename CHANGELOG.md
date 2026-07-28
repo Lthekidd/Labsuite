@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.0 - 2026-07-28
+
+### Added
+
+- **Restart Internet from AppHub**:
+  - Added a dashboard action for Huawei HG8245H5 routers that signs in locally and alternates the internet WAN username's trailing `9` to trigger a reconnect and public-IP refresh.
+  - Router web credentials are saved per router address in the operating-system credential vault, while the existing WAN/PPPoE password is preserved unchanged.
+  - Displays the current public IP with a manual reload control and automatically rechecks it after the router reconnects.
+
 ## 2.6.3 - 2026-07-28
 
 ### Fixed
