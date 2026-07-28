@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.4 - 2026-07-28
+
+### Fixed
+
+- **LabShot Main View Routing**: Fixed sidebar route handler in `App.jsx` (`renderWorkspace`) to render `<LabShot />` view when clicking LabShot in the installed apps list.
+
 ## 2.4.3 - 2026-07-28
 
 ### Fixed

@@ -34,6 +34,7 @@ const LabSuiteNotebook = React.memo(lazy(WORKSPACE_LOADERS.notebook));
 const LabSuiteSettings = React.memo(lazy(WORKSPACE_LOADERS.settings));
 const CryptoPortfolioTracker = React.memo(lazy(WORKSPACE_LOADERS.crypto));
 const TelegramBackup = React.memo(lazy(WORKSPACE_LOADERS.telegram));
+const LabShot = React.memo(lazy(WORKSPACE_LOADERS.labshot));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -355,6 +356,8 @@ export default function App() {
         return <CryptoPortfolioTracker active={active} />;
       case 'notebook':
         return isAppInstalled('notebook') ? <LabSuiteNotebook active={active} externalFilePath={externalFilePath} /> : null;
+      case 'labshot':
+        return isAppInstalled('labshot') ? <LabShot active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:
