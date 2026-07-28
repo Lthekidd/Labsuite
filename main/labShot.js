@@ -19,11 +19,12 @@ function resolveAssetPath(fileName) {
 }
 
 function getLabShotTrayImage() {
-  const iconPath = resolveAssetPath('tray-labshot.png');
+  const iconPath = resolveAssetPath(path.join('brand', 'labshot-mark-ui.png'));
   const image = nativeImage.createFromPath(iconPath);
   if (!image.isEmpty()) {
-    if (typeof image.setTemplateImage === 'function') image.setTemplateImage(false);
-    return image;
+    const trayImage = image.resize({ width: 32, height: 32, quality: 'best' });
+    if (typeof trayImage.setTemplateImage === 'function') trayImage.setTemplateImage(false);
+    return trayImage;
   }
   // Fallback 16x16 purple native image
   const size = 16;
@@ -152,6 +153,7 @@ function pinToScreen({ dataUrl, width = 320, height = 240, x, y }) {
     transparent: true,
     resizable: true,
     hasShadow: true,
+    icon: resolveAssetPath('labshot-icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

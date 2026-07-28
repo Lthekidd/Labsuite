@@ -1,5 +1,4 @@
 import React from 'react';
-import { Crosshair } from '@phosphor-icons/react/Crosshair';
 import { CurrencyBtc } from '@phosphor-icons/react/CurrencyBtc';
 import { DesktopTower } from '@phosphor-icons/react/DesktopTower';
 import { GearSix } from '@phosphor-icons/react/GearSix';
@@ -11,6 +10,7 @@ import { ShieldCheck } from '@phosphor-icons/react/ShieldCheck';
 import { SquaresFour } from '@phosphor-icons/react/SquaresFour';
 import { Table } from '@phosphor-icons/react/Table';
 import { TelegramLogo } from '@phosphor-icons/react/TelegramLogo';
+import LabShotMark from './LabShotMark';
 
 const APP_ICONS = {
   hub: SquaresFour,
@@ -22,7 +22,6 @@ const APP_ICONS = {
   lan: HardDrives,
   'vm-protect': DesktopTower,
   todo: Kanban,
-  labshot: Crosshair,
   settings: GearSix,
   device: DesktopTower,
   package: Package
@@ -35,6 +34,10 @@ export default function AppIcon({
   color = 'currentColor',
   ...props
 }) {
+  if (appId === 'labshot') {
+    return <LabShotMark size={size} className={props.className || ''} style={props.style} />;
+  }
+
   const Icon = APP_ICONS[appId] || Package;
   return (
     <Icon

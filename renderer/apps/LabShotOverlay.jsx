@@ -102,7 +102,7 @@ export default function LabShotOverlay() {
       ctx.clearRect(selection.x, selection.y, selection.w, selection.h);
 
       // Selection border
-      ctx.strokeStyle = '#06b6d4';
+      ctx.strokeStyle = '#8b5cf6';
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
@@ -422,8 +422,8 @@ export default function LabShotOverlay() {
             left: selection.x,
             top: Math.max(10, selection.y - 28),
             background: 'rgba(15, 23, 42, 0.9)',
-            border: '1px solid rgba(6, 182, 212, 0.4)',
-            color: '#38bdf8',
+            border: '1px solid rgba(139, 92, 246, 0.4)',
+            color: '#c4b5fd',
             fontSize: '12px',
             fontWeight: 600,
             padding: '2px 8px',
@@ -444,7 +444,7 @@ export default function LabShotOverlay() {
             top: '20px',
             left: '50%',
             transform: 'translateX(-50%)',
-            background: '#06b6d4',
+            background: '#8b5cf6',
             color: '#0f172a',
             fontWeight: 700,
             padding: '8px 16px',
@@ -483,7 +483,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'pen' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'pen' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'pen' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -498,7 +498,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'arrow' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'arrow' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'arrow' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -513,7 +513,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'rect' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'rect' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'rect' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -528,7 +528,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'circle' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'circle' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'circle' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -543,7 +543,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'blur' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'blur' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'blur' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -558,7 +558,7 @@ export default function LabShotOverlay() {
               padding: '6px',
               borderRadius: '6px',
               border: 'none',
-              background: activeTool === 'step' ? '#06b6d4' : 'transparent',
+              background: activeTool === 'step' ? '#8b5cf6' : 'transparent',
               color: activeTool === 'step' ? '#0f172a' : '#94a3b8',
               cursor: 'pointer'
             }}
@@ -651,7 +651,7 @@ export default function LabShotOverlay() {
               padding: '6px 12px',
               borderRadius: '6px',
               border: 'none',
-              background: '#06b6d4',
+              background: '#8b5cf6',
               color: '#0f172a',
               fontWeight: 700,
               display: 'flex',

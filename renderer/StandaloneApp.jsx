@@ -24,7 +24,7 @@ const APP_META = {
   todo:         { title: 'Task Board', icon: 'todo', color: '#ec4899' },
   lan:          { title: 'Network Drive', icon: 'lan', color: '#10b981' },
   'vm-protect': { title: 'VM Protect', icon: 'vm-protect', color: '#2dd4bf' },
-  labshot:      { title: 'LabShot', icon: 'labshot', color: '#06b6d4' }
+  labshot:      { title: 'LabShot', icon: 'labshot', color: '#a78bfa' }
 };
 
 // ── Standalone App Shell ────────────────────────────────────────────────────

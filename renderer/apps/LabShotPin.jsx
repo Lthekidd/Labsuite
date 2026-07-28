@@ -42,7 +42,7 @@ export default function LabShotPin() {
         display: 'flex',
         flexDirection: 'column',
         background: '#0f172a',
-        border: '1px solid rgba(6, 182, 212, 0.5)',
+        border: '1px solid rgba(139, 92, 246, 0.5)',
         boxShadow: '0 12px 32px rgba(0,0,0,0.8)',
         borderRadius: '6px',
         overflow: 'hidden',
@@ -62,7 +62,7 @@ export default function LabShotPin() {
           borderBottom: '1px solid rgba(255,255,255,0.1)'
         }}
       >
-        <span style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>📌 LabShot Pin</span>
+        <span style={{ fontSize: '11px', fontWeight: 600, color: '#c4b5fd' }}>📌 LabShot Pin</span>
         <div style={{ display: 'flex', gap: '4px', WebkitAppRegion: 'no-drag' }}>
           <button
             onClick={handleCopy}

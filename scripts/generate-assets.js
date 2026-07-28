@@ -12,7 +12,10 @@ const REQUIRED_FILES = [
   'tray-setup.png',
   'tray-labshot.png',
   path.join('brand', 'labsuite-mark.png'),
-  path.join('brand', 'labsuite-mark-ui.png')
+  path.join('brand', 'labsuite-mark-ui.png'),
+  path.join('brand', 'labshot-mark.png'),
+  path.join('brand', 'labshot-mark-ui.png'),
+  'labshot-icon.png'
 ];
 
 const missing = REQUIRED_FILES.filter(fileName => !fs.existsSync(path.join(ASSETS_DIR, fileName)));

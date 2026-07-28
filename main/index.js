@@ -378,8 +378,12 @@ async function restartAndInstallUpdate() {
 }
 
 // ── Window factory ───────────────────────────────────────────────────────────
-function resolveAppIconPath() {
+function resolveAppIconPath(appId = '') {
+  const preferredIcon = appId === 'labshot' ? 'labshot-icon.png' : 'icon.ico';
   const candidates = [
+    app.isPackaged && process.resourcesPath ? path.join(process.resourcesPath, 'assets', preferredIcon) : null,
+    path.join(__dirname, '../assets', preferredIcon),
+    path.join(process.cwd(), 'assets', preferredIcon),
     app.isPackaged && process.resourcesPath ? path.join(process.resourcesPath, 'assets', 'icon.ico') : null,
     path.join(__dirname, '../assets/icon.ico'),
     path.join(__dirname, '../assets/icon.png'),
@@ -400,7 +404,7 @@ function createAppWindow(appId, extraParams = {}) {
     return existing;
   }
 
-  const appIconPath = resolveAppIconPath();
+  const appIconPath = resolveAppIconPath(appId);
   const win = new BrowserWindow({
     width: 1100,
     height: 700,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.4.2 - 2026-07-28
+
+### Added
+
+- **Updated LabShot Branding & App Icons**: Added dedicated LabShot brand marks (`LabShotMark.jsx`, `assets/brand/labshot-mark.png`, `assets/brand/labshot-mark-ui.png`, `assets/labshot-icon.png`) and updated app icon renderings across the UI and system tray.
+
 ## 2.4.1 - 2026-07-28
 
 ### Added

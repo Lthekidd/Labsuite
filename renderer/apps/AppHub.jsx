@@ -19,7 +19,7 @@ const CORE_APPS = [
 ];
 
 const HUB_APPS = [
-  { id: 'labshot', icon: 'labshot', label: 'LabShot', description: 'Capture, annotate, pin, and encrypt screenshots with live Flameshot tools and privacy blur.', color: '#06b6d4', category: 'Productivity', mode: 'dual' },
+  { id: 'labshot', icon: 'labshot', label: 'LabShot', description: 'Capture, annotate, pin, and encrypt screenshots with live Flameshot tools and privacy blur.', color: '#8b5cf6', category: 'Productivity', mode: 'dual' },
   { id: 'notebook', icon: 'notebook', label: 'Secure Notebook', description: 'Maintain a private, distraction-free markdown knowledge base. Also opens as a standalone editor for .txt files.', color: '#f59e0b', category: 'Productivity', mode: 'dual' },
   { id: 'sheets', icon: 'sheets', label: 'Encrypted Tables', description: 'Keep structured rows and columns in your encrypted cloud workspace.', color: '#8b5cf6', category: 'Productivity', mode: 'standalone' },
   { id: 'lan', icon: 'lan', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'standalone' },

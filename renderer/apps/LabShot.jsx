@@ -72,8 +72,8 @@ export default function LabShot() {
       {/* 1. Header & Branding */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#0f172a' }}>
-            <AppIcon appId="labshot" size={24} weight="bold" />
+          <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(139, 92, 246, 0.14)', border: '1px solid rgba(167, 139, 250, 0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AppIcon appId="labshot" size={30} />
           </div>
           <div>
             <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#f8fafc' }}>LabShot</h1>
@@ -88,14 +88,14 @@ export default function LabShot() {
               padding: '10px 18px',
               borderRadius: '8px',
               border: 'none',
-              background: '#06b6d4',
+              background: '#8b5cf6',
               color: '#0f172a',
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(6, 182, 212, 0.3)'
+              boxShadow: '0 4px 14px rgba(139, 92, 246, 0.3)'
             }}
           >
             <Camera size={18} weight="bold" /> Take Screenshot (Alt+Shift+S)
@@ -128,8 +128,8 @@ export default function LabShot() {
             padding: '8px 16px',
             border: 'none',
             background: 'transparent',
-            color: activeTab === 'gallery' ? '#06b6d4' : '#94a3b8',
-            borderBottom: activeTab === 'gallery' ? '2px solid #06b6d4' : '2px solid transparent',
+            color: activeTab === 'gallery' ? '#a78bfa' : '#94a3b8',
+            borderBottom: activeTab === 'gallery' ? '2px solid #8b5cf6' : '2px solid transparent',
             fontWeight: 600,
             cursor: 'pointer'
           }}
@@ -142,8 +142,8 @@ export default function LabShot() {
             padding: '8px 16px',
             border: 'none',
             background: 'transparent',
-            color: activeTab === 'settings' ? '#06b6d4' : '#94a3b8',
-            borderBottom: activeTab === 'settings' ? '2px solid #06b6d4' : '2px solid transparent',
+            color: activeTab === 'settings' ? '#a78bfa' : '#94a3b8',
+            borderBottom: activeTab === 'settings' ? '2px solid #8b5cf6' : '2px solid transparent',
             fontWeight: 600,
             cursor: 'pointer'
           }}
@@ -159,14 +159,14 @@ export default function LabShot() {
             <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>Loading screenshot history...</div>
           ) : gallery.length === 0 ? (
             <div style={{ padding: '60px', textAlign: 'center', background: '#0f172a', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.15)' }}>
-              <AppIcon appId="labshot" size={48} color="#06b6d4" />
+              <AppIcon appId="labshot" size={64} />
               <h3 style={{ margin: '16px 0 8px 0', fontSize: '16px', color: '#f8fafc' }}>No Screenshots Captured Yet</h3>
               <p style={{ fontSize: '13px', color: '#94a3b8', maxWidth: '420px', margin: '0 auto 20px auto' }}>
-                Press <strong style={{ color: '#06b6d4' }}>Alt+Shift+S</strong> anywhere on Windows, or click the LabShot tray icon to take your first screenshot!
+                Press <strong style={{ color: '#a78bfa' }}>Alt+Shift+S</strong> anywhere on Windows, or click the LabShot tray icon to take your first screenshot!
               </p>
               <button
                 onClick={() => handleStartCapture(0)}
-                style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#06b6d4', color: '#0f172a', fontWeight: 700, cursor: 'pointer' }}
+                style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
               >
                 Launch Screen Capture
               </button>
@@ -196,7 +196,7 @@ export default function LabShot() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>{item.title}</span>
                         {item.savedToVault && (
-                          <span style={{ fontSize: '10px', background: 'rgba(6, 182, 212, 0.2)', color: '#38bdf8', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                          <span style={{ fontSize: '10px', background: 'rgba(139, 92, 246, 0.2)', color: '#c4b5fd', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
                             <LockSimple size={10} /> Vault
                           </span>
                         )}
@@ -250,7 +250,7 @@ export default function LabShot() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
               <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Global Capture Hotkey</label>
-              <div style={{ background: '#0f172a', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', fontFamily: 'monospace', color: '#06b6d4', fontWeight: 600 }}>
+              <div style={{ background: '#0f172a', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)', fontFamily: 'monospace', color: '#a78bfa', fontWeight: 600 }}>
                 Alt + Shift + S
               </div>
             </div>
@@ -258,7 +258,7 @@ export default function LabShot() {
             <div>
               <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>System Tray Integration</label>
               <div style={{ fontSize: '13px', color: '#cbd5e1' }}>
-                LabShot tray icon is active in the Windows notification area. Left-click the cyan camera icon to capture at any time.
+                LabShot is active in the Windows notification area. Left-click the purple LabShot icon to capture at any time.
               </div>
             </div>
 
