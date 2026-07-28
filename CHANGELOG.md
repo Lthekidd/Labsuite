@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.6.3 - 2026-07-28
+
+### Fixed
+
+- **Native Per-Monitor High-DPI Overlay Windows**:
+  - Replaced single virtual-desktop spanning overlay with individual native `BrowserWindow` instances per display monitor in `main/labShot.js`.
+  - Fixes the 25% screen capture / 4x zoom artifact caused by Windows mixed-DPI scaling (e.g. 150%/200% scale factor on Primary Screen).
+  - Implemented 6-stage display-to-source matcher (`findSourceForDisplay`) considering display IDs, names, aspect ratios, and screen coordinates.
+
 ## 2.6.2 - 2026-07-28
 
 ### Fixed

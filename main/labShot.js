@@ -70,10 +70,65 @@ function getVirtualDesktopBounds(displays) {
   };
 }
 
+function findSourceForDisplay(display, sources, displays, primaryDisplay) {
+  if (!sources || sources.length === 0) return null;
+  const displayIdStr = String(display.id);
+
+  // 1. Direct display_id match
+  let match = sources.find(s => s.display_id && String(s.display_id) === displayIdStr);
+  if (match) return match;
+
+  // 2. source.id contains display.id
+  match = sources.find(s => s.id && String(s.id).includes(displayIdStr));
+  if (match) return match;
+
+  // 3. source.name contains display.id
+  match = sources.find(s => s.name && String(s.name).includes(displayIdStr));
+  if (match) return match;
+
+  // 4. Match primary display
+  if (primaryDisplay && display.id === primaryDisplay.id) {
+    match = sources.find(s => s.name && (s.name.includes('1') || s.name.toLowerCase().includes('primary')));
+    if (match) return match;
+  }
+
+  // 5. Match by aspect ratio & resolution
+  const targetW = Math.round(display.bounds.width * (display.scaleFactor || 1));
+  const targetH = Math.round(display.bounds.height * (display.scaleFactor || 1));
+  const targetAspect = targetW / targetH;
+
+  let bestAspectMatch = null;
+  let minAspectDiff = Infinity;
+
+  for (const s of sources) {
+    if (!s.thumbnail || s.thumbnail.isEmpty()) continue;
+    const size = s.thumbnail.getSize();
+    if (size.width === 0 || size.height === 0) continue;
+    const aspect = size.width / size.height;
+    const diff = Math.abs(aspect - targetAspect);
+    if (diff < minAspectDiff) {
+      minAspectDiff = diff;
+      bestAspectMatch = s;
+    }
+  }
+  if (bestAspectMatch && minAspectDiff < 0.1) {
+    return bestAspectMatch;
+  }
+
+  // 6. Positional index fallback: sort displays left-to-right
+  const sortedDisplays = [...displays].sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
+  const displayIndex = sortedDisplays.findIndex(d => d.id === display.id);
+  if (displayIndex >= 0 && displayIndex < sources.length) {
+    return sources[displayIndex];
+  }
+
+  return sources[0];
+}
+
 /**
- * Open one borderless overlay across the complete virtual desktop. A single
- * window avoids Windows placing multiple fullscreen BrowserWindows on the same
- * monitor and allows selections to cross display boundaries.
+ * Open native per-monitor overlay windows across all connected displays.
+ * Creating one overlay window per display ensures Windows OS applies per-monitor DPI scaling,
+ * preventing 25% zoomed-in/clipped screen captures on High-DPI displays.
  */
 async function startCapture({ delayMs = 0 } = {}) {
   if (delayMs > 0) {
@@ -88,74 +143,72 @@ async function startCapture({ delayMs = 0 } = {}) {
     activeOverlayWindows = [];
 
     const displays = screen.getAllDisplays();
+    const primaryDisplay = screen.getPrimaryDisplay();
     const virtualBounds = getVirtualDesktopBounds(displays);
     const maxScale = Math.max(1, ...displays.map(d => d.scaleFactor || 1));
     const maxCaptureWidth = Math.ceil(virtualBounds.width * maxScale);
     const maxCaptureHeight = Math.ceil(virtualBounds.height * maxScale);
-    
+
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: maxCaptureWidth, height: maxCaptureHeight },
       fetchWindowIcons: false
     });
 
-    const displayCaptures = displays.map((display, index) => {
-      const source = sources.find(s => s.display_id === String(display.id)) || 
-                     sources.find(s => s.name && s.name.includes(String(display.id))) || 
-                     sources[index] || sources[0];
-      return {
-        id: String(display.id),
-        dataUrl: source && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null,
-        x: display.bounds.x - virtualBounds.x,
-        y: display.bounds.y - virtualBounds.y,
+    const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
+
+    for (const display of displays) {
+      const source = findSourceForDisplay(display, sources, displays, primaryDisplay);
+      const dataUrl = source && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null;
+
+      if (dataUrl && !capturedDataUrlCache) {
+        capturedDataUrlCache = dataUrl;
+      }
+
+      const overlayWin = new BrowserWindow({
+        x: display.bounds.x,
+        y: display.bounds.y,
+        width: display.bounds.width,
+        height: display.bounds.height,
+        fullscreen: false,
+        fullscreenable: false,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        movable: false,
+        enableLargerThanScreen: true,
+        icon: resolveAssetPath('labshot-icon.png'),
+        webPreferences: {
+          preload: path.join(__dirname, 'preload.js'),
+          contextIsolation: true,
+          nodeIntegration: false
+        }
+      });
+
+      overlayWin.overlayDataUrl = dataUrl;
+      overlayWin.overlayScreenData = {
+        dataUrl,
+        displayId: String(display.id),
         width: display.bounds.width,
         height: display.bounds.height,
         scaleFactor: display.scaleFactor || 1
       };
-    });
+      overlayWin.isLabShotOverlay = true;
+      overlayWin.setAlwaysOnTop(true, 'screen-saver');
+      overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-    capturedDataUrlCache = displayCaptures.find(capture => capture.dataUrl)?.dataUrl || null;
-
-    const overlayWin = new BrowserWindow({
-      x: virtualBounds.x,
-      y: virtualBounds.y,
-      width: virtualBounds.width,
-      height: virtualBounds.height,
-      fullscreen: false,
-      fullscreenable: false,
-      frame: false,
-      transparent: true,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      resizable: false,
-      movable: false,
-      icon: resolveAssetPath('labshot-icon.png'),
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false
+      if (isDev) {
+        overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay`);
+      } else {
+        overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay' } });
       }
-    });
 
-    overlayWin.overlayDataUrl = capturedDataUrlCache;
-    overlayWin.overlayScreenData = {
-      displays: displayCaptures,
-      width: virtualBounds.width,
-      height: virtualBounds.height
-    };
-    overlayWin.isLabShotOverlay = true;
-    overlayWin.setAlwaysOnTop(true, 'screen-saver');
-    overlayWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-    const isDev = !app.isPackaged && process.env.VITE_DEV_SERVER_URL;
-    if (isDev) {
-      overlayWin.loadURL(`${process.env.VITE_DEV_SERVER_URL}?app=labshot-overlay`);
-    } else {
-      overlayWin.loadFile(path.join(__dirname, '../dist/index.html'), { query: { app: 'labshot-overlay' } });
+      activeOverlayWindows.push(overlayWin);
     }
 
-    activeOverlayWindows.push(overlayWin);
-    return { success: true, displayCount: displayCaptures.length };
+    return { success: true, displayCount: displays.length };
   } catch (error) {
     console.error('LabShot: failed to capture screen:', error.message);
     throw error;
