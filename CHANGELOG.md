@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.1 - 2026-07-28
+
+### Added
+
+- **Purple LabShot Tray Icon**: Updated LabShot's system tray icon color to a distinct **Purple** (`#A855F7`), making it instantly recognizable from LabSuite's green/blue status tray icon.
+- **Vault & Cloud Screenshots in LabShot Panel**: Enhanced `labshot:getGallery` to scan and display decrypted vault and cloud screenshots in the LabShot panel gallery with full options (copy, pin, save, delete).
+- **Flameshot Keybinds**: Added native keyboard shortcuts during screen selection overlay: `Ctrl + C` or `Enter` (copy & close), `Ctrl + S` (save file), `Ctrl + P` (pin snippet), `Ctrl + Z` (undo annotation), and `Esc` (cancel).
+
 ## 2.4.0 - 2026-07-28
 
 ### Added

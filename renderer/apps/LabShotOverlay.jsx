@@ -54,14 +54,26 @@ export default function LabShotOverlay() {
     loadScreen();
   }, []);
 
-  // Keyboard hotkey listeners (Esc to cancel, Ctrl+Z to undo, Ctrl+C to copy)
+  // Keyboard hotkey listeners (Flameshot keybinds: Esc, Ctrl+C, Ctrl+S, Ctrl+P, Enter, Ctrl+Z)
   useEffect(() => {
     function handleKeyDown(e) {
-      if (e.key === 'Escape') {
+      const key = e.key.toLowerCase();
+      if (key === 'escape') {
         closeOverlay();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'z') {
+        e.preventDefault();
         handleUndo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selection) {
+      } else if ((e.ctrlKey || e.metaKey) && key === 'c') {
+        e.preventDefault();
+        handleCopy();
+      } else if ((e.ctrlKey || e.metaKey) && key === 's') {
+        e.preventDefault();
+        handleSaveFile();
+      } else if ((e.ctrlKey || e.metaKey) && key === 'p') {
+        e.preventDefault();
+        handlePin();
+      } else if (key === 'enter') {
+        e.preventDefault();
         handleCopy();
       }
     }

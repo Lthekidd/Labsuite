@@ -31,6 +31,8 @@ const RESTORE_RUNNING_STATUSES = new Set(['restoring']);
 const RESTORE_RESUMABLE_STATUSES = new Set(['interrupted', 'failed']);
 const LIVE_SETTLE_STATUSES = new Set(['uploading', 'versioning', 'packing', 'preparing', 'queued']);
 const OVERALL_QUEUE_STATUSES = new Set(['uploading', 'versioning', 'packing', 'preparing', 'queued']);
+const PAUSABLE_ACTIVITY_STATUSES = new Set(['uploading', 'versioning', 'packing', 'preparing', 'queued']);
+const ACTIVE_FOLDER_STAGES = new Set(['queued', 'preparing', 'scanning', 'packing', 'versioning', 'encrypting_uploading', 'deleting']);
 
 function getPercent(row) {
   return Math.max(0, Math.min(100, Number(row.percent ?? row.progress) || 0));
@@ -44,6 +46,7 @@ function getActivityRank(row) {
   if (row.status === 'failed' || row.status === 'at_risk') return 0;
   if (RESTORE_RUNNING_STATUSES.has(row.status)) return 1;
   if (row.status === 'interrupted') return 2;
+  if (row.status === 'paused') return 2;
   if (TRANSFER_STATUSES.has(row.status)) {
     const percent = getPercent(row);
     if (percent > 0 && percent < 100) return 1;
@@ -126,6 +129,7 @@ function getLiveActivityText(item) {
     return percent > 0 ? `Restoring (${percent}%)` : 'Preparing restore';
   }
   if (item.status === 'queued') return 'Queued';
+  if (item.status === 'paused') return `Paused (${getPercent(item)}%)`;
   if (item.status === 'failed') return 'Failed';
   if (item.status === 'at_risk') return 'Needs repair';
   if (TRANSFER_STATUSES.has(item.status) && item.progress >= 100) return 'Finalizing';
@@ -640,6 +644,49 @@ export default function LabSuiteBackup({ active = true }) {
       invalidateResource('backup:manifestSummary');
       invalidateResource('backup:restorePoints');
       setSyncStatus(data.status);
+      if (data.status === 'paused') {
+        if (fileActivityFlushTimerRef.current) {
+          clearTimeout(fileActivityFlushTimerRef.current);
+          fileActivityFlushTimerRef.current = null;
+        }
+        const bufferedRows = [...fileActivityBufferRef.current.entries()];
+        fileActivityBufferRef.current.clear();
+        const pausedAt = new Date().toISOString();
+        setFileActivity(prev => {
+          const next = { ...prev };
+          for (const [id, row] of bufferedRows) {
+            next[id] = { ...(next[id] || {}), ...row };
+          }
+          for (const [id, row] of Object.entries(next)) {
+            if (!row || !PAUSABLE_ACTIVITY_STATUSES.has(row.status)) continue;
+            next[id] = {
+              ...row,
+              status: 'paused',
+              speed: 0,
+              etaSec: null,
+              updatedAt: pausedAt
+            };
+          }
+          return next;
+        });
+        setSyncProgress(null);
+        setOverallProgress(null);
+        setFolderProgress(prev => Object.fromEntries(
+          Object.entries(prev).map(([folderId, progress]) => [
+            folderId,
+            ACTIVE_FOLDER_STAGES.has(progress?.stage)
+              ? {
+                  ...progress,
+                  stage: 'paused',
+                  stageLabel: 'Backup paused',
+                  speed: 0,
+                  etaSec: null,
+                  updatedAt: pausedAt
+                }
+              : progress
+          ])
+        ));
+      }
       if (data.details !== undefined) {
         setSyncDetails(data.details || '');
       } else if (data.status !== 'syncing') {
@@ -1014,7 +1061,7 @@ export default function LabSuiteBackup({ active = true }) {
     
     // 1. Add active items from fileActivity
     const activeLive = Object.values(fileActivity).filter(row =>
-      ['uploading', 'versioning', 'preparing', 'packing', 'queued', 'restoring', 'interrupted', 'failed', 'at_risk'].includes(row.status)
+      ['uploading', 'versioning', 'preparing', 'packing', 'queued', 'paused', 'restoring', 'interrupted', 'failed', 'at_risk'].includes(row.status)
     );
     
     activeLive.forEach(row => {
@@ -2850,8 +2897,10 @@ export default function LabSuiteBackup({ active = true }) {
     return {
       folderId: folder.id,
       folderPath: folder.local_path,
-      stage: folder.sync_state === 'error' ? 'error' : (folder.last_success_at ? 'complete' : 'waiting'),
-      stageLabel: folder.sync_state === 'error'
+      stage: folder.sync_state === 'paused' ? 'paused' : (folder.sync_state === 'error' ? 'error' : (folder.last_success_at ? 'complete' : 'waiting')),
+      stageLabel: folder.sync_state === 'paused'
+        ? 'Backup paused'
+        : folder.sync_state === 'error'
         ? 'Backup failed'
         : (folder.last_success_at ? 'Protected' : 'Waiting for initial scan'),
       percent: folder.sync_percent || (folder.last_success_at ? 100 : 0),
@@ -2868,6 +2917,9 @@ export default function LabSuiteBackup({ active = true }) {
 
   const getFolderStatusBadge = (folder, progress) => {
     const summary = getManifestSummaryForFolder(folder.id);
+    if (progress.stage === 'paused') {
+      return { text: 'Paused', color: '#fbbf24', bg: 'rgba(245,158,11,0.14)' };
+    }
     if (summary.atRiskFiles > 0) {
       return { text: 'At risk', color: '#f97316', bg: 'rgba(249,115,22,0.16)' };
     }
@@ -2903,6 +2955,9 @@ export default function LabSuiteBackup({ active = true }) {
     }
     if (status === 'interrupted') {
       return { label: 'Interrupted', color: '#fbbf24', bg: 'rgba(245,158,11,0.14)', symbol: '!' };
+    }
+    if (status === 'paused') {
+      return { label: 'Paused', color: '#fbbf24', bg: 'rgba(245,158,11,0.14)', symbol: 'Ⅱ' };
     }
     if (status === 'restore_failed') {
       return { label: 'Restore Failed', color: '#fca5a5', bg: 'rgba(239,68,68,0.14)', symbol: '!' };
@@ -3590,12 +3645,21 @@ export default function LabSuiteBackup({ active = true }) {
                                 </svg>
                               </span>
                             );
-                          } else if (item.status === 'queued' || item.status === 'interrupted') {
+                          } else if (item.status === 'queued' || item.status === 'interrupted' || item.status === 'paused') {
                             statusIcon = (
-                              <span className="sync-status-icon queued" title={item.status === 'interrupted' ? 'Restore interrupted' : 'Queued'}>
+                              <span className="sync-status-icon queued" title={item.status === 'interrupted' ? 'Restore interrupted' : (item.status === 'paused' ? 'Backup paused' : 'Queued')}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-warning)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="12" cy="12" r="10" />
-                                  <polyline points="12 6 12 12 16 14" />
+                                  {item.status === 'paused' ? (
+                                    <>
+                                      <rect x="7" y="5" width="3" height="14" rx="1" />
+                                      <rect x="14" y="5" width="3" height="14" rx="1" />
+                                    </>
+                                  ) : (
+                                    <>
+                                      <circle cx="12" cy="12" r="10" />
+                                      <polyline points="12 6 12 12 16 14" />
+                                    </>
+                                  )}
                                 </svg>
                               </span>
                             );

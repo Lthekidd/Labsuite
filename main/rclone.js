@@ -1,5 +1,6 @@
 // module_hash: 0x4c6162
 const { spawn, spawnSync } = require('child_process');
+const { AsyncLocalStorage } = require('async_hooks');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -14,6 +15,28 @@ const ENCRYPTED_FOLDER = 'LabSuite-Encrypted';
 const LEGACY_ENCRYPTED_FOLDER = 'VaultSync-Encrypted';
 const RAW_REMOTE = 'gdrive';
 const RCLONE_VERSION = '1.74.4';
+const operationContext = new AsyncLocalStorage();
+
+class RcloneOperationCancelledError extends Error {
+  constructor(operation, reason = 'Operation cancelled') {
+    super(reason);
+    this.name = 'RcloneOperationCancelledError';
+    this.code = 'ERR_RCLONE_OPERATION_CANCELLED';
+    this.operation = operation || 'general';
+  }
+}
+
+function isOperationCancelledError(error) {
+  return !!error && error.code === 'ERR_RCLONE_OPERATION_CANCELLED';
+}
+
+function runWithOperation(operation, task) {
+  return operationContext.run({ operation: String(operation || 'general') }, task);
+}
+
+function getCurrentOperation() {
+  return operationContext.getStore()?.operation || 'general';
+}
 
 function isSafeRemoteName(value) {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(String(value || ''));
@@ -625,9 +648,39 @@ function obscurePassword(password) {
 
 const activeRcloneProcesses = new Map();
 
+function cancelOperationInRegistry(registry, operation, reason = 'Operation cancelled') {
+  const targetOperation = String(operation || 'general');
+  let cancelled = 0;
+
+  for (const procInfo of registry.values()) {
+    if (procInfo.operation !== targetOperation || procInfo.cancelled) continue;
+    procInfo.cancelled = true;
+    procInfo.cancelReason = reason;
+    cancelled += 1;
+    try {
+      procInfo.proc.kill();
+    } catch (error) {
+      console.warn(`rclone: Failed to stop ${targetOperation} process:`, error.message);
+    }
+  }
+
+  if (cancelled > 0) {
+    console.log(`rclone: Stopping ${cancelled} active ${targetOperation} process(es).`);
+  }
+  return cancelled;
+}
+
+function cancelOperation(operation, reason = 'Operation cancelled') {
+  return cancelOperationInRegistry(activeRcloneProcesses, operation, reason);
+}
+
 function getFreeRcPort() {
   let port = 5572;
-  const busyPorts = new Set(Array.from(activeRcloneProcesses.values()).map(p => p.rcPort));
+  const busyPorts = new Set(
+    Array.from(activeRcloneProcesses.values())
+      .map(p => p.rcPort)
+      .filter(Number.isFinite)
+  );
   while (busyPorts.has(port)) {
     port++;
   }
@@ -690,6 +743,7 @@ function startSmartThrottleMonitor() {
       
       const { rcloneBin, configPath } = getPaths();
       for (const [id, procInfo] of activeRcloneProcesses.entries()) {
+        if (!Number.isFinite(procInfo.rcPort)) continue;
         try {
           const rcProc = spawn(rcloneBin, [
             'rc', 
@@ -844,6 +898,7 @@ function runRclone(args, options = {}) {
   
   const isTransferCommand = ['copy', 'sync', 'copyto', 'restore', 'move', 'moveto'].includes(command);
   const applyTransferControls = options.applyTransferControls !== false;
+  const operation = options.operation || getCurrentOperation();
   let allocatedPort = null;
 
   if (isTransferCommand && applyTransferControls) {
@@ -866,8 +921,17 @@ function runRclone(args, options = {}) {
     });
     
     const procId = Date.now() + Math.random();
+    const procInfo = {
+      proc,
+      rcPort: allocatedPort,
+      operation,
+      cancelled: false,
+      cancelReason: ''
+    };
+    if (isTransferCommand) {
+      activeRcloneProcesses.set(procId, procInfo);
+    }
     if (isTransferCommand && applyTransferControls && allocatedPort !== null) {
-      activeRcloneProcesses.set(procId, { proc, rcPort: allocatedPort });
       const db = require('./database');
       if (db.getDb().settings?.smart_throttle_enabled === '1') {
         startSmartThrottleMonitor();
@@ -949,7 +1013,9 @@ function runRclone(args, options = {}) {
 
     proc.on('close', (code, signal) => {
       hardenConfigFilePermissions(configPath);
-      if (code === 0) {
+      if (procInfo.cancelled) {
+        rejectOnce(new RcloneOperationCancelledError(operation, procInfo.cancelReason));
+      } else if (code === 0) {
         resolveOnce(stdout);
       } else {
         rejectOnce(new Error(buildRcloneErrorMessage({ code, signal, stderr })));
@@ -958,7 +1024,9 @@ function runRclone(args, options = {}) {
 
     proc.on('error', err => {
       console.error('Process error:', err.message);
-      rejectOnce(err);
+      rejectOnce(procInfo.cancelled
+        ? new RcloneOperationCancelledError(operation, procInfo.cancelReason)
+        : err);
     });
   });
 }
@@ -2365,6 +2433,9 @@ module.exports = {
   copyFileRemoteToLocal,
   getPaths,
   applyBwlimitToActiveProcesses,
+  runWithOperation,
+  cancelOperation,
+  isOperationCancelledError,
   __private: {
     getRemote,
     getRemotePath,
@@ -2379,6 +2450,8 @@ module.exports = {
     getRcloneRemoteConfigValue,
     updateRcloneRemoteConfig,
     validateGoogleClientCredentials,
-    getTransferFlagArgs
+    getTransferFlagArgs,
+    getCurrentOperation,
+    cancelOperationInRegistry
   }
 };

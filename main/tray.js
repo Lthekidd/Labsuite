@@ -266,17 +266,17 @@ function updateTrayMenu() {
       label: isPaused ? 'Resume Backups' : 'Pause Backups',
       click: () => {
         if (isPaused) {
+          db.setSetting('sync_paused', '0');
           watcher.initWatcher();
           scheduler.startScheduler();
-          db.setSetting('sync_paused', '0');
           backupWorker.resumeScheduledBackup();
           updateTrayStatus('idle', '');
           sendToWindow('status:change', { status: 'idle' });
         } else {
+          db.setSetting('sync_paused', '1');
           watcher.stopWatcher();
           scheduler.stopScheduler();
-          backupWorker.cancelScheduledBackup();
-          db.setSetting('sync_paused', '1');
+          backupWorker.stopBackup('Backup paused from tray');
           updateTrayStatus('paused', '');
           sendToWindow('status:change', { status: 'paused' });
         }

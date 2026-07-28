@@ -1172,20 +1172,23 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   });
 
   ipcMain.handle('sync:pause', async () => {
+    db.setSetting('sync_paused', '1');
+    sendToRenderer('status:change', { status: 'paused', details: 'Stopping active backup transfers...' });
+    tray.updateTrayStatus('paused', 'Stopping active backup transfers...');
     watcher.stopWatcher();
     scheduler.stopScheduler();
-    backupWorker.stopBackup();
-    db.setSetting('sync_paused', '1');
-    sendToRenderer('status:change', { status: 'paused' });
-    return true;
+    const result = backupWorker.stopBackup('Backup paused by user');
+    sendToRenderer('status:change', { status: 'paused', details: '' });
+    tray.updateTrayStatus('paused', '');
+    return { success: true, ...result };
   });
 
   ipcMain.handle('sync:resume', async () => {
     db.setSetting('sync_paused', '0');
     watcher.initWatcher();
     scheduler.startScheduler();
-    db.setSetting('sync_paused', '0');
     backupWorker.resumeScheduledBackup();
+    tray.updateTrayStatus('idle', '');
     sendToRenderer('status:change', { status: 'idle' });
     return true;
   });

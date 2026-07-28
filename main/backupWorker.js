@@ -16,6 +16,14 @@ const remoteCatalog = require('./remoteCatalog');
 const FILE_ACTIVITY_PREVIEW_LIMIT = 200;
 const DB_COMPLETION_BATCH_SIZE = 200;
 
+class BackupPausedError extends Error {
+  constructor(reason = 'Backup paused') {
+    super(reason);
+    this.name = 'BackupPausedError';
+    this.code = 'ERR_BACKUP_PAUSED';
+  }
+}
+
 class BackupWorker extends EventEmitter {
   constructor() {
     super();
@@ -26,6 +34,9 @@ class BackupWorker extends EventEmitter {
     this.watcherDebounceMs = 10000;
     this.watcherMaxWaitMs = 60000;
     this.currentRunStats = null;
+    this.activeRun = null;
+    this.pausedRunRequest = null;
+    this.resumeAfterStop = false;
   }
 
   markDirtyForPath(filePath, action = 'changed') {
@@ -49,6 +60,7 @@ class BackupWorker extends EventEmitter {
   }
 
   scheduleBackup(delayMs = this.watcherDebounceMs) {
+    if (db.getSetting('sync_paused') === '1') return false;
     if (this.timer) clearTimeout(this.timer);
     if (!this.firstDirtyAt) this.firstDirtyAt = Date.now();
 
@@ -63,6 +75,7 @@ class BackupWorker extends EventEmitter {
         console.error('BackupWorker: scheduled backup failed:', error.message);
       });
     }, cappedDelayMs);
+    return true;
   }
 
   cancelScheduledBackup() {
@@ -73,9 +86,39 @@ class BackupWorker extends EventEmitter {
     this.firstDirtyAt = null;
   }
 
-  stopBackup() {
+  stopBackup(reason = 'Backup paused') {
     this.cancelScheduledBackup();
-    this.isRunning = false;
+    if (this.activeRun) {
+      this.activeRun.cancelRequested = true;
+      this.activeRun.cancelReason = reason;
+    }
+    for (const folder of db.getEnabledFolders()) {
+      if (folder.sync_state !== 'syncing') continue;
+      const progress = {
+        folderId: folder.id,
+        folderPath: folder.local_path,
+        remotePath: folder.remote_path,
+        state: 'paused',
+        phase: 'paused',
+        stage: 'paused',
+        stageLabel: reason,
+        percent: Number(folder.sync_percent) || 0,
+        filesDone: Number(folder.sync_files_done) || 0,
+        filesTotal: Number(folder.sync_files_total) || 0,
+        bytesDone: Number(folder.sync_bytes_done) || 0,
+        bytesTotal: Number(folder.sync_bytes_total) || 0,
+        speed: 0,
+        etaSec: null,
+        currentItem: folder.sync_current_item || ''
+      };
+      db.updateFolderSyncProgress(folder.id, progress);
+      this.emit('backup:folder-progress', progress);
+    }
+    const cancelledProcesses = rclone.cancelOperation('backup', reason);
+    return {
+      wasRunning: this.isRunning,
+      cancelledProcesses
+    };
   }
 
   clearDirtyFolder(folderId) {
@@ -87,13 +130,54 @@ class BackupWorker extends EventEmitter {
 
   resumeScheduledBackup() {
     if (db.getSetting('sync_paused') === '1') return;
+    if (this.isRunning) {
+      if (this.activeRun?.cancelRequested) this.resumeAfterStop = true;
+      return;
+    }
+    if (this.pausedRunRequest) {
+      const request = this.pausedRunRequest;
+      this.pausedRunRequest = null;
+      setImmediate(() => {
+        this.runBackup(request.folderIds, request.options).catch(error => {
+          console.error('BackupWorker: resumed backup failed:', error.message);
+        });
+      });
+      return;
+    }
     if (this.dirtyFolders.size > 0 && !this.timer && !this.isRunning) {
       this.scheduleBackup();
     }
   }
 
   async runBackup(folderIds = null, options = {}) {
-    if (db.getSetting('sync_paused') === '1' && !options.manual) {
+    return rclone.runWithOperation('backup', () => this.runBackupInContext(folderIds, options));
+  }
+
+  isCancellationError(error, runState = this.activeRun) {
+    return !!(
+      runState?.cancelRequested ||
+      error?.code === 'ERR_BACKUP_PAUSED' ||
+      rclone.isOperationCancelledError(error)
+    );
+  }
+
+  rethrowIfCancelled(error) {
+    if (
+      this.isCancellationError(error) ||
+      db.getSetting('sync_paused') === '1'
+    ) {
+      throw new BackupPausedError(this.activeRun?.cancelReason || 'Backup paused');
+    }
+  }
+
+  throwIfCancellationRequested() {
+    if (this.activeRun?.cancelRequested || db.getSetting('sync_paused') === '1') {
+      throw new BackupPausedError(this.activeRun?.cancelReason || 'Backup paused');
+    }
+  }
+
+  async runBackupInContext(folderIds = null, options = {}) {
+    if (db.getSetting('sync_paused') === '1') {
       console.log('BackupWorker: backups are currently paused.');
       return false;
     }
@@ -120,6 +204,13 @@ class BackupWorker extends EventEmitter {
       return false;
     }
 
+    const runState = {
+      cancelRequested: false,
+      cancelReason: 'Backup paused'
+    };
+    this.activeRun = runState;
+    this.pausedRunRequest = null;
+    this.resumeAfterStop = false;
     this.isRunning = true;
     this.currentRunStats = {
       filesSynced: 0,
@@ -133,12 +224,14 @@ class BackupWorker extends EventEmitter {
     };
     this.emit('backup:start', {});
 
-    // Device detection & hostname change alignment
-    await this.alignDeviceIdentity();
-
     const processedFolderIds = new Set();
+    let completedNormally = false;
 
     try {
+      // Device detection & hostname change alignment
+      await this.alignDeviceIdentity();
+      this.throwIfCancellationRequested();
+
       const folders = db.getEnabledFolders();
       remoteSafety.ensureVaultMarker().catch(error => {
         console.warn('BackupWorker: remote vault marker refresh failed:', error.message);
@@ -155,10 +248,12 @@ class BackupWorker extends EventEmitter {
       const folderPlans = new Map();
       const planner = require('./backupPlanner');
       for (const folder of effective) {
+        this.throwIfCancellationRequested();
         try {
           const folderPlan = !!options.dirtyOnly
             ? await planner.planDirtyFolderAsync(folder)
             : await planner.planFolderAsync(folder);
+          this.throwIfCancellationRequested();
 
           const executableItems = folderPlan.workItems.filter(item =>
             ['repair_active', 'upload', 'delete_history'].includes(item.type)
@@ -172,6 +267,7 @@ class BackupWorker extends EventEmitter {
 
           folderPlans.set(folder.id, { plan: folderPlan, filesTotal: folderFiles, bytesTotal: folderBytes });
         } catch (e) {
+          this.rethrowIfCancelled(e);
           console.warn(`BackupWorker: pre-planning failed for folder ${folder.id}:`, e.message);
         }
       }
@@ -187,6 +283,7 @@ class BackupWorker extends EventEmitter {
       });
 
       for (const [index, folder] of effective.entries()) {
+        this.throwIfCancellationRequested();
         processedFolderIds.add(folder.id);
         const folderPrePlan = folderPlans.get(folder.id);
         await this.runFolderBackup(folder, {
@@ -196,6 +293,7 @@ class BackupWorker extends EventEmitter {
           dirtyOnly: !!options.dirtyOnly,
           prePlan: folderPrePlan
         });
+        this.throwIfCancellationRequested();
 
         if (folderPrePlan && this.currentRunStats) {
           this.currentRunStats.globalFilesDone += folderPrePlan.filesTotal;
@@ -203,26 +301,40 @@ class BackupWorker extends EventEmitter {
         }
       }
 
+      this.throwIfCancellationRequested();
       db.setSetting('last_full_sync', new Date().toISOString());
       if (!options.dirtyOnly) {
         db.setSetting('last_full_reconcile', new Date().toISOString());
       }
       await this.purgeExpiredHistory();
+      this.throwIfCancellationRequested();
       await remoteCatalog.publish();
+      this.throwIfCancellationRequested();
       // A replica mirrors the encrypted vault itself (including version history
       // and restore metadata), never a second upload from the local folders.
       // Replica failures are recorded against that destination but do not turn
       // a successful primary backup into a failure.
       const vaultDestinations = require('./vaultDestinations');
       const replicaOutcomes = await vaultDestinations.replicateAll();
+      this.throwIfCancellationRequested();
       const failedReplicas = replicaOutcomes.filter(outcome => outcome && outcome.ok === false);
       if (failedReplicas.length > 0) {
         console.warn(`BackupWorker: ${failedReplicas.length} vault replica(s) need attention.`);
       }
       await db.flushWritesAsync();
+      this.throwIfCancellationRequested();
+      completedNormally = true;
       this.emit('backup:complete', { ...(this.currentRunStats || {}) });
       return true;
     } catch (error) {
+      if (this.isCancellationError(error, runState)) {
+        this.pausedRunRequest = {
+          folderIds: Array.isArray(folderIds) ? [...folderIds] : folderIds,
+          options: { ...options }
+        };
+        this.emit('backup:paused', runState.cancelReason || 'Backup paused');
+        return false;
+      }
       this.recordRunFailure();
       this.emit('backup:error', {
         ...(this.currentRunStats || {}),
@@ -233,10 +345,18 @@ class BackupWorker extends EventEmitter {
       db.flushWrites();
       this.currentRunStats = null;
       this.isRunning = false;
-      if (options.dirtyOnly) {
+      if (this.activeRun === runState) this.activeRun = null;
+      if (completedNormally && options.dirtyOnly) {
         for (const folderId of processedFolderIds) this.dirtyFolders.delete(folderId);
       }
-      if (this.dirtyFolders.size > 0) this.scheduleBackup();
+      const shouldResume = this.resumeAfterStop && db.getSetting('sync_paused') !== '1';
+      this.resumeAfterStop = false;
+      if (shouldResume) {
+        this.resumeScheduledBackup();
+      } else if (completedNormally && this.dirtyFolders.size > 0) {
+        this.scheduleBackup();
+      }
+      this.emit('backup:idle', { paused: !completedNormally });
     }
   }
 
@@ -303,6 +423,7 @@ class BackupWorker extends EventEmitter {
     try {
       catalog = await remoteCatalog.readRemote();
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.log('BackupWorker: remote catalog not found or empty, skipping identity alignment:', error.message);
       return;
     }
@@ -541,6 +662,7 @@ class BackupWorker extends EventEmitter {
 
   async recordCompletedItems(folder, items, counters, recordItem) {
     for (let index = 0; index < items.length; index += DB_COMPLETION_BATCH_SIZE) {
+      this.throwIfCancellationRequested();
       const chunk = items.slice(index, index + DB_COMPLETION_BATCH_SIZE);
       await db.withWriteBatch(async () => {
         for (const item of chunk) {
@@ -632,6 +754,7 @@ class BackupWorker extends EventEmitter {
       });
       return true;
     } catch (error) {
+      this.rethrowIfCancelled(error);
       this.recordRunFailure();
       db.updateFolderVerificationStatus(folder.id, false, { error: error.message });
       db.updateFolderSyncStatus(folder.id, false, error.message);
@@ -655,6 +778,7 @@ class BackupWorker extends EventEmitter {
   }
 
   async runFolderBackup(folder, { folderNumber, totalFolders, coveredChildren, dirtyOnly = false, prePlan = null }) {
+    this.throwIfCancellationRequested();
     const startedAt = new Date().toISOString();
     const base = {
       folderId: folder.id,
@@ -708,6 +832,7 @@ class BackupWorker extends EventEmitter {
           }, coveredChildren);
         }
       } catch (error) {
+        this.rethrowIfCancelled(error);
         db.updateFolderRemoteIntegrityScan(folder.id);
         console.warn('BackupWorker: remote integrity repair scan skipped:', error.message);
       }
@@ -721,6 +846,7 @@ class BackupWorker extends EventEmitter {
       plan = dirtyOnly ? await planner.planDirtyFolderAsync(folder) : await planner.planFolderAsync(folder);
     }
     } catch (error) {
+      this.rethrowIfCancelled(error);
       this.recordRunFailure();
       db.updateFolderSyncStatus(folder.id, false, error.message);
       this.emitFolderProgress(folder, {
@@ -825,12 +951,19 @@ class BackupWorker extends EventEmitter {
     const newDirectItems = directUploadItems.filter(item => !item.previousRemotePath);
     const modifiedDirectItems = directUploadItems.filter(item => item.previousRemotePath && !(item.previousStorage === 'pack' && item.previousPackRemotePath));
 
+    this.throwIfCancellationRequested();
     await this.repairActiveCopies(folder, repairItems, base, coveredChildren, counters, totals);
+    this.throwIfCancellationRequested();
     await this.uploadPackedFiles(folder, packedUploadItems, base, coveredChildren, counters, totals, packSettings);
+    this.throwIfCancellationRequested();
     await this.uploadPackedFileMigrations(folder, packedToDirectItems, base, coveredChildren, counters, totals);
+    this.throwIfCancellationRequested();
     await this.uploadNewFiles(folder, newDirectItems, base, coveredChildren, counters, totals);
+    this.throwIfCancellationRequested();
     await this.uploadModifiedFiles(folder, modifiedDirectItems, base, coveredChildren, counters, totals);
+    this.throwIfCancellationRequested();
     await this.deleteFilesToHistory(folder, deleteItems, base, coveredChildren, counters, totals);
+    this.throwIfCancellationRequested();
 
     for (const scanError of scanErrors) {
       db.addSyncLog({
@@ -962,8 +1095,10 @@ class BackupWorker extends EventEmitter {
   }
 
   async retryPackedItemsDirect(folder, items, counters, reason, completedPackId = '') {
+    this.rethrowIfCancelled(reason);
     console.warn(`BackupWorker: packed upload unavailable; retrying ${items.length} original file(s) directly:`, reason && reason.message ? reason.message : reason);
     for (const item of items) {
+      this.throwIfCancellationRequested();
       const entry = db.getManifestEntry(folder.id, item.relativePath);
       if (completedPackId && entry && entry.status === 'backed_up' && entry.pack_id === completedPackId) continue;
       await this.uploadSingleItem(folder, item, counters);
@@ -974,6 +1109,7 @@ class BackupWorker extends EventEmitter {
     try {
       return await rclone.syncFile(localPath, remotePath);
     } catch (originalError) {
+      this.rethrowIfCancelled(originalError);
       const message = String(originalError && originalError.message ? originalError.message : originalError);
       if (!/source doesn't exist or is a directory/i.test(message)) throw originalError;
 
@@ -1003,6 +1139,7 @@ class BackupWorker extends EventEmitter {
         }));
         return await rclone.syncFile(stagingPath, remotePath);
       } catch (stagingError) {
+        this.rethrowIfCancelled(stagingError);
         const combined = new Error(
           `Local source retry failed. Node verified the original file at "${localPath}" (${stat.size} bytes), ` +
           `but rclone also rejected the staged copy. Original: ${message} Staged: ${stagingError.message || stagingError}`
@@ -1120,6 +1257,7 @@ class BackupWorker extends EventEmitter {
 
   async repairActiveCopies(folder, items, base, coveredChildren, counters, totals) {
     for (const item of items) {
+      this.throwIfCancellationRequested();
       this.emitItems(folder, [item], { status: 'versioning', percent: 0, error: 'Repairing active backup copy' });
       this.emitFolderProgress(folder, {
         ...base,
@@ -1142,6 +1280,7 @@ class BackupWorker extends EventEmitter {
         manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
         this.completeItem(folder, item, counters);
       } catch (error) {
+        this.rethrowIfCancelled(error);
         if (await this.reconcilePromotedItem(folder, item, counters)) continue;
         manifest.recordActiveRepairFailure(folder, item.relativePath, error);
         this.failItem(folder, item, error, 'at_risk');
@@ -1154,6 +1293,7 @@ class BackupWorker extends EventEmitter {
 
     const availableItems = [];
     for (const item of items) {
+      this.throwIfCancellationRequested();
       if (fs.existsSync(item.localPath)) availableItems.push(item);
       else await this.handleDisappearedLocalItem(folder, item, counters);
     }
@@ -1165,6 +1305,7 @@ class BackupWorker extends EventEmitter {
     const groups = packStore.groupPackItems(items, packSettings);
 
     for (const [index, group] of groups.entries()) {
+      this.throwIfCancellationRequested();
       const packId = packStore.makePackId(folder, runId, index + 1, group);
       const packRemotePath = packStore.makePackRemotePath(folder, packId);
       let packFile = null;
@@ -1189,7 +1330,9 @@ class BackupWorker extends EventEmitter {
 
       try {
         packFile = packStore.createPackFile(folder, packId, group);
+        this.throwIfCancellationRequested();
       } catch (error) {
+        this.rethrowIfCancelled(error);
         const survivingItems = [];
         let missingCount = 0;
         for (const item of group) {
@@ -1280,6 +1423,7 @@ class BackupWorker extends EventEmitter {
                 });
               }
             } catch (error) {
+              this.rethrowIfCancelled(error);
               manifest.recordFailure(folder, item.relativePath, error);
               this.failItem(folder, item, error);
               continue;
@@ -1303,6 +1447,7 @@ class BackupWorker extends EventEmitter {
           });
         });
       } catch (error) {
+        this.rethrowIfCancelled(error);
         await this.retryPackedItemsDirect(folder, group, counters, error, packId);
       } finally {
         if (packFile) {
@@ -1337,6 +1482,7 @@ class BackupWorker extends EventEmitter {
         });
       });
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: batch upload failed; falling back to per-file uploads:', error.message);
       for (const item of items) {
         await this.uploadSingleItem(folder, item, counters);
@@ -1390,6 +1536,7 @@ class BackupWorker extends EventEmitter {
         });
       });
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: packed-to-direct batch migration failed; falling back to per-file uploads:', error.message);
       for (const item of items) {
         await this.uploadSinglePackedFileMigration(folder, item, counters);
@@ -1418,6 +1565,7 @@ class BackupWorker extends EventEmitter {
       });
       this.completeItem(folder, item, counters);
     } catch (error) {
+      this.rethrowIfCancelled(error);
       if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
       manifest.recordFailure(folder, item.relativePath, error);
       this.failItem(folder, item, error);
@@ -1442,6 +1590,7 @@ class BackupWorker extends EventEmitter {
         this.emitBatchProgress(folder, base, coveredChildren, counters, totals, progress, 'Starting Google Drive upload');
       });
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: staged batch upload failed; falling back to per-file uploads:', error.message);
       for (const item of items) {
         await this.uploadSingleItem(folder, item, counters);
@@ -1468,6 +1617,7 @@ class BackupWorker extends EventEmitter {
         await this.yieldToEventLoop();
       }
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: batch version move failed; isolating files one by one:', error.message);
       for (const item of items) {
         await this.promoteStagedItem(folder, item, stagingRoot, historyRoot, counters);
@@ -1495,6 +1645,7 @@ class BackupWorker extends EventEmitter {
         });
       });
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: staged promotion failed; marking files at risk:', error.message);
       for (const item of items) {
         if (await this.reconcilePromotedItem(folder, item, counters)) continue;
@@ -1550,6 +1701,7 @@ class BackupWorker extends EventEmitter {
       });
       this.completeItem(folder, item, counters);
     } catch (error) {
+      this.rethrowIfCancelled(error);
       if (String(error.message || error).toLowerCase().includes('staging')) {
         manifest.recordFailure(folder, item.relativePath, error);
         this.failItem(folder, item, error);
@@ -1580,6 +1732,7 @@ class BackupWorker extends EventEmitter {
         });
         this.completeItem(folder, item, counters);
       } catch (error) {
+        this.rethrowIfCancelled(error);
         if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
         manifest.recordFailure(folder, item.relativePath, error);
         this.failItem(folder, item, error);
@@ -1595,6 +1748,7 @@ class BackupWorker extends EventEmitter {
     try {
       await this.syncLocalFileWithStagingFallback(item.localPath, stagingPath);
     } catch (error) {
+      this.rethrowIfCancelled(error);
       if (await this.handleDisappearedLocalItem(folder, item, counters)) return;
       manifest.recordFailure(folder, item.relativePath, error);
       this.failItem(folder, item, error);
@@ -1656,6 +1810,7 @@ class BackupWorker extends EventEmitter {
         });
       });
     } catch (error) {
+      this.rethrowIfCancelled(error);
       console.warn('BackupWorker: batch delete-history move failed; falling back to per-file moves:', error.message);
       for (const item of items) {
         await this.deleteSingleItem(folder, item, counters);
@@ -1678,6 +1833,7 @@ class BackupWorker extends EventEmitter {
       });
       this.completeItem(folder, item, counters);
     } catch (error) {
+      this.rethrowIfCancelled(error);
       manifest.recordFailure(folder, item.relativePath, error);
       this.failItem(folder, item, error);
     }
@@ -1708,6 +1864,7 @@ class BackupWorker extends EventEmitter {
       try {
         await rclone.moveRemoteFile(packPath, rclone.getVaultPath('expired', packPath));
       } catch (error) {
+        this.rethrowIfCancelled(error);
         if (!rclone.__private.isNotFoundError(error)) {
           console.warn('BackupWorker: pack expiry skipped:', error.message);
         }
@@ -1786,6 +1943,7 @@ class BackupWorker extends EventEmitter {
           try {
             await rclone.moveRemoteFile(version.remote_path, rclone.getVaultPath('expired', version.remote_path));
           } catch (error) {
+            this.rethrowIfCancelled(error);
             console.warn('BackupWorker: history expiry skipped:', error.message);
             retained.push(version);
           }

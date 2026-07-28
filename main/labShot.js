@@ -25,13 +25,13 @@ function getLabShotTrayImage() {
     if (typeof image.setTemplateImage === 'function') image.setTemplateImage(false);
     return image;
   }
-  // Fallback 16x16 cyan native image
+  // Fallback 16x16 purple native image
   const size = 16;
   const data = Buffer.alloc(size * size * 4);
   for (let i = 0; i < size * size * 4; i += 4) {
-    data[i] = 6;
-    data[i + 1] = 182;
-    data[i + 2] = 212;
+    data[i] = 168;
+    data[i + 1] = 85;
+    data[i + 2] = 247;
     data[i + 3] = 255;
   }
   return nativeImage.createFromBuffer(data, { width: size, height: size });
@@ -340,11 +340,62 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:getGallery', async () => {
-    return db.getDb().labshot_history || [];
+    const memoryHistory = [...(db.getDb().labshot_history || [])];
+    const memoryPaths = new Set(memoryHistory.map(item => item.savedToDisk).filter(Boolean));
+
+    // Also scan LabSuite Screenshots directory for vault / decrypted files
+    try {
+      const labshotDir = path.join(app.getPath('documents'), 'LabSuite', 'Screenshots');
+      if (fs.existsSync(labshotDir)) {
+        const files = await fs.promises.readdir(labshotDir);
+        for (const file of files) {
+          if (!/\.(png|jpg|jpeg|webp)$/i.test(file)) continue;
+          const fullPath = path.join(labshotDir, file);
+          if (memoryPaths.has(fullPath)) continue;
+
+          try {
+            const stat = await fs.promises.stat(fullPath);
+            const imageBuf = await fs.promises.readFile(fullPath);
+            const dataUrl = `data:image/png;base64,${imageBuf.toString('base64')}`;
+
+            memoryHistory.push({
+              id: `vault-${file}`,
+              timestamp: stat.mtime.toISOString(),
+              title: file,
+              dataUrl,
+              savedToVault: true,
+              savedToDisk: fullPath
+            });
+            memoryPaths.add(fullPath);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    // Sort by newest timestamp first
+    memoryHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return memoryHistory;
   });
 
   ipcMain.handle('labshot:deleteScreenshot', async (event, { id }) => {
     let history = db.getDb().labshot_history || [];
+    const itemToDelete = history.find(item => item.id === id);
+
+    // If file exists on disk, remove it
+    if (itemToDelete && itemToDelete.savedToDisk && fs.existsSync(itemToDelete.savedToDisk)) {
+      try {
+        await fs.promises.unlink(itemToDelete.savedToDisk);
+      } catch (_) {}
+    } else if (typeof id === 'string' && id.startsWith('vault-')) {
+      const fileName = id.replace('vault-', '');
+      const fullPath = path.join(app.getPath('documents'), 'LabSuite', 'Screenshots', fileName);
+      if (fs.existsSync(fullPath)) {
+        try {
+          await fs.promises.unlink(fullPath);
+        } catch (_) {}
+      }
+    }
+
     history = history.filter(item => item.id !== id);
     db.getDb().labshot_history = history;
     db.saveDatabase();
