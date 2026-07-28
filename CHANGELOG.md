@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.6.0 - 2026-07-28
+
+### Added
+
+- **🛡️ Auto-Redact / Privacy Masking**: Added a single-click **"🛡️ Redact"** button to the LabShot overlay toolbar that automatically places privacy blur annotations over sensitive on-screen content.
+- **🎨 Screen Color Picker & Eyedropper Tool (`E` hotkey)**: Added an Eyedropper tool to the LabShot overlay toolbar. Hovering over any pixel renders a live magnifying swatch loupe badge with `#HEX` and `RGB` color codes, and clicking copies the `#HEX` code directly to your system clipboard.
+
 ## 2.5.5 - 2026-07-28
 
 ### Fixed

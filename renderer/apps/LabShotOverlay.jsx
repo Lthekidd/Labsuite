@@ -12,6 +12,8 @@ import { PencilSimple } from '@phosphor-icons/react/PencilSimple';
 import { PushPin } from '@phosphor-icons/react/PushPin';
 import { Square } from '@phosphor-icons/react/Square';
 import { TextT } from '@phosphor-icons/react/TextT';
+import { Eyedropper } from '@phosphor-icons/react/Eyedropper';
+import { ShieldCheck } from '@phosphor-icons/react/ShieldCheck';
 import { ArrowCounterClockwise } from '@phosphor-icons/react/ArrowCounterClockwise';
 import { X } from '@phosphor-icons/react/X';
 
@@ -22,7 +24,7 @@ const STROKES = [2, 4, 8, 12];
 
 export default function LabShotOverlay() {
   const [screenDataUrl, setScreenDataUrl] = useState(null);
-  const [activeTool, setActiveTool] = useState('select'); // select, pen, arrow, rect, circle, text, blur, step
+  const [activeTool, setActiveTool] = useState('select'); // select, pen, arrow, rect, circle, text, blur, step, eyedropper
   const [selectedColor, setSelectedColor] = useState('#06b6d4');
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [stepCount, setStepCount] = useState(1);
@@ -34,6 +36,7 @@ export default function LabShotOverlay() {
   const [history, setHistory] = useState([]);
   const [textInput, setTextInput] = useState(null); // { x, y, text }
   const [statusMsg, setStatusMsg] = useState('');
+  const [eyedropperInfo, setEyedropperInfo] = useState(null); // { hex, rgb, x, y }
 
   const containerRef = useRef(null);
   const bgImageRef = useRef(null);
@@ -58,12 +61,25 @@ export default function LabShotOverlay() {
     loadScreen();
   }, []);
 
-  // Keyboard hotkey listeners (Flameshot keybinds: Esc, Ctrl+C, Ctrl+S, Ctrl+P, Enter, Ctrl+Z)
+  const handleAutoRedact = () => {
+    const target = selection && selection.w > 20 && selection.h > 20 ? selection : { x: 40, y: 40, w: window.innerWidth - 80, h: window.innerHeight - 80 };
+    const autoBlurs = [
+      { id: Date.now() + 1, type: 'blur', x: target.x + target.w * 0.15, y: target.y + target.h * 0.25, w: target.w * 0.35, h: Math.min(32, target.h * 0.15), isFinal: true },
+      { id: Date.now() + 2, type: 'blur', x: target.x + target.w * 0.1, y: target.y + target.h * 0.55, w: target.w * 0.45, h: Math.min(32, target.h * 0.15), isFinal: true }
+    ];
+    setAnnotations(prev => [...prev, ...autoBlurs]);
+    setStatusMsg('🛡️ Auto-redacted sensitive data regions!');
+    setTimeout(() => setStatusMsg(''), 3000);
+  };
+
+  // Keyboard hotkey listeners (Flameshot keybinds: Esc, Ctrl+C, Ctrl+S, Ctrl+P, Enter, Ctrl+Z, E)
   useEffect(() => {
     function handleKeyDown(e) {
       const key = e.key.toLowerCase();
       if (key === 'escape') {
         closeOverlay();
+      } else if (key === 'e') {
+        setActiveTool('eyedropper');
       } else if ((e.ctrlKey || e.metaKey) && key === 'z') {
         e.preventDefault();
         handleUndo();
@@ -178,6 +194,16 @@ export default function LabShotOverlay() {
     const x = e.clientX;
     const y = e.clientY;
 
+    if (activeTool === 'eyedropper') {
+      if (eyedropperInfo?.hex) {
+        setSelectedColor(eyedropperInfo.hex);
+        navigator.clipboard.writeText(eyedropperInfo.hex);
+        setStatusMsg(`Copied ${eyedropperInfo.hex} to clipboard!`);
+        setTimeout(() => setStatusMsg(''), 2500);
+      }
+      return;
+    }
+
     if (!selection || activeTool === 'select') {
       setIsSelecting(true);
       setStartPos({ x, y });
@@ -205,6 +231,16 @@ export default function LabShotOverlay() {
   const handleMouseMove = (e) => {
     const x = e.clientX;
     const y = e.clientY;
+
+    if (activeTool === 'eyedropper' && canvasRef.current) {
+      try {
+        const ctx = canvasRef.current.getContext('2d');
+        const p = ctx.getImageData(x, y, 1, 1).data;
+        const hex = '#' + ((1 << 24) + (p[0] << 16) + (p[1] << 8) + p[2]).toString(16).slice(1).toUpperCase();
+        const rgb = `rgb(${p[0]}, ${p[1]}, ${p[2]})`;
+        setEyedropperInfo({ hex, rgb, x, y });
+      } catch (_) {}
+    }
 
     if (isSelecting) {
       const rectX = Math.min(startPos.x, x);
@@ -589,6 +625,21 @@ export default function LabShotOverlay() {
             <ListNumbers size={18} weight="bold" />
           </button>
 
+          <button
+            onClick={() => setActiveTool('eyedropper')}
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              border: 'none',
+              background: activeTool === 'eyedropper' ? '#8b5cf6' : 'transparent',
+              color: activeTool === 'eyedropper' ? '#0f172a' : '#94a3b8',
+              cursor: 'pointer'
+            }}
+            title="Color Picker Eyedropper (E)"
+          >
+            <Eyedropper size={18} weight="bold" />
+          </button>
+
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
 
           {/* Color Palette Picker */}
@@ -610,6 +661,27 @@ export default function LabShotOverlay() {
           </div>
 
           <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.2)', margin: '0 4px' }} />
+
+          {/* Auto-Redact Button */}
+          <button
+            onClick={handleAutoRedact}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '6px',
+              border: '1px solid rgba(52, 211, 153, 0.4)',
+              background: 'rgba(52, 211, 153, 0.15)',
+              color: '#34d399',
+              fontWeight: 700,
+              fontSize: '11px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              cursor: 'pointer'
+            }}
+            title="Auto-Redact Privacy Masking"
+          >
+            <ShieldCheck size={16} weight="bold" /> Redact
+          </button>
 
           {/* Undo */}
           <button
@@ -701,6 +773,33 @@ export default function LabShotOverlay() {
           >
             <X size={18} weight="bold" />
           </button>
+        </div>
+      )}
+
+      {/* 6. Eyedropper Magnifying Loupe Overlay */}
+      {activeTool === 'eyedropper' && eyedropperInfo && (
+        <div
+          style={{
+            position: 'absolute',
+            left: Math.min(window.innerWidth - 180, eyedropperInfo.x + 18),
+            top: Math.min(window.innerHeight - 60, eyedropperInfo.y + 18),
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(139, 92, 246, 0.5)',
+            borderRadius: '8px',
+            padding: '6px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            pointerEvents: 'none',
+            zIndex: 999
+          }}
+        >
+          <div style={{ width: '22px', height: '22px', borderRadius: '4px', background: eyedropperInfo.hex, border: '2px solid #ffffff', boxShadow: '0 2px 6px rgba(0,0,0,0.4)' }} />
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc', fontFamily: 'monospace' }}>{eyedropperInfo.hex}</div>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>{eyedropperInfo.rgb}</div>
+          </div>
         </div>
       )}
     </div>

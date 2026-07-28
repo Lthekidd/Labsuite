@@ -285,7 +285,11 @@ function initIpc() {
     return { success: true };
   });
 
-  ipcMain.handle('labshot:copyToClipboard', async (event, { dataUrl }) => {
+  ipcMain.handle('labshot:copyToClipboard', async (event, { dataUrl, text }) => {
+    if (text) {
+      clipboard.writeText(text);
+      return { success: true };
+    }
     if (!dataUrl) throw new Error('No image data provided for clipboard.');
     const image = nativeImage.createFromDataURL(dataUrl);
     clipboard.writeImage(image);
