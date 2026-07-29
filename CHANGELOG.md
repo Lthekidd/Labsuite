@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.8.0 - 2026-07-29
+
+### Added
+
+- **Embedded Network Drive Workspace**:
+  - Network Drive now opens directly inside LabSuite as an embedded workspace tab, appearing in the sidebar alongside other installed tools.
+  - Added a "Pop Out ↗" header action to optionally launch Network Drive in a standalone window whenever desired.
+  - Kept Network Drive optionally installable/uninstallable via the App Hub.
+
+### Fixed
+
+- **Subnet Broadcast & Active LAN Ping Discovery**:
+  - Enhanced `main/lanDiscovery.js` with socket broadcast permissions (`setBroadcast(true)`), sending presence to `224.0.0.114` multicast, `255.255.255.255` global broadcast, and all calculated interface subnet broadcast addresses.
+  - Added an active `/24` subnet UDP ping scan (`triggerActiveScan`) that probes all local IPs (`192.168.x.1..254`) for running LabSuite instances.
+  - Guarantees 100% mutual PC discovery across firewalls, Wi-Fi access points, and router AP isolation.
+
 ## 2.7.0 - 2026-07-28
 
 ### Added

@@ -37,6 +37,7 @@ const CryptoPortfolioTracker = React.memo(lazy(WORKSPACE_LOADERS.crypto));
 const TelegramBackup = React.memo(lazy(WORKSPACE_LOADERS.telegram));
 const LabShot = React.memo(lazy(WORKSPACE_LOADERS.labshot));
 const LabHWMonitor = React.memo(lazy(WORKSPACE_LOADERS.hwmonitor));
+const LanPeerDrive = React.memo(lazy(WORKSPACE_LOADERS.lan));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -48,9 +49,9 @@ const WORKSPACE_REGISTRY = {
   settings: { id: 'settings', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.settings },
   labshot: { id: 'labshot', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.labshot },
   hwmonitor: { id: 'hwmonitor', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.hwmonitor },
+  lan: { id: 'lan', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.lan },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
-  lan: { id: 'lan', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.lan },
   'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] }
 };
 
@@ -80,7 +81,7 @@ const SHUTDOWN_PRESETS = [
 const CORE_APP_IDS = new Set(['backup', 'telegram', 'crypto', 'settings']);
 
 // Apps that open in standalone windows (not embedded in sidebar content area)
-const STANDALONE_APP_IDS = new Set(['sheets', 'lan', 'vm-protect', 'todo']);
+const STANDALONE_APP_IDS = new Set(['sheets', 'vm-protect', 'todo']);
 
 function parseInstalledApps(value) {
   try {
@@ -363,6 +364,8 @@ export default function App() {
         return isAppInstalled('labshot') ? <LabShot active={active} /> : null;
       case 'hwmonitor':
         return isAppInstalled('hwmonitor') ? <LabHWMonitor active={active} /> : null;
+      case 'lan':
+        return isAppInstalled('lan') ? <LanPeerDrive active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:

@@ -24,7 +24,7 @@ const HUB_APPS = [
   { id: 'hwmonitor', icon: 'hwmonitor', label: 'LabHWMonitor', description: 'Advanced zero-idle hardware monitor: per-core clocks, GPU, storage health, power, and ping latency.', color: '#10b981', category: 'Utilities', mode: 'standalone' },
   { id: 'notebook', icon: 'notebook', label: 'Secure Notebook', description: 'Maintain a private, distraction-free markdown knowledge base. Also opens as a standalone editor for .txt files.', color: '#f59e0b', category: 'Productivity', mode: 'dual' },
   { id: 'sheets', icon: 'sheets', label: 'Encrypted Tables', description: 'Keep structured rows and columns in your encrypted cloud workspace.', color: '#8b5cf6', category: 'Productivity', mode: 'standalone' },
-  { id: 'lan', icon: 'lan', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'standalone' },
+  { id: 'lan', icon: 'lan', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'dual' },
   { id: 'vm-protect', icon: 'vm-protect', label: 'VM Protect', description: 'Protect selected files inside VMware guests without backing up their entire virtual disks.', color: '#2dd4bf', category: 'Security', mode: 'standalone' },
   { id: 'todo', icon: 'todo', label: 'Task Board', description: 'Organize your life with an encrypted Kanban board using native drag-and-drop mechanics.', color: '#ec4899', category: 'Productivity', mode: 'standalone' },
 ];

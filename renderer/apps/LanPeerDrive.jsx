@@ -902,6 +902,7 @@ export default function LanPeerDrive({ active = true }) {
             {accessStatus.enabled ? 'LAN Access On' : 'LAN Access Off'}
           </span>
           <button className="btn btn-secondary" onClick={refreshPeers} disabled={!accessStatus.enabled || isBusy}>Refresh</button>
+          <button className="btn btn-secondary" onClick={() => safeInvoke('app:openStandalone', { appId: 'lan' })} title="Pop out Network Drive into a standalone window">Pop Out ↗</button>
           {accessStatus.enabled ? (
             <button className="btn btn-danger" onClick={disableNetworkDrive} disabled={isBusy}>Disable</button>
           ) : (

@@ -39,6 +39,31 @@ class LanDiscovery extends EventEmitter {
     return ips;
   }
 
+  getSubnetBroadcasts() {
+    const broadcasts = new Set(['255.255.255.255', MULTICAST_ADDR]);
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          if (iface.netmask) {
+            try {
+              const ipParts = iface.address.split('.').map(Number);
+              const maskParts = iface.netmask.split('.').map(Number);
+              const bcast = ipParts.map((p, i) => (p | (~maskParts[i] & 255))).join('.');
+              broadcasts.add(bcast);
+            } catch (_) {}
+          }
+          // Also default /24 broadcast fallback
+          const parts = iface.address.split('.');
+          if (parts.length === 4) {
+            broadcasts.add(`${parts[0]}.${parts[1]}.${parts[2]}.255`);
+          }
+        }
+      }
+    }
+    return Array.from(broadcasts);
+  }
+
   normalizeServiceOptions(options) {
     if (options === null || typeof options === 'number' || typeof options === 'string') {
       return { webdavPort: options || null };
@@ -57,7 +82,10 @@ class LanDiscovery extends EventEmitter {
     this.serviceInfo.networkDriveEnabled = !!this.serviceInfo.networkDriveEnabled;
     if (!Array.isArray(this.serviceInfo.capabilities)) this.serviceInfo.capabilities = [];
 
-    if (this.socket) this.broadcastPresence();
+    if (this.socket) {
+      this.broadcastPresence();
+      this.triggerActiveScan();
+    }
   }
 
   start(options = {}) {
@@ -67,23 +95,37 @@ class LanDiscovery extends EventEmitter {
 
     this.socket.on('listening', () => {
       try {
+        this.socket.setBroadcast(true);
         this.socket.addMembership(MULTICAST_ADDR);
         this.socket.setMulticastTTL(128);
         this.socket.setMulticastLoopback(true);
       } catch (err) {
-        console.error('LanDiscovery: Failed to configure multicast', err.message);
+        console.error('LanDiscovery: Failed to configure socket parameters:', err.message);
       }
       
-      this.broadcastTimer = setInterval(() => this.broadcastPresence(), BROADCAST_INTERVAL);
-      this.peerCheckTimer = setInterval(() => this.checkPeers(), 5000);
+      this.broadcastTimer = setInterval(() => {
+        this.broadcastPresence();
+      }, BROADCAST_INTERVAL);
+
+      this.peerCheckTimer = setInterval(() => {
+        this.checkPeers();
+        // Periodic active scan to find peers behind strict firewalls/routers
+        this.triggerActiveScan();
+      }, 10000);
+
       this.broadcastPresence();
+      this.triggerActiveScan();
     });
 
     this.socket.on('message', (msg, rinfo) => {
       try {
         const data = JSON.parse(msg.toString());
-        if (data.app === 'LabSuite' && data.type === 'presence') {
+        if (data.app === 'LabSuite' && (data.type === 'presence' || data.type === 'ping')) {
           this.handlePresence(data, rinfo.address);
+          // Reply with direct unicast presence if receiving a ping or broadcast from another peer
+          if (data.instanceId !== this.instanceId) {
+            this.sendDirectPresence(rinfo.address);
+          }
         }
       } catch (e) {
         // ignore invalid messages
@@ -102,11 +144,10 @@ class LanDiscovery extends EventEmitter {
     }
   }
 
-  broadcastPresence() {
-    if (!this.socket) return;
-    const msg = JSON.stringify({
+  getPresencePayload(type = 'presence') {
+    return JSON.stringify({
       app: 'LabSuite',
-      type: 'presence',
+      type,
       instanceId: this.instanceId,
       hostname: os.hostname(),
       deviceId: this.serviceInfo.deviceId,
@@ -116,11 +157,49 @@ class LanDiscovery extends EventEmitter {
       networkDriveEnabled: this.serviceInfo.networkDriveEnabled,
       capabilities: this.serviceInfo.capabilities
     });
+  }
+
+  sendDirectPresence(targetIp) {
+    if (!this.socket || !targetIp) return;
+    const msg = this.getPresencePayload('presence');
     const buf = Buffer.from(msg);
     try {
-      this.socket.send(buf, 0, buf.length, PORT, MULTICAST_ADDR);
-    } catch (err) {
-      // Ignore transient send errors
+      this.socket.send(buf, 0, buf.length, PORT, targetIp);
+    } catch (_) {}
+  }
+
+  broadcastPresence() {
+    if (!this.socket) return;
+    const msg = this.getPresencePayload('presence');
+    const buf = Buffer.from(msg);
+
+    const targets = this.getSubnetBroadcasts();
+    for (const target of targets) {
+      try {
+        this.socket.send(buf, 0, buf.length, PORT, target);
+      } catch (_) {}
+    }
+  }
+
+  triggerActiveScan() {
+    if (!this.socket) return;
+    const msg = this.getPresencePayload('ping');
+    const buf = Buffer.from(msg);
+
+    const localIPs = this.getLocalIPs();
+    for (const localIp of localIPs) {
+      const parts = localIp.split('.');
+      if (parts.length === 4) {
+        const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+        for (let i = 1; i <= 254; i++) {
+          const targetIp = `${prefix}.${i}`;
+          if (targetIp !== localIp) {
+            try {
+              this.socket.send(buf, 0, buf.length, PORT, targetIp);
+            } catch (_) {}
+          }
+        }
+      }
     }
   }
 
