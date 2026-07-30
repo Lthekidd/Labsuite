@@ -122,6 +122,7 @@ const DEFAULT_SETTINGS = {
   last_full_reconcile: '',
   setup_complete: '0',
   sync_paused: '0',
+  sync_pause_after_current: '0',
   smart_throttle_enabled: '0',
   upload_speed_capacity: '10',
   smart_throttle_min_pct: '15',
@@ -161,7 +162,8 @@ let data = {
   settings: { ...DEFAULT_SETTINGS },
   cache: {},
   telegramInstalls: [],
-  telegramArchiveChats: []
+  telegramArchiveChats: [],
+  wolDevices: []
 };
 
 function normalizeStoredErrorMessage(errorMessage) {
@@ -352,6 +354,7 @@ function loadDatabase() {
       if (!data.cache) data.cache = {};
       if (!data.telegramInstalls) data.telegramInstalls = [];
       if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
+      if (!data.wolDevices) data.wolDevices = [];
 
       // ── Migrations ──────────────────────────────────────────────────────
       let migrated = databaseSource.path !== dbPath;
@@ -424,7 +427,7 @@ function loadDatabase() {
 
       // v2.3: App Hub migration — auto-install apps that were previously visible
       if (data.settings.installed_apps === undefined || data.settings.installed_apps === '[]') {
-        const allHubApps = ['notebook', 'sheets', 'lan', 'vm-protect', 'todo'];
+        const allHubApps = ['notebook', 'sheets', 'lan', 'vm-protect', 'todo', 'wol'];
         let hiddenFeatures = [];
         try {
           hiddenFeatures = JSON.parse(String(data.settings.sidebar_hidden_features || '[]'));
@@ -434,6 +437,16 @@ function loadDatabase() {
         const installedApps = allHubApps.filter(id => !hiddenFeatures.includes(id));
         data.settings.installed_apps = JSON.stringify(installedApps);
         migrated = true;
+      } else {
+        // Migration to auto-install wol for existing users
+        try {
+          const installed = JSON.parse(data.settings.installed_apps);
+          if (Array.isArray(installed) && !installed.includes('wol')) {
+            installed.push('wol');
+            data.settings.installed_apps = JSON.stringify(installed);
+            migrated = true;
+          }
+        } catch (_) {}
       }
 
       if (data.settings.battery_mode === 'never') {

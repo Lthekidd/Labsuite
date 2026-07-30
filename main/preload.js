@@ -28,6 +28,7 @@ const INVOKE_CHANNELS = new Set([
   // Sync API
   'sync:triggerNow',
   'sync:pause',
+  'sync:pauseAfterCurrent',
   'sync:resume',
   'sync:resolveConflict',
 
@@ -133,6 +134,13 @@ const INVOKE_CHANNELS = new Set([
   'lan:startDiscovery',
   'lan:stopDiscovery',
   'lan:getPeers',
+  'wol:getDevices',
+  'wol:addDevice',
+  'wol:updateDevice',
+  'wol:removeDevice',
+  'wol:testDevice',
+  'wol:wakeDevice',
+  'wol:discoverDevices',
 
   // LabShot API
   'labshot:startCapture',
@@ -256,6 +264,7 @@ const LISTEN_CHANNELS = new Set([
   'lan:pair-request',
   'lan:transfer-progress',
   'lan:transfer-queue',
+  'wol:wake-progress',
   'vmProtect:state',
   'updates:status',
   'notepad:open-file',

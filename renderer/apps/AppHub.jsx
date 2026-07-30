@@ -27,6 +27,7 @@ const HUB_APPS = [
   { id: 'lan', icon: 'lan', label: 'Network Drive', description: 'Discover computers on your local network and securely mount shared folders as native Windows drives.', color: '#10b981', category: 'Networking', mode: 'dual' },
   { id: 'vm-protect', icon: 'vm-protect', label: 'VM Protect', description: 'Protect selected files inside VMware guests without backing up their entire virtual disks.', color: '#2dd4bf', category: 'Security', mode: 'standalone' },
   { id: 'todo', icon: 'todo', label: 'Task Board', description: 'Organize your life with an encrypted Kanban board using native drag-and-drop mechanics.', color: '#ec4899', category: 'Productivity', mode: 'standalone' },
+  { id: 'wol', icon: 'wol', label: 'Wake-on-LAN', description: 'Power on your configured local network computers remotely by sending UDP Magic Packets.', color: '#ea580c', category: 'Networking', mode: 'embedded' },
 ];
 
 function renderIcon(icon, size = 32) {

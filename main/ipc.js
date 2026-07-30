@@ -52,6 +52,7 @@ const tray = require('./tray');
 const telegramBackup = require('./telegramBackup');
 const telegramArchive = require('./telegramArchive');
 const routerInternet = require('./routerInternet');
+const wakeOnLan = require('./wakeOnLan');
 
 let storageAnalyticsRefresh = null;
 let gDriveInfoRefresh = null;
@@ -1174,6 +1175,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   ipcMain.handle('sync:pause', async () => {
     db.setSetting('sync_paused', '1');
+    db.setSetting('sync_pause_after_current', '0');
     sendToRenderer('status:change', { status: 'paused', details: 'Stopping active backup transfers...' });
     tray.updateTrayStatus('paused', 'Stopping active backup transfers...');
     watcher.stopWatcher();
@@ -1184,13 +1186,35 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return { success: true, ...result };
   });
 
+  ipcMain.handle('sync:pauseAfterCurrent', async () => {
+    if (db.getSetting('sync_paused') === '1') {
+      return { success: true, wasRunning: false, draining: false };
+    }
+    watcher.stopWatcher();
+    scheduler.stopScheduler();
+    const reason = 'Paused after current uploads completed';
+    const result = backupWorker.requestPauseAfterCurrent(reason);
+    if (result.draining) {
+      tray.updateTrayStatus('draining', 'Finishing current uploads; no new files will start');
+      sendToRenderer('status:change', {
+        status: 'draining',
+        details: 'Finishing current uploads; no new files will start'
+      });
+    }
+    return { success: true, ...result };
+  });
+
   ipcMain.handle('sync:resume', async () => {
     db.setSetting('sync_paused', '0');
+    db.setSetting('sync_pause_after_current', '0');
+    backupWorker.cancelPauseAfterCurrent();
     watcher.initWatcher();
     scheduler.startScheduler();
     backupWorker.resumeScheduledBackup();
-    tray.updateTrayStatus('idle', '');
-    sendToRenderer('status:change', { status: 'idle' });
+    const status = backupWorker.isRunning ? 'syncing' : 'idle';
+    const details = backupWorker.isRunning ? 'Continuing backup...' : '';
+    tray.updateTrayStatus(status, details);
+    sendToRenderer('status:change', { status, details });
     return true;
   });
 
@@ -1960,6 +1984,14 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   backupWorker.on('backup:paused', (reason) => {
     tray.updateTrayStatus('paused', reason);
     sendToRenderer('status:change', { status: 'paused', details: reason });
+  });
+
+  backupWorker.on('backup:draining', (reason) => {
+    tray.updateTrayStatus('draining', reason);
+    sendToRenderer('status:change', {
+      status: 'draining',
+      details: 'Finishing current uploads; no new files will start'
+    });
   });
 
   // Legacy SyncQueue events retained for older file-change paths.
@@ -3303,6 +3335,143 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     }
     const moved = await lanFileServer.moveLocalPathToPeer(hydratePeer(peer), result.filePaths[0], true, remoteDestinationDir, sendTransferProgress);
     return { success: true, count: 1, results: [moved] };
+  });
+
+  // Wake-on-LAN (WOL) API
+  const getWolDevices = () => (db.getDb().wolDevices || []).flatMap(device => {
+    try {
+      return [wakeOnLan.normalizeStoredDevice(device)];
+    } catch (error) {
+      console.warn('Wake-on-LAN: ignoring invalid saved device:', error.message);
+      return [];
+    }
+  });
+
+  const saveWolDevices = devices => {
+    db.getDb().wolDevices = devices;
+    db.saveDatabase();
+  };
+
+  const findWolDevice = id => {
+    const device = getWolDevices().find(item => item.id === String(id || ''));
+    if (!device) throw new Error('Wake-on-LAN device was not found.');
+    return device;
+  };
+
+  const emitWolWakeProgress = (event, deviceId, progress) => {
+    if (!event.sender || event.sender.isDestroyed()) return;
+    event.sender.send('wol:wake-progress', {
+      deviceId,
+      ...progress
+    });
+  };
+
+  ipcMain.handle('wol:getDevices', () => {
+    return getWolDevices();
+  });
+
+  ipcMain.handle('wol:addDevice', async (_event, payload = {}) => {
+    const wolDevices = getWolDevices();
+    const normalized = wakeOnLan.validateDeviceInput(payload, wolDevices);
+    const now = new Date().toISOString();
+    const newDevice = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      ...normalized,
+      createdAt: now,
+      updatedAt: now,
+      lastWakeAt: '',
+      lastWakeStatus: ''
+    };
+    wolDevices.push(newDevice);
+    saveWolDevices(wolDevices);
+    return { success: true, device: newDevice };
+  });
+
+  ipcMain.handle('wol:updateDevice', async (_event, payload = {}) => {
+    const wolDevices = getWolDevices();
+    const id = String(payload.id || '');
+    const index = wolDevices.findIndex(device => device.id === id);
+    if (index < 0) throw new Error('Wake-on-LAN device was not found.');
+    const normalized = wakeOnLan.validateDeviceInput(payload, wolDevices, id);
+    wolDevices[index] = {
+      ...wolDevices[index],
+      ...normalized,
+      updatedAt: new Date().toISOString()
+    };
+    saveWolDevices(wolDevices);
+    return { success: true, device: wolDevices[index] };
+  });
+
+  ipcMain.handle('wol:removeDevice', async (_event, { id } = {}) => {
+    const wolDevices = getWolDevices();
+    saveWolDevices(wolDevices.filter(device => device.id !== String(id || '')));
+    return { success: true };
+  });
+
+  ipcMain.handle('wol:testDevice', async (_event, { id } = {}) => {
+    const device = findWolDevice(id);
+    try {
+      const sent = await wakeOnLan.sendMagicPacket(device.mac, {
+        broadcastIp: device.broadcastIp,
+        port: device.port
+      });
+      const online = device.hostIp
+        ? await wakeOnLan.checkDeviceOnline(device.hostIp)
+        : { online: null, method: '' };
+      return {
+        success: true,
+        sent,
+        online: online.online,
+        method: online.method,
+        message: online.online
+          ? `Packet burst sent and ${device.hostIp} answered via ${online.method}.`
+          : (device.hostIp
+              ? `Packet burst sent, but ${device.hostIp} did not answer the immediate check.`
+              : 'Packet burst sent. Add a host IP to test online verification.')
+      };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('wol:wakeDevice', async (event, { id } = {}) => {
+    let device;
+    try {
+      device = findWolDevice(id);
+      const result = await wakeOnLan.wakeAndVerify(device, {
+        onProgress: progress => emitWolWakeProgress(event, device.id, progress)
+      });
+      const wolDevices = getWolDevices();
+      const index = wolDevices.findIndex(item => item.id === device.id);
+      if (index >= 0) {
+        wolDevices[index] = {
+          ...wolDevices[index],
+          lastWakeAt: new Date().toISOString(),
+          lastWakeStatus: result.online === true
+            ? 'online'
+            : (result.online === false ? 'timeout' : 'sent-unverified')
+        };
+        saveWolDevices(wolDevices);
+      }
+      return result;
+    } catch (err) {
+      if (device) {
+        emitWolWakeProgress(event, device.id, {
+          status: 'failed',
+          message: err.message
+        });
+      }
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('wol:discoverDevices', async () => {
+    try {
+      const result = await wakeOnLan.discoverDevices();
+      return { success: true, ...result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   });
 
   // WebDAV Share API

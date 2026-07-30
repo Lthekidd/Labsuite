@@ -703,6 +703,13 @@ app.on('ready', () => {
   }
 
   const setupComplete = db.getSetting('setup_complete') === '1';
+  // A drain pause cannot survive a process or PC restart because its active
+  // uploads no longer exist. Preserve the user's intent by reopening fully
+  // paused instead of silently starting new backup work.
+  if (db.getSetting('sync_pause_after_current') === '1') {
+    db.setSetting('sync_pause_after_current', '0');
+    db.setSetting('sync_paused', '1');
+  }
   const isPaused = db.getSetting('sync_paused') === '1';
 
   if (setupComplete) {

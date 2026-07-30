@@ -50,8 +50,10 @@ async function run() {
     pausedRunRequest: backupWorker.pausedRunRequest,
     resumeAfterStop: backupWorker.resumeAfterStop,
     cancelOperation: rclone.cancelOperation,
+    getTransferConcurrency: rclone.getTransferConcurrency,
     getEnabledFolders: db.getEnabledFolders,
-    getSetting: db.getSetting
+    getSetting: db.getSetting,
+    setSetting: db.setSetting
   };
 
   try {
@@ -61,6 +63,20 @@ async function run() {
       return 2;
     };
     db.getEnabledFolders = () => [];
+    const settings = {
+      sync_paused: '0',
+      sync_pause_after_current: '0'
+    };
+    db.getSetting = key => settings[key] ?? original.getSetting(key);
+    db.setSetting = (key, value) => {
+      settings[key] = String(value);
+    };
+    rclone.getTransferConcurrency = () => 2;
+    assert.deepStrictEqual(
+      backupWorker.getTransferBatches([1, 2, 3, 4, 5]),
+      [[1, 2], [3, 4], [5]],
+      'transfer batches must not hide queued files behind the active upload slots'
+    );
 
     backupWorker.isRunning = true;
     backupWorker.activeRun = { cancelRequested: false, cancelReason: '' };
@@ -90,9 +106,34 @@ async function run() {
       'cancelled transfers must unwind as a pause, not a backup failure'
     );
 
+    cancelledOperation = null;
+    settings.sync_paused = '0';
+    backupWorker.activeRun = {
+      cancelRequested: false,
+      cancelReason: '',
+      drainRequested: false,
+      drainReason: ''
+    };
+    const drainResult = backupWorker.requestPauseAfterCurrent();
+    assert.strictEqual(drainResult.draining, true);
+    assert.strictEqual(
+      cancelledOperation,
+      null,
+      'pause-after-current must not terminate an active upload process'
+    );
+    assert.strictEqual(backupWorker.activeRun.drainRequested, true);
+    assert.strictEqual(settings.sync_pause_after_current, '1');
+    assert.throws(
+      () => backupWorker.throwIfPauseBoundaryReached(),
+      error => error && error.code === 'ERR_BACKUP_PAUSED',
+      'the worker must enter the normal paused state at the next safe transfer boundary'
+    );
+    assert.strictEqual(settings.sync_paused, '1');
+    assert.strictEqual(settings.sync_pause_after_current, '0');
+
     backupWorker.isRunning = false;
     backupWorker.activeRun = null;
-    db.getSetting = key => (key === 'sync_paused' ? '1' : original.getSetting(key));
+    settings.sync_paused = '1';
     assert.strictEqual(
       await backupWorker.runBackup(null, { manual: true }),
       false,
@@ -107,8 +148,10 @@ async function run() {
     backupWorker.pausedRunRequest = original.pausedRunRequest;
     backupWorker.resumeAfterStop = original.resumeAfterStop;
     rclone.cancelOperation = original.cancelOperation;
+    rclone.getTransferConcurrency = original.getTransferConcurrency;
     db.getEnabledFolders = original.getEnabledFolders;
     db.getSetting = original.getSetting;
+    db.setSetting = original.setSetting;
   }
 
   console.log('Backup pause verification passed.');

@@ -499,6 +499,10 @@ function getTransferTuning() {
   return { transfers: 6, checkers: 12, pacerSleep: '15ms', pacerBurst: 150 };
 }
 
+function getTransferConcurrency() {
+  return getTransferTuning().transfers;
+}
+
 function getTransferFlagArgs() {
   const tuning = getTransferTuning();
   const args = [
@@ -2432,6 +2436,7 @@ module.exports = {
   stopHttpServer,
   copyFileRemoteToLocal,
   getPaths,
+  getTransferConcurrency,
   applyBwlimitToActiveProcesses,
   runWithOperation,
   cancelOperation,

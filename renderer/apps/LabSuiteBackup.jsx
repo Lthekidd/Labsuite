@@ -392,7 +392,7 @@ export default function LabSuiteBackup({ active = true }) {
   const [setupComplete, setSetupComplete] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'folders', 'activity', 'restore', 'settings'
   const [restoreSubTab, setRestoreSubTab] = useState('browse');
-  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle', 'syncing', 'paused', 'error'
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle', 'syncing', 'draining', 'paused', 'error'
   const [syncDetails, setSyncDetails] = useState('');
   const [appVersion, setAppVersion] = useState('');
 
@@ -796,7 +796,7 @@ export default function LabSuiteBackup({ active = true }) {
         return;
       }
       setSyncProgress(data);
-      setSyncStatus(prev => (prev === 'paused' ? 'paused' : 'syncing'));
+      setSyncStatus(prev => (prev === 'paused' || prev === 'draining' ? prev : 'syncing'));
       setSyncDetails(data.stageLabel || (data.phase === 'initial' ? 'Initial backup in progress...' : 'Backing up changes to Google Drive...'));
     });
 
@@ -828,7 +828,7 @@ export default function LabSuiteBackup({ active = true }) {
         }
       }));
       if (data.stage !== 'complete' && data.stage !== 'error') {
-        setSyncStatus(prev => (prev === 'paused' ? 'paused' : 'syncing'));
+        setSyncStatus(prev => (prev === 'paused' || prev === 'draining' ? prev : 'syncing'));
         setSyncProgress(data);
       } else {
         setSyncProgress(null);
@@ -1195,6 +1195,8 @@ export default function LabSuiteBackup({ active = true }) {
         setSettings(resolvedSettings);
         if (resolvedSettings.sync_paused === '1') {
           setSyncStatus('paused');
+        } else if (resolvedSettings.sync_pause_after_current === '1') {
+          setSyncStatus('draining');
         }
         setSetupComplete(resolvedSettings.setup_complete === '1');
         setAppVersion(version || 'Unknown');
@@ -1701,6 +1703,11 @@ export default function LabSuiteBackup({ active = true }) {
 
   const handlePauseSync = async () => {
     await ipcRenderer.invoke('sync:pause');
+    loadAppConfigs();
+  };
+
+  const handlePauseAfterCurrent = async () => {
+    await ipcRenderer.invoke('sync:pauseAfterCurrent');
     loadAppConfigs();
   };
 
@@ -3208,7 +3215,7 @@ export default function LabSuiteBackup({ active = true }) {
     Number(overallProgress.filesTotal) > 0 ||
     Number(overallProgress.percent) > 0
   );
-  const displayOverallProgress = syncStatus === 'syncing'
+  const displayOverallProgress = syncStatus === 'syncing' || syncStatus === 'draining'
     ? (hasUsefulOverallProgress ? overallProgress : (activityQueueProgress || overallProgress))
     : null;
   const displayOverallPercent = displayOverallProgress
@@ -3343,6 +3350,8 @@ export default function LabSuiteBackup({ active = true }) {
                       ? 'A restore is ready to resume'
                       : syncStatus === 'syncing'
                       ? `Backing up to Google Drive... ${overallStatusSuffix}`
+                      : syncStatus === 'draining'
+                      ? `Finishing current uploads... ${overallStatusSuffix}`
                       : syncStatus === 'paused' 
                       ? 'Backup paused'
                       : hasFailedFolders
@@ -3380,7 +3389,18 @@ export default function LabSuiteBackup({ active = true }) {
                   ) : (
                     <button className="btn btn-secondary" onClick={handlePauseSync}>Pause backup</button>
                   )}
-                  <button className="btn btn-primary" style={{ marginLeft: '8px' }} disabled={syncStatus === 'syncing' || syncStatus === 'paused'} onClick={handleSyncNow}>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={handlePauseAfterCurrent}
+                    disabled={syncStatus !== 'syncing'}
+                    title="Finish only the uploads already in progress, then pause before starting another file"
+                  >
+                    {syncStatus === 'draining' ? 'Finishing current uploads...' : 'Pause after current uploads'}
+                  </button>
+                  {syncStatus === 'draining' && (
+                    <button className="btn btn-primary" onClick={handleResumeSync}>Keep backing up</button>
+                  )}
+                  <button className="btn btn-primary" style={{ marginLeft: '8px' }} disabled={syncStatus === 'syncing' || syncStatus === 'draining' || syncStatus === 'paused'} onClick={handleSyncNow}>
                     Back Up Now
                   </button>
                 </div>
@@ -3480,7 +3500,7 @@ export default function LabSuiteBackup({ active = true }) {
                 </div>
               )}
 
-              {syncStatus === 'syncing' && displayOverallProgress && (
+              {(syncStatus === 'syncing' || syncStatus === 'draining') && displayOverallProgress && (
                 <div style={{
                   background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8))',
                   border: '1px solid rgba(148, 163, 184, 0.1)',

@@ -15,6 +15,7 @@ const remoteCatalog = require('./remoteCatalog');
 
 const FILE_ACTIVITY_PREVIEW_LIMIT = 200;
 const DB_COMPLETION_BATCH_SIZE = 200;
+const DRAIN_PAUSE_SETTING = 'sync_pause_after_current';
 
 class BackupPausedError extends Error {
   constructor(reason = 'Backup paused') {
@@ -88,10 +89,21 @@ class BackupWorker extends EventEmitter {
 
   stopBackup(reason = 'Backup paused') {
     this.cancelScheduledBackup();
+    db.setSetting(DRAIN_PAUSE_SETTING, '0');
     if (this.activeRun) {
       this.activeRun.cancelRequested = true;
       this.activeRun.cancelReason = reason;
+      this.activeRun.drainRequested = false;
     }
+    this.markRunningFoldersPaused(reason);
+    const cancelledProcesses = rclone.cancelOperation('backup', reason);
+    return {
+      wasRunning: this.isRunning,
+      cancelledProcesses
+    };
+  }
+
+  markRunningFoldersPaused(reason = 'Backup paused') {
     for (const folder of db.getEnabledFolders()) {
       if (folder.sync_state !== 'syncing') continue;
       const progress = {
@@ -114,11 +126,57 @@ class BackupWorker extends EventEmitter {
       db.updateFolderSyncProgress(folder.id, progress);
       this.emit('backup:folder-progress', progress);
     }
-    const cancelledProcesses = rclone.cancelOperation('backup', reason);
-    return {
-      wasRunning: this.isRunning,
-      cancelledProcesses
-    };
+  }
+
+  requestPauseAfterCurrent(reason = 'Paused after current uploads completed') {
+    this.cancelScheduledBackup();
+    db.setSetting(DRAIN_PAUSE_SETTING, '1');
+
+    if (!this.isRunning || !this.activeRun) {
+      this.finishDrainPause(reason);
+      this.emit('backup:paused', reason);
+      return { wasRunning: false, draining: false };
+    }
+
+    this.activeRun.drainRequested = true;
+    this.activeRun.drainReason = reason;
+    this.emit('backup:draining', reason);
+    return { wasRunning: true, draining: true };
+  }
+
+  cancelPauseAfterCurrent() {
+    db.setSetting(DRAIN_PAUSE_SETTING, '0');
+    if (this.activeRun) {
+      this.activeRun.drainRequested = false;
+      this.activeRun.drainReason = '';
+    }
+  }
+
+  finishDrainPause(reason = 'Paused after current uploads completed') {
+    db.setSetting(DRAIN_PAUSE_SETTING, '0');
+    db.setSetting('sync_paused', '1');
+    this.markRunningFoldersPaused(reason);
+  }
+
+  throwIfPauseBoundaryReached() {
+    this.throwIfCancellationRequested();
+    if (
+      this.activeRun?.drainRequested ||
+      db.getSetting(DRAIN_PAUSE_SETTING) === '1'
+    ) {
+      const reason = this.activeRun?.drainReason || 'Paused after current uploads completed';
+      this.finishDrainPause(reason);
+      throw new BackupPausedError(reason);
+    }
+  }
+
+  getTransferBatches(items) {
+    const batchSize = Math.max(1, Number(rclone.getTransferConcurrency?.()) || 4);
+    const batches = [];
+    for (let index = 0; index < items.length; index += batchSize) {
+      batches.push(items.slice(index, index + batchSize));
+    }
+    return batches;
   }
 
   clearDirtyFolder(folderId) {
@@ -130,6 +188,7 @@ class BackupWorker extends EventEmitter {
 
   resumeScheduledBackup() {
     if (db.getSetting('sync_paused') === '1') return;
+    this.cancelPauseAfterCurrent();
     if (this.isRunning) {
       if (this.activeRun?.cancelRequested) this.resumeAfterStop = true;
       return;
@@ -177,7 +236,10 @@ class BackupWorker extends EventEmitter {
   }
 
   async runBackupInContext(folderIds = null, options = {}) {
-    if (db.getSetting('sync_paused') === '1') {
+    if (
+      db.getSetting('sync_paused') === '1' ||
+      db.getSetting(DRAIN_PAUSE_SETTING) === '1'
+    ) {
       console.log('BackupWorker: backups are currently paused.');
       return false;
     }
@@ -206,7 +268,9 @@ class BackupWorker extends EventEmitter {
 
     const runState = {
       cancelRequested: false,
-      cancelReason: 'Backup paused'
+      cancelReason: 'Backup paused',
+      drainRequested: false,
+      drainReason: ''
     };
     this.activeRun = runState;
     this.pausedRunRequest = null;
@@ -230,7 +294,7 @@ class BackupWorker extends EventEmitter {
     try {
       // Device detection & hostname change alignment
       await this.alignDeviceIdentity();
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
 
       const folders = db.getEnabledFolders();
       remoteSafety.ensureVaultMarker().catch(error => {
@@ -248,12 +312,12 @@ class BackupWorker extends EventEmitter {
       const folderPlans = new Map();
       const planner = require('./backupPlanner');
       for (const folder of effective) {
-        this.throwIfCancellationRequested();
+        this.throwIfPauseBoundaryReached();
         try {
           const folderPlan = !!options.dirtyOnly
             ? await planner.planDirtyFolderAsync(folder)
             : await planner.planFolderAsync(folder);
-          this.throwIfCancellationRequested();
+          this.throwIfPauseBoundaryReached();
 
           const executableItems = folderPlan.workItems.filter(item =>
             ['repair_active', 'upload', 'delete_history'].includes(item.type)
@@ -283,7 +347,7 @@ class BackupWorker extends EventEmitter {
       });
 
       for (const [index, folder] of effective.entries()) {
-        this.throwIfCancellationRequested();
+        this.throwIfPauseBoundaryReached();
         processedFolderIds.add(folder.id);
         const folderPrePlan = folderPlans.get(folder.id);
         await this.runFolderBackup(folder, {
@@ -293,7 +357,7 @@ class BackupWorker extends EventEmitter {
           dirtyOnly: !!options.dirtyOnly,
           prePlan: folderPrePlan
         });
-        this.throwIfCancellationRequested();
+        this.throwIfPauseBoundaryReached();
 
         if (folderPrePlan && this.currentRunStats) {
           this.currentRunStats.globalFilesDone += folderPrePlan.filesTotal;
@@ -301,28 +365,28 @@ class BackupWorker extends EventEmitter {
         }
       }
 
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       db.setSetting('last_full_sync', new Date().toISOString());
       if (!options.dirtyOnly) {
         db.setSetting('last_full_reconcile', new Date().toISOString());
       }
       await this.purgeExpiredHistory();
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       await remoteCatalog.publish();
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       // A replica mirrors the encrypted vault itself (including version history
       // and restore metadata), never a second upload from the local folders.
       // Replica failures are recorded against that destination but do not turn
       // a successful primary backup into a failure.
       const vaultDestinations = require('./vaultDestinations');
       const replicaOutcomes = await vaultDestinations.replicateAll();
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       const failedReplicas = replicaOutcomes.filter(outcome => outcome && outcome.ok === false);
       if (failedReplicas.length > 0) {
         console.warn(`BackupWorker: ${failedReplicas.length} vault replica(s) need attention.`);
       }
       await db.flushWritesAsync();
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       completedNormally = true;
       this.emit('backup:complete', { ...(this.currentRunStats || {}) });
       return true;
@@ -951,19 +1015,19 @@ class BackupWorker extends EventEmitter {
     const newDirectItems = directUploadItems.filter(item => !item.previousRemotePath);
     const modifiedDirectItems = directUploadItems.filter(item => item.previousRemotePath && !(item.previousStorage === 'pack' && item.previousPackRemotePath));
 
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.repairActiveCopies(folder, repairItems, base, coveredChildren, counters, totals);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.uploadPackedFiles(folder, packedUploadItems, base, coveredChildren, counters, totals, packSettings);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.uploadPackedFileMigrations(folder, packedToDirectItems, base, coveredChildren, counters, totals);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.uploadNewFiles(folder, newDirectItems, base, coveredChildren, counters, totals);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.uploadModifiedFiles(folder, modifiedDirectItems, base, coveredChildren, counters, totals);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
     await this.deleteFilesToHistory(folder, deleteItems, base, coveredChildren, counters, totals);
-    this.throwIfCancellationRequested();
+    this.throwIfPauseBoundaryReached();
 
     for (const scanError of scanErrors) {
       db.addSyncLog({
@@ -1096,9 +1160,10 @@ class BackupWorker extends EventEmitter {
 
   async retryPackedItemsDirect(folder, items, counters, reason, completedPackId = '') {
     this.rethrowIfCancelled(reason);
+    this.throwIfPauseBoundaryReached();
     console.warn(`BackupWorker: packed upload unavailable; retrying ${items.length} original file(s) directly:`, reason && reason.message ? reason.message : reason);
     for (const item of items) {
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       const entry = db.getManifestEntry(folder.id, item.relativePath);
       if (completedPackId && entry && entry.status === 'backed_up' && entry.pack_id === completedPackId) continue;
       await this.uploadSingleItem(folder, item, counters);
@@ -1257,7 +1322,7 @@ class BackupWorker extends EventEmitter {
 
   async repairActiveCopies(folder, items, base, coveredChildren, counters, totals) {
     for (const item of items) {
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       this.emitItems(folder, [item], { status: 'versioning', percent: 0, error: 'Repairing active backup copy' });
       this.emitFolderProgress(folder, {
         ...base,
@@ -1293,7 +1358,7 @@ class BackupWorker extends EventEmitter {
 
     const availableItems = [];
     for (const item of items) {
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       if (fs.existsSync(item.localPath)) availableItems.push(item);
       else await this.handleDisappearedLocalItem(folder, item, counters);
     }
@@ -1305,7 +1370,7 @@ class BackupWorker extends EventEmitter {
     const groups = packStore.groupPackItems(items, packSettings);
 
     for (const [index, group] of groups.entries()) {
-      this.throwIfCancellationRequested();
+      this.throwIfPauseBoundaryReached();
       const packId = packStore.makePackId(folder, runId, index + 1, group);
       const packRemotePath = packStore.makePackRemotePath(folder, packId);
       let packFile = null;
@@ -1462,30 +1527,38 @@ class BackupWorker extends EventEmitter {
     if (items.length === 0) return;
 
     if (folder.source_type === 'file') {
-      for (const item of items) await this.uploadSingleItem(folder, item, counters);
+      for (const item of items) {
+        this.throwIfPauseBoundaryReached();
+        await this.uploadSingleItem(folder, item, counters);
+      }
       return;
     }
 
-    try {
-      await rclone.copyFilesFrom(folder.local_path, folder.remote_path, items.map(item => item.relativePath), progress => {
-        this.emitActiveTransfers(folder, items, progress, 'uploading');
-        this.emitBatchProgress(folder, base, coveredChildren, counters, totals, progress, 'Starting Google Drive upload');
-      });
-      await this.recordCompletedItems(folder, items, counters, item => {
-        manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
-        db.addSyncLog({
-          folderId: folder.id,
-          filePath: item.localPath,
-          action: 'backup-upload',
-          status: 'success',
-          sizeBytes: item.size
+    for (const batch of this.getTransferBatches(items)) {
+      this.throwIfPauseBoundaryReached();
+      try {
+        await rclone.copyFilesFrom(folder.local_path, folder.remote_path, batch.map(item => item.relativePath), progress => {
+          this.emitActiveTransfers(folder, batch, progress, 'uploading');
+          this.emitBatchProgress(folder, base, coveredChildren, counters, totals, progress, 'Starting Google Drive upload');
         });
-      });
-    } catch (error) {
-      this.rethrowIfCancelled(error);
-      console.warn('BackupWorker: batch upload failed; falling back to per-file uploads:', error.message);
-      for (const item of items) {
-        await this.uploadSingleItem(folder, item, counters);
+        await this.recordCompletedItems(folder, batch, counters, item => {
+          manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
+          db.addSyncLog({
+            folderId: folder.id,
+            filePath: item.localPath,
+            action: 'backup-upload',
+            status: 'success',
+            sizeBytes: item.size
+          });
+        });
+      } catch (error) {
+        this.rethrowIfCancelled(error);
+        this.throwIfPauseBoundaryReached();
+        console.warn('BackupWorker: batch upload failed; falling back to per-file uploads:', error.message);
+        for (const item of batch) {
+          this.throwIfPauseBoundaryReached();
+          await this.uploadSingleItem(folder, item, counters);
+        }
       }
     }
   }
@@ -1505,7 +1578,10 @@ class BackupWorker extends EventEmitter {
     if (items.length === 0) return;
 
     if (folder.source_type === 'file') {
-      for (const item of items) await this.uploadSinglePackedFileMigration(folder, item, counters);
+      for (const item of items) {
+        this.throwIfPauseBoundaryReached();
+        await this.uploadSinglePackedFileMigration(folder, item, counters);
+      }
       return;
     }
 
@@ -1515,31 +1591,36 @@ class BackupWorker extends EventEmitter {
       error: 'Migrating packed file to Explorer-visible backup'
     });
 
-    try {
-      await rclone.copyFilesFrom(folder.local_path, folder.remote_path, items.map(item => item.relativePath), progress => {
-        this.emitActiveTransfers(folder, items, progress, 'uploading');
-        this.emitBatchProgress(folder, base, coveredChildren, counters, totals, {
-          ...progress,
-          stage: 'encrypting_uploading',
-          stageLabel: 'Migrating packed files for Explorer mount'
-        }, 'Migrating packed files for Explorer mount');
-      });
-      await this.recordCompletedItems(folder, items, counters, item => {
-        this.recordPackedMigrationHistory(folder, item);
-        manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
-        db.addSyncLog({
-          folderId: folder.id,
-          filePath: item.localPath,
-          action: 'backup-pack-migrate',
-          status: 'success',
-          sizeBytes: item.size
+    for (const batch of this.getTransferBatches(items)) {
+      this.throwIfPauseBoundaryReached();
+      try {
+        await rclone.copyFilesFrom(folder.local_path, folder.remote_path, batch.map(item => item.relativePath), progress => {
+          this.emitActiveTransfers(folder, batch, progress, 'uploading');
+          this.emitBatchProgress(folder, base, coveredChildren, counters, totals, {
+            ...progress,
+            stage: 'encrypting_uploading',
+            stageLabel: 'Migrating packed files for Explorer mount'
+          }, 'Migrating packed files for Explorer mount');
         });
-      });
-    } catch (error) {
-      this.rethrowIfCancelled(error);
-      console.warn('BackupWorker: packed-to-direct batch migration failed; falling back to per-file uploads:', error.message);
-      for (const item of items) {
-        await this.uploadSinglePackedFileMigration(folder, item, counters);
+        await this.recordCompletedItems(folder, batch, counters, item => {
+          this.recordPackedMigrationHistory(folder, item);
+          manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
+          db.addSyncLog({
+            folderId: folder.id,
+            filePath: item.localPath,
+            action: 'backup-pack-migrate',
+            status: 'success',
+            sizeBytes: item.size
+          });
+        });
+      } catch (error) {
+        this.rethrowIfCancelled(error);
+        this.throwIfPauseBoundaryReached();
+        console.warn('BackupWorker: packed-to-direct batch migration failed; falling back to per-file uploads:', error.message);
+        for (const item of batch) {
+          this.throwIfPauseBoundaryReached();
+          await this.uploadSinglePackedFileMigration(folder, item, counters);
+        }
       }
     }
   }
@@ -1576,10 +1657,20 @@ class BackupWorker extends EventEmitter {
     if (items.length === 0) return;
 
     if (folder.source_type === 'file') {
-      for (const item of items) await this.uploadSingleItem(folder, item, counters);
+      for (const item of items) {
+        this.throwIfPauseBoundaryReached();
+        await this.uploadSingleItem(folder, item, counters);
+      }
       return;
     }
 
+    for (const batch of this.getTransferBatches(items)) {
+      this.throwIfPauseBoundaryReached();
+      await this.uploadModifiedFileBatch(folder, batch, base, coveredChildren, counters, totals);
+    }
+  }
+
+  async uploadModifiedFileBatch(folder, items, base, coveredChildren, counters, totals) {
     const runId = this.makeRunId();
     const stagingRoot = this.makeStagingRoot(folder, runId);
     const historyRoot = this.makeHistoryRoot(folder, runId);
@@ -1591,6 +1682,7 @@ class BackupWorker extends EventEmitter {
       });
     } catch (error) {
       this.rethrowIfCancelled(error);
+      this.throwIfPauseBoundaryReached();
       console.warn('BackupWorker: staged batch upload failed; falling back to per-file uploads:', error.message);
       for (const item of items) {
         await this.uploadSingleItem(folder, item, counters);
@@ -1762,10 +1854,14 @@ class BackupWorker extends EventEmitter {
     if (items.length === 0) return;
 
     if (folder.source_type === 'file') {
-      for (const item of items) await this.deleteSingleItem(folder, item, counters);
+      for (const item of items) {
+        this.throwIfPauseBoundaryReached();
+        await this.deleteSingleItem(folder, item, counters);
+      }
       return;
     }
 
+    this.throwIfPauseBoundaryReached();
     const packedItems = items.filter(item => item.previousStorage === 'pack' && item.previousPackRemotePath);
     for (const item of packedItems.slice(0, FILE_ACTIVITY_PREVIEW_LIMIT)) {
       this.emitItems(folder, [item], {
@@ -1790,30 +1886,35 @@ class BackupWorker extends EventEmitter {
 
     const historyRoot = this.makeHistoryRoot(folder, this.makeRunId());
 
-    try {
-      await rclone.moveFilesFrom(folder.remote_path, historyRoot, items.map(item => item.relativePath), progress => {
-        this.emitActiveTransfers(folder, items, progress, 'versioning');
-        this.emitBatchProgress(folder, base, coveredChildren, counters, totals, {
-          ...progress,
-          stage: 'deleting',
-          stageLabel: 'Moving deleted files to backup history'
-        }, 'Moving deleted files to backup history');
-      });
-      await this.recordCompletedItems(folder, items, counters, item => {
-        manifest.recordDeleted(folder, item.relativePath, this.joinRemote(historyRoot, item.relativePath));
-        db.addSyncLog({
-          folderId: folder.id,
-          filePath: item.relativePath,
-          action: 'backup-delete-history',
-          status: 'success',
-          sizeBytes: item.size
+    for (const batch of this.getTransferBatches(items)) {
+      this.throwIfPauseBoundaryReached();
+      try {
+        await rclone.moveFilesFrom(folder.remote_path, historyRoot, batch.map(item => item.relativePath), progress => {
+          this.emitActiveTransfers(folder, batch, progress, 'versioning');
+          this.emitBatchProgress(folder, base, coveredChildren, counters, totals, {
+            ...progress,
+            stage: 'deleting',
+            stageLabel: 'Moving deleted files to backup history'
+          }, 'Moving deleted files to backup history');
         });
-      });
-    } catch (error) {
-      this.rethrowIfCancelled(error);
-      console.warn('BackupWorker: batch delete-history move failed; falling back to per-file moves:', error.message);
-      for (const item of items) {
-        await this.deleteSingleItem(folder, item, counters);
+        await this.recordCompletedItems(folder, batch, counters, item => {
+          manifest.recordDeleted(folder, item.relativePath, this.joinRemote(historyRoot, item.relativePath));
+          db.addSyncLog({
+            folderId: folder.id,
+            filePath: item.relativePath,
+            action: 'backup-delete-history',
+            status: 'success',
+            sizeBytes: item.size
+          });
+        });
+      } catch (error) {
+        this.rethrowIfCancelled(error);
+        this.throwIfPauseBoundaryReached();
+        console.warn('BackupWorker: batch delete-history move failed; falling back to per-file moves:', error.message);
+        for (const item of batch) {
+          this.throwIfPauseBoundaryReached();
+          await this.deleteSingleItem(folder, item, counters);
+        }
       }
     }
   }

@@ -139,7 +139,7 @@ function getLocalFolderProblem() {
 
 function computeVisualStatus() {
   if (lastProblem) return 'error';
-  if (appStatus === 'syncing') return 'syncing';
+  if (appStatus === 'syncing' || appStatus === 'draining') return 'syncing';
   if (appStatus === 'paused') return 'paused';
   if (db.getSetting('setup_complete') !== '1') return 'setup';
   return 'idle';
@@ -151,6 +151,9 @@ function applyTrayVisual() {
   if (lastProblem) {
     statusText = 'Backup needs attention';
     detailText = lastProblem;
+  } else if (appStatus === 'draining') {
+    statusText = 'Finishing current uploads';
+    detailText = detailText || 'No new backup files will start';
   } else if (appStatus === 'syncing') {
     statusText = 'Backing up';
     detailText = detailText || 'Backup in progress';
@@ -228,6 +231,7 @@ function updateTrayMenu() {
   if (!trayInstance) return;
 
   const isPaused = db.getSetting('sync_paused') === '1';
+  const isDraining = db.getSetting('sync_pause_after_current') === '1';
   const driveLine = lastDriveInfo && lastDriveInfo.total > 0
     ? `Drive free: ${Math.round(((lastDriveInfo.free || Math.max(0, lastDriveInfo.total - lastDriveInfo.used)) / lastDriveInfo.total) * 100)}%`
     : '';
@@ -253,7 +257,7 @@ function updateTrayMenu() {
     { type: 'separator' },
     {
       label: 'Back Up Now',
-      enabled: !isPaused && appStatus !== 'syncing',
+      enabled: !isPaused && !isDraining && appStatus !== 'syncing',
       click: () => {
         scheduler.runFullSync(null, { manual: true, reason: 'tray-manual' }).then(() => {
           refreshTrayHealth({ sampleRemote: true });
@@ -263,23 +267,38 @@ function updateTrayMenu() {
       }
     },
     {
-      label: isPaused ? 'Resume Backups' : 'Pause Backups',
+      label: isPaused || isDraining ? 'Resume Backups' : 'Pause Backups',
       click: () => {
-        if (isPaused) {
+        if (isPaused || isDraining) {
           db.setSetting('sync_paused', '0');
+          db.setSetting('sync_pause_after_current', '0');
+          backupWorker.cancelPauseAfterCurrent();
           watcher.initWatcher();
           scheduler.startScheduler();
           backupWorker.resumeScheduledBackup();
-          updateTrayStatus('idle', '');
-          sendToWindow('status:change', { status: 'idle' });
+          const status = backupWorker.isRunning ? 'syncing' : 'idle';
+          const details = backupWorker.isRunning ? 'Continuing backup...' : '';
+          updateTrayStatus(status, details);
+          sendToWindow('status:change', { status, details });
         } else {
           db.setSetting('sync_paused', '1');
+          db.setSetting('sync_pause_after_current', '0');
           watcher.stopWatcher();
           scheduler.stopScheduler();
           backupWorker.stopBackup('Backup paused from tray');
           updateTrayStatus('paused', '');
           sendToWindow('status:change', { status: 'paused' });
         }
+      }
+    },
+    {
+      label: 'Pause After Current Uploads',
+      visible: !isPaused && !isDraining,
+      enabled: appStatus === 'syncing',
+      click: () => {
+        watcher.stopWatcher();
+        scheduler.stopScheduler();
+        backupWorker.requestPauseAfterCurrent('Paused after current uploads completed');
       }
     },
     { type: 'separator' },

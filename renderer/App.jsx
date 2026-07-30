@@ -27,7 +27,8 @@ const WORKSPACE_LOADERS = {
   lan: createModuleLoader(() => import('./apps/LanPeerDrive')),
   'vm-protect': createModuleLoader(() => import('./apps/VMProtect')),
   labshot: createModuleLoader(() => import('./apps/LabShot')),
-  hwmonitor: createModuleLoader(() => import('./apps/LabHWMonitor'))
+  hwmonitor: createModuleLoader(() => import('./apps/LabHWMonitor')),
+  wol: createModuleLoader(() => import('./apps/WakeOnLan'))
 };
 
 const LabSuiteBackup = React.memo(lazy(WORKSPACE_LOADERS.backup));
@@ -38,6 +39,7 @@ const TelegramBackup = React.memo(lazy(WORKSPACE_LOADERS.telegram));
 const LabShot = React.memo(lazy(WORKSPACE_LOADERS.labshot));
 const LabHWMonitor = React.memo(lazy(WORKSPACE_LOADERS.hwmonitor));
 const LanPeerDrive = React.memo(lazy(WORKSPACE_LOADERS.lan));
+const WakeOnLan = React.memo(lazy(WORKSPACE_LOADERS.wol));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -52,7 +54,8 @@ const WORKSPACE_REGISTRY = {
   lan: { id: 'lan', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.lan },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
-  'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] }
+  'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] },
+  wol: { id: 'wol', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.wol }
 };
 
 const MAX_HEAVY_WORKSPACES = 4;
@@ -366,6 +369,8 @@ export default function App() {
         return isAppInstalled('hwmonitor') ? <LabHWMonitor active={active} /> : null;
       case 'lan':
         return isAppInstalled('lan') ? <LanPeerDrive active={active} /> : null;
+      case 'wol':
+        return isAppInstalled('wol') ? <WakeOnLan active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:

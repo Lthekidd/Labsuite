@@ -10,6 +10,7 @@ import { ShieldCheck } from '@phosphor-icons/react/ShieldCheck';
 import { SquaresFour } from '@phosphor-icons/react/SquaresFour';
 import { Table } from '@phosphor-icons/react/Table';
 import { TelegramLogo } from '@phosphor-icons/react/TelegramLogo';
+import { Power } from '@phosphor-icons/react/Power';
 import LabShotMark from './LabShotMark';
 
 const APP_ICONS = {
@@ -25,7 +26,8 @@ const APP_ICONS = {
   hwmonitor: Cpu,
   settings: GearSix,
   device: DesktopTower,
-  package: Package
+  package: Package,
+  wol: Power
 };
 
 export default function AppIcon({
