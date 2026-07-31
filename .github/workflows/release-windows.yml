@@ -66,15 +66,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $installer = Get-ChildItem dist-packaged -Filter 'LabSuite-v*-Setup.exe' | Select-Object -First 1
-          $blockmap = Get-Item "$($installer.FullName).blockmap"
-          $updateMetadata = Get-Item dist-packaged/latest.yml
-          gh release create '${{ github.ref_name }}' `
-            $installer.FullName `
-            $blockmap.FullName `
-            $updateMetadata.FullName `
-            --title 'LabSuite ${{ github.ref_name }}' `
-            --notes-file CHANGELOG.md
+          $installer = (Get-ChildItem dist-packaged -Filter 'LabSuite-v*-Setup.exe' | Select-Object -First 1).FullName
+          $blockmap = (Get-Item "$installer.blockmap").FullName
+          $updateMetadata = (Get-Item dist-packaged/latest.yml).FullName
+          
+          $exists = gh release view '${{ github.ref_name }}' 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload '${{ github.ref_name }}' $installer $blockmap $updateMetadata --clobber
+          } else {
+            gh release create '${{ github.ref_name }}' $installer $blockmap $updateMetadata --title 'LabSuite ${{ github.ref_name }}' --notes-file CHANGELOG.md
+          }
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4

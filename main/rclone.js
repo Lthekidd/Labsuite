@@ -1125,15 +1125,25 @@ async function getGDriveInfoForRemote(remoteName) {
   try {
     const stdout = await runRclone(['about', getNamedRemotePath(remoteName), '--json'], { timeoutMs: 45000 });
     const info = safeParseJson(stdout) || {};
-    let accountEmail = '';
-    let displayName = '';
+    let accountEmail = findNestedField(info, ['email', 'emailAddress', 'email_address', 'userPrincipalName']);
+    let displayName = findNestedField(info, ['name', 'displayName', 'display_name']);
     try {
       const userInfo = parseJsonOrObjectText(await runRclone([
         'backend', 'userinfo', getNamedRemotePath(remoteName)
       ], { timeoutMs: 45000 }));
-      accountEmail = findNestedField(userInfo, ['email', 'emailAddress', 'email_address', 'userPrincipalName']);
-      displayName = findNestedField(userInfo, ['name', 'displayName', 'display_name']);
+      accountEmail = accountEmail || findNestedField(userInfo, ['email', 'emailAddress', 'email_address', 'userPrincipalName']);
+      displayName = displayName || findNestedField(userInfo, ['name', 'displayName', 'display_name']);
     } catch (_) {}
+
+    // Google Drive does not expose `backend userinfo` in every rclone build.
+    // The preceding `about` call refreshes the OAuth token when needed, so use
+    // that remote's token with Drive's user endpoint when metadata is absent.
+    if (!accountEmail) {
+      const googleUser = await fetchUserInfoFromGoogleApi(remoteName);
+      accountEmail = googleUser?.email || '';
+      displayName = displayName || googleUser?.name || '';
+    }
+
     return {
       email: accountEmail || displayName || 'Google Drive Account',
       accountEmail,
@@ -1815,13 +1825,20 @@ async function getRemoteFileMetadata(remoteFilePath) {
 /**
  * Get Google Drive storage info and account email
  */
-async function fetchUserInfoFromGoogleApi() {
+async function fetchUserInfoFromGoogleApi(remoteName = getRawRemoteName()) {
   const { configPath } = getPaths();
   if (!fs.existsSync(configPath)) return null;
 
   try {
     const content = fs.readFileSync(configPath, 'utf8');
-    const match = content.match(/token\s*=\s*(.+)/);
+    const escapedRemoteName = String(remoteName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const remoteSection = content.match(new RegExp(
+      `^\\[${escapedRemoteName}\\]\\s*\\r?\\n([\\s\\S]*?)(?=^\\[|(?![\\s\\S]))`,
+      'm'
+    ));
+    if (!remoteSection) return null;
+
+    const match = remoteSection[1].match(/^token\s*=\s*(.+)$/m);
     if (!match) return null;
     const token = safeParseJson(match[1].trim());
     if (!token || !token.access_token) return null;

@@ -483,8 +483,8 @@ export default function App() {
               </div>
               {isConnected ? (
                 <div className="suite-storage">
-                  <div className="suite-status-email" title={realEmail}>
-                    {realEmail}
+                  <div className="suite-status-email" title={realEmail || 'Google account email unavailable'}>
+                    {realEmail || 'Google account'}
                   </div>
                   <div className="suite-storage-text">
                     {formatBytes(globalGDriveInfo.used)} / {globalGDriveInfo.total > 0 ? formatBytes(globalGDriveInfo.total) : '?'} used
