@@ -371,7 +371,7 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px' }}>
             {[
               { id: 'default', name: 'Midnight Forest', bg: '#091413', accent: '#408A71', text: '#B0E4CC' },
-              { id: 'apple', name: 'Apple Style', bg: '#161617', accent: '#0071e3', text: '#fafafa' },
+              { id: 'apple', name: 'Apple Style', bg: '#f5f5f7', accent: '#0071e3', text: '#1d1d1f' },
               { id: 'xiaomi', name: 'Xiaomi Style', bg: '#121212', accent: '#ea580c', text: '#e4e4e7' },
               { id: 'cyberpunk', name: 'Cyberpunk Neon', bg: '#0c0813', accent: '#ec4899', text: '#a855f7' }
             ].map(t => {
