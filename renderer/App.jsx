@@ -220,6 +220,22 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    // Sync React theme state with document.body class for global CSS scope
+    document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
+    document.body.classList.add(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const handleThemeChange = (e) => {
+      if (e.detail) setTheme(e.detail);
+    };
+    window.addEventListener('settings-theme-changed', handleThemeChange);
+    return () => {
+      window.removeEventListener('settings-theme-changed', handleThemeChange);
+    };
+  }, []);
+
   const triggerLegacyBackupTab = (subTab) => {
     window.__legacyBackupTabPending = subTab;
     activateWorkspace('backup');
@@ -229,7 +245,12 @@ export default function App() {
 
   useEffect(() => {
     invokeResource('settings:get').then(s => {
-      if (s) setInstalledApps(parseInstalledApps(s.installed_apps));
+      if (s) {
+        setInstalledApps(parseInstalledApps(s.installed_apps));
+        if (s.theme) {
+          setTheme(`theme-${s.theme}`);
+        }
+      }
       if (s && s.setup_complete !== '1') {
         activateWorkspace('backup');
       }

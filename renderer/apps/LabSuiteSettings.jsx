@@ -361,6 +361,86 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
           </div>
         </section>
 
+        {/* App Personalization / Themes */}
+        <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <h2 style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)' }}>App Personalization</h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 20px' }}>
+            Choose a visual style for LabSuite. The selected theme will apply instantly.
+          </p>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px' }}>
+            {[
+              { id: 'default', name: 'Midnight Forest', bg: '#091413', accent: '#408A71', text: '#B0E4CC' },
+              { id: 'apple', name: 'Apple Style', bg: '#161617', accent: '#0071e3', text: '#fafafa' },
+              { id: 'xiaomi', name: 'Xiaomi Style', bg: '#121212', accent: '#ea580c', text: '#e4e4e7' },
+              { id: 'cyberpunk', name: 'Cyberpunk Neon', bg: '#0c0813', accent: '#ec4899', text: '#a855f7' }
+            ].map(t => {
+              const isActive = (settings.theme || 'default') === t.id;
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => {
+                    updateSetting('theme', t.id);
+                    window.dispatchEvent(new CustomEvent('settings-theme-changed', { detail: `theme-${t.id}` }));
+                  }}
+                  style={{
+                    border: isActive ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    padding: '12px',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseEnter={e => {
+                    if (!isActive) e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) e.currentTarget.style.borderColor = 'var(--border-color)';
+                  }}
+                >
+                  {/* Theme Thumbnail Preview */}
+                  <div style={{
+                    height: '76px',
+                    borderRadius: '6px',
+                    background: t.bg,
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    display: 'flex'
+                  }}>
+                    {/* Fake Sidebar */}
+                    <div style={{ width: '25%', height: '100%', background: 'rgba(255, 255, 255, 0.03)', borderRight: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', flexDirection: 'column', gap: '4px', padding: '6px' }}>
+                      <div style={{ width: '100%', height: '5px', background: t.accent, borderRadius: '2px' }}></div>
+                      <div style={{ width: '80%', height: '4px', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '1px' }}></div>
+                      <div style={{ width: '60%', height: '4px', background: 'rgba(255, 255, 255, 0.15)', borderRadius: '1px' }}></div>
+                    </div>
+                    {/* Fake Content area */}
+                    <div style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <div style={{ width: '40%', height: '6px', background: t.text, borderRadius: '2px' }}></div>
+                      <div style={{ width: '90%', height: '18px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '3px', position: 'relative', display: 'flex', alignItems: 'center', padding: '3px' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: t.accent }}></div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Theme Name */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '13px', fontWeight: isActive ? 800 : 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                      {t.name}
+                    </span>
+                    {isActive && (
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: t.accent }}></span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         {/* Network & Performance */}
         <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
           <h2 style={{ fontSize: '18px', marginBottom: '16px', color: 'var(--text-primary)' }}>Performance & Throttling</h2>
