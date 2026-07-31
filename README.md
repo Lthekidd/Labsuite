@@ -5,18 +5,20 @@
 <h1 align="center">LabSuite</h1>
 
 <p align="center">
-  Encrypted Google Drive backups, cross-PC restore tools, private productivity apps, LAN transfers, and VM file protection in one Windows desktop application.
+  Encrypted Google Drive backups, cross-PC restore tools, private productivity apps, LAN transfers, and VM file protection in one Windows & macOS application.
 </p>
 
 <p align="center">
   <a href="https://github.com/Lthekidd/Labsuite/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Lthekidd/Labsuite?style=flat-square"></a>
   <a href="https://github.com/Lthekidd/Labsuite/actions/workflows/release-windows.yml"><img alt="Windows release workflow" src="https://img.shields.io/github/actions/workflow/status/Lthekidd/Labsuite/release-windows.yml?style=flat-square&label=windows%20build"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-0078D4?style=flat-square&logo=windows">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-408A71?style=flat-square">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-2ea44f?style=flat-square">
 </p>
 
 <p align="center">
   <a href="https://github.com/Lthekidd/Labsuite/releases/latest"><strong>Download the latest Windows installer</strong></a>
+  ·
+  <a href="#macos-running--packaging"><strong>macOS Instructions</strong></a>
   ·
   <a href="CHANGELOG.md">Changelog</a>
   ·
@@ -189,6 +191,26 @@ npm run build:prod
 ```
 
 The unsigned NSIS installer and update metadata are written to `dist-packaged/`. See [RELEASING.md](RELEASING.md) for the tag, GitHub Actions, draft review, and publication workflow.
+
+## macOS Running & Packaging
+
+LabSuite natively supports macOS starting with `v2.9.0`. To run or package the application on your MacBook:
+
+### 1. Run from Source (Dev Mode)
+Clone the repository, install dependencies, and start the hot-reloaded development environment:
+```bash
+git clone https://github.com/Lthekidd/Labsuite.git
+cd Labsuite
+npm install
+npm run dev
+```
+
+### 2. Package a Local Installer (.dmg)
+You can compile and build the native installer locally on your macOS machine:
+```bash
+npm run build:prod
+```
+*The compiled `.dmg` package and `.app` folder will be generated inside the `dist-packaged/` folder on your Mac.*
 
 ## Project structure
 
