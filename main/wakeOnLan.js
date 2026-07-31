@@ -52,7 +52,14 @@ function withTimeout(promise, timeoutMs, fallback) {
 }
 
 function normalizeMac(macAddress) {
-  const cleanMac = String(macAddress || '').replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+  const parts = String(macAddress || '').split(/[:-]/);
+  let cleanMac;
+  if (parts.length === 6) {
+    cleanMac = parts.map(part => part.padStart(2, '0')).join('').toUpperCase();
+  } else {
+    cleanMac = String(macAddress || '').replace(/[^a-fA-F0-9]/g, '').toUpperCase();
+  }
+
   if (!/^[0-9A-F]{12}$/.test(cleanMac)) {
     throw new Error('MAC address must contain exactly 12 hexadecimal characters.');
   }
@@ -518,7 +525,7 @@ function parseArpTable(stdout, subnets = []) {
   const seen = new Set();
   let interfaceAddress = '';
   const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/;
-  const macRegex = /(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}/;
+  const macRegex = /(?:[0-9a-fA-F]{1,2}[:-]){5}[0-9a-fA-F]{1,2}/;
 
   for (const line of String(stdout || '').split(/\r?\n/)) {
     const interfaceMatch = line.match(/Interface:\s*((?:\d{1,3}\.){3}\d{1,3})/i);
