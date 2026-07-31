@@ -60,6 +60,7 @@ function getWakePresentation(wake) {
 }
 
 export default function WakeOnLan({ active = true }) {
+  const nameInputRef = React.useRef(null);
   const [devices, setDevices] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [discoveredDevices, setDiscoveredDevices] = useState([]);
@@ -273,41 +274,30 @@ export default function WakeOnLan({ active = true }) {
     }
   };
 
-  const handleQuickAdd = async discovered => {
+  const handleQuickAdd = discovered => {
     const suggestedName = discovered.hostname || (
       discovered.vendor && discovered.vendor !== 'Unknown vendor'
         ? `${discovered.vendor} PC`
         : 'Network PC'
     );
-    const enteredName = window.prompt(`Name the device at ${discovered.ip}:`, suggestedName);
-    if (enteredName === null) return;
-    const name = enteredName.trim();
-    if (!name) {
-      setError('Please provide a device name.');
-      return;
-    }
+    
+    setForm({
+      id: '',
+      name: suggestedName,
+      mac: discovered.mac,
+      hostIp: discovered.ip || '',
+      broadcastIp: discovered.broadcastIp || 'auto',
+      port: '9',
+      hostname: discovered.hostname || '',
+      vendor: discovered.vendor || ''
+    });
 
-    setSaving(true);
-    try {
-      const response = await ipcRenderer?.invoke('wol:addDevice', {
-        name,
-        mac: discovered.mac,
-        hostIp: discovered.ip,
-        broadcastIp: discovered.broadcastIp || 'auto',
-        port: 9,
-        hostname: discovered.hostname || '',
-        vendor: discovered.vendor || ''
-      });
-      if (response?.success) {
-        setMessage(`Registered "${name}" with verified-host tracking enabled.`);
-        await loadDevices();
-        setDiscoveredDevices(previous => previous.filter(device => device.mac !== discovered.mac));
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to add discovered device.');
-    } finally {
-      setSaving(false);
-    }
+    setMessage(`Populated form with ${discovered.ip}. Enter a custom name and click "Add Device".`);
+
+    setTimeout(() => {
+      nameInputRef.current?.focus();
+      nameInputRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
   };
 
   return (
@@ -438,7 +428,7 @@ export default function WakeOnLan({ active = true }) {
           <form onSubmit={handleSaveDevice} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-panel)', padding: '22px', display: 'grid', gap: '14px' }}>
             <div>
               <label style={labelStyle}>Device Name</label>
-              <input style={fieldStyle} value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Gaming PC" disabled={saving} />
+              <input ref={nameInputRef} style={fieldStyle} value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Gaming PC" disabled={saving} />
             </div>
             <div>
               <label style={labelStyle}>MAC Address</label>
