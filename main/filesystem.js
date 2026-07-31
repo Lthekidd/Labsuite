@@ -204,8 +204,11 @@ function createPathExclusionMatcher(folder, useDefault = true) {
 }
 
 function isPathInsideFolder(filePath, folderPath) {
-  const rel = path.relative(folderPath, filePath);
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+  if (!filePath || !folderPath) return false;
+  const normalizedFile = filePath.replace(/\\/g, '/');
+  const normalizedFolder = folderPath.replace(/\\/g, '/');
+  const rel = path.posix.relative(normalizedFolder, normalizedFile);
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.posix.isAbsolute(rel));
 }
 
 function isPathExcluded(filePath, folder) {

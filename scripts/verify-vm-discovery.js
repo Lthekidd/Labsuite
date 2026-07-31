@@ -108,7 +108,7 @@ async function main() {
       standardPaths: [],
       queryRegistry: false
     });
-    assert.strictEqual(vmrun.path, fakeVmrun);
+    assert.strictEqual(vmrun.path.replace(/\\/g, '/'), fakeVmrun.replace(/\\/g, '/'));
     assert.strictEqual(vmrun.source, 'path');
 
     const vmrunCalls = [];
@@ -120,7 +120,7 @@ async function main() {
           : { ok: false, stdout: '', stderr: 'Unsupported host type', code: 1 };
       }
     });
-    assert.deepStrictEqual(playerList.paths, [vmxPath], 'VMware Player VMs must be detected when the Workstation target fails');
+    assert.deepStrictEqual(playerList.paths.map(p => p.replace(/\\/g, '/')), [vmxPath.replace(/\\/g, '/')], 'VMware Player VMs must be detected when the Workstation target fails');
     assert.deepStrictEqual(vmrunCalls.map(args => args[1]), ['ws', 'player']);
 
     const inventoryFile = path.join(temporaryRoot, 'inventory.vmls');

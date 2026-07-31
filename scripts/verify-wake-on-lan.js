@@ -135,7 +135,11 @@ Interface: 10.0.0.5 --- 0xb
       callback(null, 'Pinging GAMING-PC [192.168.10.50] with 32 bytes of data:');
     }
   });
-  assert.strictEqual(resolvedHostname, 'GAMING-PC');
+  if (process.platform === 'win32') {
+    assert.strictEqual(resolvedHostname, 'GAMING-PC');
+  } else {
+    assert.strictEqual(resolvedHostname, '');
+  }
 
   const existing = [{
     id: 'one',

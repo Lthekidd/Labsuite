@@ -344,7 +344,8 @@ function execFileAsync(file, args = [], options = {}) {
 
 async function isFile(filePath) {
   try {
-    return (await fsp.stat(filePath)).isFile();
+    const p = process.platform !== 'win32' ? filePath.replace(/\\/g, '/') : filePath;
+    return (await fsp.stat(p)).isFile();
   } catch (_error) {
     return false;
   }
@@ -354,7 +355,8 @@ async function hasVmxRuntimeLock(vmxPath) {
   const normalized = normalizeVmxPath(vmxPath);
   if (!normalized) return false;
   try {
-    await fsp.stat(`${normalized}.lck`);
+    const p = process.platform !== 'win32' ? normalized.replace(/\\/g, '/') : normalized;
+    await fsp.stat(`${p}.lck`);
     return true;
   } catch (_error) {
     return false;
@@ -461,7 +463,8 @@ function decodeTextBuffer(buffer) {
 }
 
 async function readFilePrefix(filePath, maxBytes = DEFAULT_MAX_FILE_BYTES) {
-  const handle = await fsp.open(filePath, 'r');
+  const p = process.platform !== 'win32' ? filePath.replace(/\\/g, '/') : filePath;
+  const handle = await fsp.open(p, 'r');
   try {
     const buffer = Buffer.alloc(maxBytes);
     const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
@@ -504,7 +507,7 @@ async function scanVmRoots(roots = [], options = {}) {
     maxVms: Number.isFinite(options.maxVms) ? Math.max(1, options.maxVms) : DEFAULT_SCAN_LIMITS.maxVms,
     concurrency: Number.isFinite(options.concurrency) ? Math.max(1, options.concurrency) : DEFAULT_SCAN_LIMITS.concurrency
   };
-  const uniqueRoots = unique(roots.map(root => path.win32.normalize(root)), value => value.toLowerCase());
+  const uniqueRoots = unique(roots.map(root => path.normalize(root)), value => value.toLowerCase());
   const queue = uniqueRoots.map(root => ({ dir: root, depth: 0, root }));
   const paths = [];
   const errors = [];
@@ -534,7 +537,7 @@ async function scanVmRoots(roots = [], options = {}) {
       }
       rootsScanned.add(result.item.root);
       for (const entry of result.entries) {
-        const fullPath = path.win32.join(result.item.dir, entry.name);
+        const fullPath = path.join(result.item.dir, entry.name);
         if (entry.isFile() && /\.vmx$/i.test(entry.name)) {
           paths.push(fullPath);
           if (paths.length >= limits.maxVms) {
