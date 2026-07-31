@@ -106,6 +106,7 @@ function formatShutdownDuration(totalSeconds = 0) {
 }
 
 export default function App() {
+  const isMac = /macintosh|mac os x/i.test(navigator.userAgent);
   const [activeTab, setActiveTab] = useState('backup');
   const [theme, setTheme] = useState('dark');
   const [appVersion, setAppVersion] = useState('2.2.0');
@@ -410,7 +411,7 @@ export default function App() {
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
               <NavItem id="hub" icon={<AppIcon appId="hub" size={18} />} label="App Hub" activeTab={activeTab} setTab={activateWorkspace} />
               <NavItem id="backup" icon={<AppIcon appId="backup" size={18} />} label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
-              <NavItem id="telegram" icon={<AppIcon appId="telegram" size={18} />} label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+              {!isMac && <NavItem id="telegram" icon={<AppIcon appId="telegram" size={18} />} label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />}
               <NavItem id="crypto" icon={<AppIcon appId="crypto" size={18} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
             </div>
 

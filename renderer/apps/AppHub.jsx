@@ -228,9 +228,13 @@ function ShutdownTimerPanel({ active = true }) {
 
 export default function AppHub({ active = true, installedApps, onInstall, onUninstall, onOpenApp, onLaunchStandalone }) {
   const installedSet = new Set(installedApps || []);
+  const isMac = /macintosh|mac os x/i.test(navigator.userAgent);
 
-  const installedHubApps = HUB_APPS.filter(a => installedSet.has(a.id));
-  const availableHubApps = HUB_APPS.filter(a => !installedSet.has(a.id));
+  const activeCoreApps = CORE_APPS.filter(app => !isMac || app.id !== 'telegram');
+  const activeHubApps = HUB_APPS.filter(app => !isMac || app.id === 'wol');
+
+  const installedHubApps = activeHubApps.filter(a => installedSet.has(a.id));
+  const availableHubApps = activeHubApps.filter(a => !installedSet.has(a.id));
 
   return (
     <div className="apphub-container" style={{ padding: '40px', height: '100%', overflowY: 'auto' }}>
@@ -246,7 +250,7 @@ export default function AppHub({ active = true, installedApps, onInstall, onUnin
       </div>
 
       {/* PC Shutdown / Restart Timer Panel */}
-      <ShutdownTimerPanel active={active} />
+      {!isMac && <ShutdownTimerPanel active={active} />}
 
       <RestartInternetPanel active={active} />
 
@@ -255,10 +259,10 @@ export default function AppHub({ active = true, installedApps, onInstall, onUnin
         <div className="apphub-section-header">
           <span className="apphub-section-dot" style={{ background: '#408A71' }}></span>
           <span className="apphub-section-title">Core</span>
-          <span className="apphub-section-badge">{CORE_APPS.length}</span>
+          <span className="apphub-section-badge">{activeCoreApps.length}</span>
         </div>
         <div className="apphub-grid">
-          {CORE_APPS.map(app => (
+          {activeCoreApps.map(app => (
             <AppCard
               key={app.id}
               app={app}
