@@ -170,13 +170,14 @@ class BackupWorker extends EventEmitter {
     }
   }
 
-  getTransferBatches(items) {
+  *getTransferBatches(items) {
     const batchSize = Math.max(1, Number(rclone.getTransferConcurrency?.()) || 4);
-    const batches = [];
     for (let index = 0; index < items.length; index += batchSize) {
-      batches.push(items.slice(index, index + batchSize));
+      // Yield one batch at a time. Building an array containing 100,000+
+      // child arrays caused another large synchronous allocation for very
+      // large backup queues.
+      yield items.slice(index, index + batchSize);
     }
-    return batches;
   }
 
   clearDirtyFolder(folderId) {
@@ -313,40 +314,9 @@ class BackupWorker extends EventEmitter {
         : folders;
       const { effective, covered } = this.getEffectiveFolders(selected);
 
-      // Pre-calculation phase: plan all folders to get global totals
-      const folderPlans = new Map();
-      const planner = require('./backupPlanner');
-      for (const folder of effective) {
-        this.throwIfPauseBoundaryReached();
-        const planningStartedAt = Date.now();
-        console.log(`BackupWorker: Planning ${options.dirtyOnly ? 'changed files in' : 'full contents of'} ${folder.local_path}...`);
-        try {
-          const folderPlan = !!options.dirtyOnly
-            ? await planner.planDirtyFolderAsync(folder)
-            : await planner.planFolderAsync(folder);
-          this.throwIfPauseBoundaryReached();
-
-          const executableItems = folderPlan.workItems.filter(item =>
-            ['repair_active', 'upload', 'delete_history'].includes(item.type)
-          );
-
-          const folderFiles = executableItems.length;
-          const folderBytes = executableItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
-
-          this.currentRunStats.globalFilesTotal += folderFiles;
-          this.currentRunStats.globalBytesTotal += folderBytes;
-
-          folderPlans.set(folder.id, { plan: folderPlan, filesTotal: folderFiles, bytesTotal: folderBytes });
-          console.log(`BackupWorker: Planned ${folder.local_path} in ${Date.now() - planningStartedAt}ms (${folderFiles} queued file(s), ${folderBytes} byte(s)).`);
-        } catch (e) {
-          this.rethrowIfCancelled(e);
-          console.warn(`BackupWorker: pre-planning failed for folder ${folder.id} after ${Date.now() - planningStartedAt}ms:`, e.message);
-        }
-      }
-
       this.emitOverallProgress({
-        stage: 'queued',
-        stageLabel: 'Backup queue ready',
+        stage: 'scanning',
+        stageLabel: 'Scanning backup folders',
         bytesDone: 0,
         filesDone: 0,
         speed: 0,
@@ -357,19 +327,16 @@ class BackupWorker extends EventEmitter {
       for (const [index, folder] of effective.entries()) {
         this.throwIfPauseBoundaryReached();
         processedFolderIds.add(folder.id);
-        const folderPrePlan = folderPlans.get(folder.id);
         await this.runFolderBackup(folder, {
           folderNumber: index + 1,
           totalFolders: effective.length,
           coveredChildren: covered.get(folder.id) || [],
-          dirtyOnly: !!options.dirtyOnly,
-          prePlan: folderPrePlan
+          dirtyOnly: !!options.dirtyOnly
         });
         this.throwIfPauseBoundaryReached();
-
-        if (folderPrePlan && this.currentRunStats) {
-          this.currentRunStats.globalFilesDone += folderPrePlan.filesTotal;
-          this.currentRunStats.globalBytesDone += folderPrePlan.bytesTotal;
+        if (this.currentRunStats) {
+          this.currentRunStats.globalFilesDone = this.currentRunStats.globalFilesTotal;
+          this.currentRunStats.globalBytesDone = this.currentRunStats.globalBytesTotal;
         }
       }
 
@@ -761,6 +728,47 @@ class BackupWorker extends EventEmitter {
     return new Promise(resolve => setImmediate(resolve));
   }
 
+  async groupPlanWorkItems(items) {
+    const grouped = { scanErrors: [], repairItems: [], uploadItems: [], deleteItems: [] };
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (item.type === 'scan_error') grouped.scanErrors.push(item);
+      else if (item.type === 'repair_active') grouped.repairItems.push(item);
+      else if (item.type === 'upload') grouped.uploadItems.push(item);
+      else if (item.type === 'delete_history') grouped.deleteItems.push(item);
+      if (index > 0 && index % 250 === 0) await this.yieldToEventLoop();
+    }
+    return grouped;
+  }
+
+  async partitionUploadItemsAsync(items, packSettings) {
+    const packed = [];
+    const packedToDirect = [];
+    const newDirect = [];
+    const modifiedDirect = [];
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (packStore.shouldPackItem(item, packSettings)) {
+        packed.push(item);
+      } else if (item.previousStorage === 'pack' && item.previousPackRemotePath) {
+        packedToDirect.push(item);
+      } else if (!item.previousRemotePath) {
+        newDirect.push(item);
+      } else {
+        modifiedDirect.push(item);
+      }
+      if (index > 0 && index % 250 === 0) await this.yieldToEventLoop();
+    }
+
+    if (packed.length === 1) {
+      const item = packed.pop();
+      if (item.previousStorage === 'pack' && item.previousPackRemotePath) packedToDirect.push(item);
+      else if (!item.previousRemotePath) newDirect.push(item);
+      else modifiedDirect.push(item);
+    }
+    return { packed, packedToDirect, newDirect, modifiedDirect };
+  }
+
   recordRunFailure(count = 1) {
     if (!this.currentRunStats) return;
     this.currentRunStats.filesFailed += Math.max(1, Number(count) || 1);
@@ -945,12 +953,15 @@ class BackupWorker extends EventEmitter {
     }
 
     let plan;
+    const planningStartedAt = Date.now();
+    console.log(`BackupWorker: Planning ${dirtyOnly ? 'changed files in' : 'full contents of'} ${folder.local_path}...`);
     try {
       if (prePlan && prePlan.plan) {
-      plan = prePlan.plan;
-    } else {
-      plan = dirtyOnly ? await planner.planDirtyFolderAsync(folder) : await planner.planFolderAsync(folder);
-    }
+        plan = prePlan.plan;
+      } else {
+        plan = dirtyOnly ? await planner.planDirtyFolderAsync(folder) : await planner.planFolderAsync(folder);
+      }
+      console.log(`BackupWorker: Planned ${folder.local_path} in ${Date.now() - planningStartedAt}ms (${Number(plan.executableFiles) || 0} queued file(s), ${Number(plan.bytesToProcess) || 0} byte(s)).`);
     } catch (error) {
       this.rethrowIfCancelled(error);
       this.recordRunFailure();
@@ -965,7 +976,7 @@ class BackupWorker extends EventEmitter {
       return;
     }
 
-    const folderMissing = plan.workItems.find(item => item.type === 'folder_missing');
+    const folderMissing = plan.workItems[0]?.type === 'folder_missing' ? plan.workItems[0] : null;
     if (folderMissing) {
       this.recordRunFailure();
       db.updateFolderSyncStatus(folder.id, false, folderMissing.error);
@@ -979,15 +990,19 @@ class BackupWorker extends EventEmitter {
       return;
     }
 
-    const scanErrors = plan.workItems.filter(item => item.type === 'scan_error');
-    const repairItems = plan.workItems.filter(item => item.type === 'repair_active');
-    const uploadItems = plan.workItems.filter(item => item.type === 'upload');
-    const deleteItems = plan.workItems.filter(item => item.type === 'delete_history');
-    const executableItems = [...repairItems, ...uploadItems, ...deleteItems];
+    const { scanErrors, repairItems, uploadItems, deleteItems } = await this.groupPlanWorkItems(plan.workItems);
+    const executableItemCount = repairItems.length + uploadItems.length + deleteItems.length;
     const totals = {
-      filesTotal: executableItems.length,
-      bytesTotal: executableItems.reduce((sum, item) => sum + (Number(item.size) || 0), 0)
+      filesTotal: Number(plan.executableFiles) || executableItemCount,
+      bytesTotal: Number(plan.bytesToProcess) || 0
     };
+    if (this.currentRunStats) {
+      this.currentRunStats.globalFilesTotal += totals.filesTotal;
+      this.currentRunStats.globalBytesTotal += totals.bytesTotal;
+    }
+    // The grouped arrays now own the item references; release the original
+    // 500k-item planning array before upload work starts.
+    plan.workItems.length = 0;
 
     this.emitItems(folder, repairItems, {
       status: 'at_risk',
@@ -995,14 +1010,20 @@ class BackupWorker extends EventEmitter {
       queuedAt: startedAt,
       error: 'Active backup copy needs repair'
     });
-    this.emitItems(folder, [...uploadItems, ...deleteItems], {
+    this.emitItems(folder, uploadItems, {
+      status: 'queued',
+      percent: 0,
+      queuedAt: startedAt,
+      error: ''
+    });
+    this.emitItems(folder, deleteItems, {
       status: 'queued',
       percent: 0,
       queuedAt: startedAt,
       error: ''
     });
 
-    if (plan.sourceUnavailable && executableItems.length === 0 && scanErrors.length === 0) {
+    if (plan.sourceUnavailable && executableItemCount === 0 && scanErrors.length === 0) {
       this.emitFolderProgress(folder, {
         ...base,
         stage: 'complete',
@@ -1018,7 +1039,7 @@ class BackupWorker extends EventEmitter {
       return;
     }
 
-    if (executableItems.length === 0 && scanErrors.length === 0) {
+    if (executableItemCount === 0 && scanErrors.length === 0) {
       if (!(await this.verifyFolderBeforeProtected(folder, base, coveredChildren, dirtyOnly))) return;
       db.updateFolderSyncStatus(folder.id, true);
       // A dirty-only pass runs every 15 minutes. When it finds no changes it
@@ -1052,10 +1073,13 @@ class BackupWorker extends EventEmitter {
 
     const counters = { filesDone: 0, bytesDone: 0, startedMs: Date.now() };
     const packSettings = packStore.getPackSettings(db);
-    const { packed: packedUploadItems, direct: directUploadItems } = this.partitionUploadItems(uploadItems, packSettings);
-    const packedToDirectItems = directUploadItems.filter(item => item.previousStorage === 'pack' && item.previousPackRemotePath);
-    const newDirectItems = directUploadItems.filter(item => !item.previousRemotePath);
-    const modifiedDirectItems = directUploadItems.filter(item => item.previousRemotePath && !(item.previousStorage === 'pack' && item.previousPackRemotePath));
+    const {
+      packed: packedUploadItems,
+      packedToDirect: packedToDirectItems,
+      newDirect: newDirectItems,
+      modifiedDirect: modifiedDirectItems
+    } = await this.partitionUploadItemsAsync(uploadItems, packSettings);
+    uploadItems.length = 0;
 
     this.throwIfPauseBoundaryReached();
     await this.repairActiveCopies(folder, repairItems, base, coveredChildren, counters, totals);
@@ -1085,9 +1109,24 @@ class BackupWorker extends EventEmitter {
       this.recordRunFailure(scanErrors.length);
     }
 
-    const failures = executableItems
-      .map(item => db.getManifestEntry(folder.id, item.relativePath))
-      .filter(entry => entry && ['failed', 'active_repair_needed'].includes(entry.status));
+    const failures = [];
+    const processedItems = [
+      repairItems,
+      packedUploadItems,
+      packedToDirectItems,
+      newDirectItems,
+      modifiedDirectItems,
+      deleteItems
+    ];
+    let checkedItems = 0;
+    for (const items of processedItems) {
+      for (const item of items) {
+        const entry = db.getManifestEntry(folder.id, item.relativePath);
+        if (entry && ['failed', 'active_repair_needed'].includes(entry.status)) failures.push(entry);
+        checkedItems += 1;
+        if (checkedItems % 250 === 0) await this.yieldToEventLoop();
+      }
+    }
 
     if (failures.length > 0 || scanErrors.length > 0) {
       const atRiskCount = failures.filter(entry => entry.status === 'active_repair_needed').length;

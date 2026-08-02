@@ -1321,6 +1321,15 @@ module.exports = {
     return { ...(data.backup_manifest[key] || {}) };
   },
 
+  // Internal read-only view for high-volume backup planning. Copying a
+  // 500,000-entry manifest with object spread can block Electron's main loop
+  // for many seconds and temporarily double its memory use. Planner callers
+  // must not mutate this object or its entries.
+  getManifestEntriesView: (folderId) => {
+    loadDatabase();
+    return data.backup_manifest[String(folderId)] || {};
+  },
+
   getManifestEntry: (folderId, relativePath) => {
     loadDatabase();
     const folderEntries = data.backup_manifest[String(folderId)] || {};

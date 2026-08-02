@@ -57,19 +57,21 @@ function addUploadIfNeeded(plan, fileInfo, entry) {
 
   if (!hasChanged(entry, fileInfo)) return;
 
-  plan.workItems.push({
+  const item = {
     type: 'upload',
-    folderId: plan.folder.id,
     localPath: fileInfo.localPath,
     relativePath: fileInfo.relativePath,
     size: fileInfo.size,
-    mtimeMs: fileInfo.mtimeMs,
-    previousRemotePath: entry && entry.status === 'backed_up' ? entry.remote_path : null,
-    previousStorage: entry && entry.status === 'backed_up' ? (entry.storage || 'file') : null,
-    previousPackId: entry && entry.status === 'backed_up' ? entry.pack_id || null : null,
-    previousPackRemotePath: entry && entry.status === 'backed_up' ? entry.pack_remote_path || null : null,
-    previousPackMemberPath: entry && entry.status === 'backed_up' ? entry.pack_member_path || null : null
-  });
+    mtimeMs: fileInfo.mtimeMs
+  };
+  if (entry && entry.status === 'backed_up') {
+    if (entry.remote_path) item.previousRemotePath = entry.remote_path;
+    item.previousStorage = entry.storage || 'file';
+    if (entry.pack_id) item.previousPackId = entry.pack_id;
+    if (entry.pack_remote_path) item.previousPackRemotePath = entry.pack_remote_path;
+    if (entry.pack_member_path) item.previousPackMemberPath = entry.pack_member_path;
+  }
+  plan.workItems.push(item);
 }
 
 function hasPreviousRemoteCopy(entry) {
@@ -151,6 +153,38 @@ function finishPlan(plan) {
   plan.filesToUpload = uploadItems.length;
   plan.deleteItems = plan.workItems.filter(item => item.type === 'delete_history').length;
   plan.repairItems = plan.workItems.filter(item => item.type === 'repair_active').length;
+  return plan;
+}
+
+async function finishPlanAsync(plan) {
+  let bytesToUpload = 0;
+  let filesToUpload = 0;
+  let deleteItems = 0;
+  let repairItems = 0;
+  let bytesToProcess = 0;
+
+  for (let index = 0; index < plan.workItems.length; index += 1) {
+    const item = plan.workItems[index];
+    if (item.type === 'upload') {
+      filesToUpload += 1;
+      bytesToUpload += Number(item.size) || 0;
+    } else if (item.type === 'delete_history') {
+      deleteItems += 1;
+    } else if (item.type === 'repair_active') {
+      repairItems += 1;
+    } else {
+      continue;
+    }
+    bytesToProcess += Number(item.size) || 0;
+    await maybeYield(index + 1, 250);
+  }
+
+  plan.bytesToUpload = bytesToUpload;
+  plan.filesToUpload = filesToUpload;
+  plan.deleteItems = deleteItems;
+  plan.repairItems = repairItems;
+  plan.executableFiles = filesToUpload + deleteItems + repairItems;
+  plan.bytesToProcess = bytesToProcess;
   return plan;
 }
 
@@ -323,6 +357,8 @@ function walkFolder(folder, plan, entries) {
 }
 
 async function walkFolderAsync(folder, plan, entries) {
+  const settings = db.getDb().settings || {};
+  const isExcluded = filesystem.createPathExclusionMatcher(folder, settings.use_default_exclusions !== '0');
   const includes = Array.isArray(folder.include_paths) ? folder.include_paths : [];
   if (includes.length > 0) {
     let visited = 0;
@@ -332,7 +368,7 @@ async function walkFolderAsync(folder, plan, entries) {
       const normalized = manifest.normalizeRelativePath(relativePath);
       if (!normalized || normalized.split('/').includes('..')) continue;
       const filePath = path.join(folder.local_path, ...normalized.split('/'));
-      if (filesystem.isPathExcluded(filePath, folder)) continue;
+      if (isExcluded(filePath)) continue;
       try {
         const stat = await fsPromises.stat(filePath);
         if (!stat.isFile()) {
@@ -385,7 +421,7 @@ async function walkFolderAsync(folder, plan, entries) {
       if (visited % 500 === 0) await yieldToEventLoop();
 
       const childPath = path.join(current, child.name);
-      if (filesystem.isPathExcluded(childPath, folder)) {
+      if (isExcluded(childPath)) {
         plan.skipped += 1;
         continue;
       }
@@ -431,7 +467,9 @@ async function walkFolderAsync(folder, plan, entries) {
 
 async function addManifestRepairsAsync(folder, plan, entries) {
   let visited = 0;
-  for (const [relativePath, entry] of Object.entries(entries)) {
+  for (const relativePath in entries) {
+    if (!Object.prototype.hasOwnProperty.call(entries, relativePath)) continue;
+    const entry = entries[relativePath];
     visited += 1;
     await maybeYield(visited);
     if (entry.status !== 'active_repair_needed') continue;
@@ -450,14 +488,18 @@ async function addManifestRepairsAsync(folder, plan, entries) {
 }
 
 async function addDirtyManifestUploadsAsync(folder, plan, entries) {
+  const settings = db.getDb().settings || {};
+  const isExcluded = filesystem.createPathExclusionMatcher(folder, settings.use_default_exclusions !== '0');
   let visited = 0;
-  for (const [relativePath, entry] of Object.entries(entries)) {
+  for (const relativePath in entries) {
+    if (!Object.prototype.hasOwnProperty.call(entries, relativePath)) continue;
+    const entry = entries[relativePath];
     visited += 1;
     await maybeYield(visited);
     if (!['dirty', 'failed'].includes(entry.status)) continue;
 
     const localPath = entry.local_path || path.join(folder.local_path, relativePath);
-    if (filesystem.isPathExcluded(localPath, folder)) {
+    if (isExcluded(localPath)) {
       db.removeManifestEntry(folder.id, relativePath);
       plan.skipped += 1;
       continue;
@@ -498,7 +540,9 @@ async function addDirtyManifestUploadsAsync(folder, plan, entries) {
 
 async function addManifestDeletesAsync(folder, plan, entries) {
   let visited = 0;
-  for (const [relativePath, entry] of Object.entries(entries)) {
+  for (const relativePath in entries) {
+    if (!Object.prototype.hasOwnProperty.call(entries, relativePath)) continue;
+    const entry = entries[relativePath];
     visited += 1;
     await maybeYield(visited);
     if (entry.status !== 'deleted_pending_history') continue;
@@ -559,9 +603,9 @@ function planFolder(folder) {
 
 async function planFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
-  const entries = db.getManifestEntries(folder.id);
+  const entries = db.getManifestEntriesView(folder.id);
 
-  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlan(plan);
+  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlanAsync(plan);
 
   if (!(await pathExistsAsync(folder.local_path))) {
     plan.workItems.push({
@@ -578,7 +622,7 @@ async function planFolderAsync(folder) {
   await walkFolderAsync(folder, plan, entries);
   await addManifestDeletesAsync(folder, plan, entries);
 
-  return finishPlan(plan);
+  return finishPlanAsync(plan);
 }
 
 function planDirtyFolder(folder) {
@@ -607,9 +651,9 @@ function planDirtyFolder(folder) {
 
 async function planDirtyFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
-  const entries = db.getManifestEntries(folder.id);
+  const entries = db.getManifestEntriesView(folder.id);
 
-  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlan(plan);
+  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlanAsync(plan);
 
   if (!(await pathExistsAsync(folder.local_path))) {
     plan.workItems.push({
@@ -626,7 +670,7 @@ async function planDirtyFolderAsync(folder) {
   await addDirtyManifestUploadsAsync(folder, plan, entries);
   await addManifestDeletesAsync(folder, plan, entries);
 
-  return finishPlan(plan);
+  return finishPlanAsync(plan);
 }
 
 module.exports = {

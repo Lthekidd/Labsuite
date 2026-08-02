@@ -73,7 +73,7 @@ async function run() {
     };
     rclone.getTransferConcurrency = () => 2;
     assert.deepStrictEqual(
-      backupWorker.getTransferBatches([1, 2, 3, 4, 5]),
+      Array.from(backupWorker.getTransferBatches([1, 2, 3, 4, 5])),
       [[1, 2], [3, 4], [5]],
       'transfer batches must not hide queued files behind the active upload slots'
     );
