@@ -72,6 +72,34 @@ const restoreListInflight = new Map();
 let backupShortcutCache = null;
 let backupShortcutRefresh = null;
 
+const runExecutable = (file, args) => new Promise((resolve, reject) => {
+  const { execFile } = require('child_process');
+  execFile(file, args, { windowsHide: true }, (error, stdout, stderr) => {
+    if (error) {
+      error.details = String(stderr || stdout || '').trim();
+      reject(error);
+    } else {
+      resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
+    }
+  });
+});
+
+const clearPowerShutdownSchedule = async () => db.withWriteBatch(async () => {
+  db.setSetting('power_shutdown_due_at', '');
+  db.setSetting('power_shutdown_label', '');
+});
+
+const getPowerShutdownSchedule = () => {
+  const dueAt = db.getSetting('power_shutdown_due_at') || '';
+  const dueTime = Date.parse(dueAt);
+  if (!dueAt || !Number.isFinite(dueTime) || dueTime <= Date.now()) return null;
+  return {
+    dueAt,
+    label: db.getSetting('power_shutdown_label') || '',
+    remainingSeconds: Math.max(0, Math.ceil((dueTime - Date.now()) / 1000))
+  };
+};
+
 const RENDERER_WRITABLE_SETTINGS = new Set([
   'theme',
   'sync_interval_minutes',
@@ -826,6 +854,75 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     }
   };
 
+  const SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS = 3 * 60;
+  const existingShutdown = getPowerShutdownSchedule();
+  let shutdownAfterBackup = existingShutdown?.label === 'After backup'
+    ? {
+        armed: true,
+        backupCompleted: true,
+        phase: 'countdown',
+        dueAt: existingShutdown.dueAt,
+        delaySeconds: SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS,
+        message: 'Backup completed. Windows shutdown is scheduled.'
+      }
+    : {
+        armed: false,
+        backupCompleted: false,
+        phase: 'off',
+        dueAt: null,
+        delaySeconds: SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS,
+        message: ''
+      };
+
+  const getShutdownAfterBackupState = () => ({ ...shutdownAfterBackup });
+  const publishShutdownAfterBackupState = () => {
+    const state = getShutdownAfterBackupState();
+    sendToRenderer('sync:shutdownAfterBackupStatus', state);
+    return state;
+  };
+  const setShutdownAfterBackupFailure = (message) => {
+    shutdownAfterBackup = {
+      ...shutdownAfterBackup,
+      armed: false,
+      backupCompleted: false,
+      phase: 'error',
+      dueAt: null,
+      message: String(message || 'Backup did not complete, so the PC will stay on.')
+    };
+    return publishShutdownAfterBackupState();
+  };
+
+  const scheduleShutdownAfterCompletedBackup = async () => {
+    if (!shutdownAfterBackup.armed || !shutdownAfterBackup.backupCompleted || shutdownAfterBackup.phase !== 'waiting') return;
+    if (process.platform !== 'win32') {
+      setShutdownAfterBackupFailure('Automatic shutdown after backup is supported on Windows only.');
+      return;
+    }
+
+    // No follow-up watcher run should begin during the three-minute grace
+    // period. The user can cancel, which starts normal scheduling again.
+    backupWorker.cancelScheduledBackup();
+    watcher.stopWatcher();
+    scheduler.stopScheduler();
+    try {
+      await runExecutable('shutdown.exe', ['/s', '/t', String(SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS)]);
+      const dueAt = new Date(Date.now() + SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS * 1000).toISOString();
+      await db.withWriteBatch(async () => {
+        db.setSetting('power_shutdown_due_at', dueAt);
+        db.setSetting('power_shutdown_label', 'After backup');
+      });
+      shutdownAfterBackup = {
+        ...shutdownAfterBackup,
+        phase: 'countdown',
+        dueAt,
+        message: 'Backup completed. This PC will shut down in 3 minutes.'
+      };
+      publishShutdownAfterBackupState();
+    } catch (error) {
+      setShutdownAfterBackupFailure(`Backup completed, but Windows shutdown could not be scheduled: ${error.message}`);
+    }
+  };
+
   let fileActivityBuffer = new Map();
   let fileActivityFlushTimer = null;
 
@@ -1172,6 +1269,64 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       console.error('Manual backup failed:', err.message);
     });
     return true;
+  });
+
+  ipcMain.handle('sync:getShutdownAfterBackup', async () => getShutdownAfterBackupState());
+
+  ipcMain.handle('sync:setShutdownAfterBackup', async (_event, { enabled } = {}) => {
+    if (enabled !== true) {
+      if (shutdownAfterBackup.phase === 'countdown' && process.platform === 'win32') {
+        try {
+          await runExecutable('shutdown.exe', ['/a']);
+        } catch (error) {
+          // Windows returns an error when the countdown already ended or no
+          // shutdown is pending. Clearing LabSuite's state is still safe.
+          console.warn('LabSuite: Could not abort the after-backup shutdown countdown:', error.message);
+        }
+      }
+      await clearPowerShutdownSchedule();
+      shutdownAfterBackup = {
+        armed: false,
+        backupCompleted: false,
+        phase: 'off',
+        dueAt: null,
+        delaySeconds: SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS,
+        message: ''
+      };
+      if (db.getSetting('sync_paused') !== '1' && db.getSetting('setup_complete') === '1') {
+        watcher.initWatcher();
+        scheduler.startScheduler();
+      }
+      return publishShutdownAfterBackupState();
+    }
+
+    if (process.platform !== 'win32') {
+      throw new Error('Shutdown after backup is currently supported on Windows only.');
+    }
+    if (db.getSetting('sync_paused') === '1') {
+      throw new Error('Resume backups before enabling shutdown after backup.');
+    }
+    if (shutdownAfterBackup.phase === 'countdown') return getShutdownAfterBackupState();
+
+    shutdownAfterBackup = {
+      armed: true,
+      backupCompleted: false,
+      phase: 'waiting',
+      dueAt: null,
+      delaySeconds: SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS,
+      message: backupWorker.isRunning
+        ? 'Waiting for the current backup to finish.'
+        : 'Starting a backup, then this PC will shut down 3 minutes after it finishes.'
+    };
+    publishShutdownAfterBackupState();
+
+    if (!backupWorker.isRunning) {
+      scheduler.runFullSync(null, { manual: true, reason: 'shutdown-after-backup' }).catch(error => {
+        console.error('Shutdown-after-backup run failed:', error.message);
+        setShutdownAfterBackupFailure(`Backup failed, so this PC will stay on: ${error.message}`);
+      });
+    }
+    return getShutdownAfterBackupState();
   });
 
   ipcMain.handle('sync:pause', async () => {
@@ -1972,6 +2127,18 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       ? { status: 'error', details: `${failedCount} backup ${failedCount === 1 ? 'item needs' : 'items need'} attention` }
       : { status: 'idle', details: '' });
     sendToRenderer('sync:complete', data);
+    if (shutdownAfterBackup.armed) {
+      if (failedCount > 0) {
+        setShutdownAfterBackupFailure(`${failedCount} backup ${failedCount === 1 ? 'item failed' : 'items failed'}, so this PC will stay on.`);
+      } else {
+        shutdownAfterBackup = {
+          ...shutdownAfterBackup,
+          backupCompleted: true,
+          message: 'Backup uploads completed. Finishing final bookkeeping...'
+        };
+        publishShutdownAfterBackupState();
+      }
+    }
   });
 
   backupWorker.on('backup:error', (data = {}) => {
@@ -1980,11 +2147,25 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     tray.updateTrayStatus('error', message);
     sendToRenderer('status:change', { status: 'error', details: message });
     sendToRenderer('sync:complete', data);
+    if (shutdownAfterBackup.armed) {
+      setShutdownAfterBackupFailure(`Backup failed, so this PC will stay on: ${message}`);
+    }
   });
 
   backupWorker.on('backup:paused', (reason) => {
     tray.updateTrayStatus('paused', reason);
     sendToRenderer('status:change', { status: 'paused', details: reason });
+    if (shutdownAfterBackup.armed) {
+      setShutdownAfterBackupFailure('Backup was paused, so this PC will stay on.');
+    }
+  });
+
+  backupWorker.on('backup:idle', (data = {}) => {
+    if (shutdownAfterBackup.armed && shutdownAfterBackup.backupCompleted && data.paused !== true) {
+      scheduleShutdownAfterCompletedBackup().catch(error => {
+        setShutdownAfterBackupFailure(`Windows shutdown could not be scheduled: ${error.message}`);
+      });
+    }
   });
 
   backupWorker.on('backup:draining', (reason) => {
@@ -2182,35 +2363,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   });
 
   // --- LabSuite App Suite (LAN & Productivity) ---
-  const runExecutable = (file, args) => new Promise((resolve, reject) => {
-    const { execFile } = require('child_process');
-    execFile(file, args, { windowsHide: true }, (error, stdout, stderr) => {
-      if (error) {
-        error.details = String(stderr || stdout || '').trim();
-        reject(error);
-      } else {
-        resolve({ stdout: String(stdout || ''), stderr: String(stderr || '') });
-      }
-    });
-  });
-
-  const clearShutdownSchedule = async () => db.withWriteBatch(async () => {
-    db.setSetting('power_shutdown_due_at', '');
-    db.setSetting('power_shutdown_label', '');
-  });
-
-  const getShutdownSchedule = () => {
-    const dueAt = db.getSetting('power_shutdown_due_at') || '';
-    const dueTime = Date.parse(dueAt);
-    if (!dueAt || !Number.isFinite(dueTime) || dueTime <= Date.now()) return null;
-    return {
-      dueAt,
-      label: db.getSetting('power_shutdown_label') || '',
-      remainingSeconds: Math.max(0, Math.ceil((dueTime - Date.now()) / 1000))
-    };
-  };
-
-  ipcMain.handle('power:getShutdownSchedule', async () => getShutdownSchedule());
+  ipcMain.handle('power:getShutdownSchedule', async () => getPowerShutdownSchedule());
 
   ipcMain.handle('power:scheduleShutdown', async (_event, { seconds, label } = {}) => {
     if (process.platform !== 'win32') throw new Error('Shutdown scheduling is currently supported on Windows only.');
@@ -2224,13 +2377,24 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       db.setSetting('power_shutdown_due_at', dueAt);
       db.setSetting('power_shutdown_label', String(label || '').slice(0, 40));
     });
-    return getShutdownSchedule();
+    return getPowerShutdownSchedule();
   });
 
   ipcMain.handle('power:cancelShutdown', async () => {
     if (process.platform !== 'win32') throw new Error('Shutdown scheduling is currently supported on Windows only.');
     await runExecutable('shutdown.exe', ['/a']);
-    await clearShutdownSchedule();
+    await clearPowerShutdownSchedule();
+    if (shutdownAfterBackup.phase === 'countdown') {
+      shutdownAfterBackup = {
+        armed: false,
+        backupCompleted: false,
+        phase: 'off',
+        dueAt: null,
+        delaySeconds: SHUTDOWN_AFTER_BACKUP_DELAY_SECONDS,
+        message: ''
+      };
+      publishShutdownAfterBackupState();
+    }
     return true;
   });
 

@@ -31,6 +31,8 @@ const INVOKE_CHANNELS = new Set([
   'sync:pauseAfterCurrent',
   'sync:resume',
   'sync:resolveConflict',
+  'sync:getShutdownAfterBackup',
+  'sync:setShutdownAfterBackup',
 
   // Settings API
   'settings:get',
@@ -253,6 +255,7 @@ const LISTEN_CHANNELS = new Set([
   'backup:file-activity',
   'backup:file-activity-batch',
   'sync:complete',
+  'sync:shutdownAfterBackupStatus',
   'sync:error',
   'sync:conflict',
   'restore:progress',

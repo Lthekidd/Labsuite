@@ -37,6 +37,8 @@ assert.ok(
   'Restore disk mounts must not permit writes to the encrypted backup vault.'
 );
 assert.ok(allowed.has('updates:install'), 'The renderer must be allowed to request restart-and-install.');
+assert.ok(allowed.has('sync:getShutdownAfterBackup'), 'The renderer must be able to read shutdown-after-backup state.');
+assert.ok(allowed.has('sync:setShutdownAfterBackup'), 'The renderer must be able to arm and cancel shutdown after backup.');
 assert.ok(allowed.has('diagnostics:copyCrashReports'), 'The renderer must be allowed to copy the seven-day crash archive.');
 assert.ok(allowed.has('diagnostics:openCrashReportsFolder'), 'The renderer must be allowed to open the crash-report folder.');
 assert.ok(
@@ -54,6 +56,18 @@ assert.ok(
 assert.ok(
   fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteSettings.jsx'), 'utf8').includes('Copy Crash Reports'),
   'Suite Settings must expose the one-click crash-report copy action.'
+);
+const backupUiSource = fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteBackup.jsx'), 'utf8');
+const backupCssSource = fs.readFileSync(path.join(root, 'renderer', 'index.css'), 'utf8');
+assert.ok(backupUiSource.includes('Shut down after backup'), 'Activity controls must expose shutdown after backup.');
+assert.ok(backupUiSource.includes('Cancel scheduled shutdown'), 'The automatic shutdown must remain cancelable during its grace period.');
+assert.ok(
+  backupCssSource.includes('.activity-header') && backupCssSource.includes('flex-direction: column'),
+  'The Activity title must remain above its button row.'
+);
+assert.ok(
+  mainSources.includes("backupWorker.on('backup:idle'") && mainSources.includes("shutdown.exe', ['/s', '/t'") && mainSources.includes("shutdown.exe', ['/a']"),
+  'Shutdown after backup must wait for idle and provide native Windows cancellation.'
 );
 assert.ok(
   mainSources.includes("app.exit(0);") && mainSources.includes("if (!gotTheLock)"),

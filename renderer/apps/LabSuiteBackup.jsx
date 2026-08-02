@@ -542,8 +542,47 @@ export default function LabSuiteBackup({ active = true }) {
   const [verifyLogs, setVerifyLogs] = useState([]);
   const [verifyingFolderId, setVerifyingFolderId] = useState(null);
   const [diagnosticsStatus, setDiagnosticsStatus] = useState('');
+  const [shutdownAfterBackup, setShutdownAfterBackup] = useState({
+    armed: false,
+    phase: 'off',
+    dueAt: null,
+    message: ''
+  });
+  const [shutdownCountdownSeconds, setShutdownCountdownSeconds] = useState(0);
   const [restoreDrillRunning, setRestoreDrillRunning] = useState(false);
   const [restoreDrillReport, setRestoreDrillReport] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    ipcRenderer.invoke('sync:getShutdownAfterBackup')
+      .then(state => {
+        if (mounted && state) setShutdownAfterBackup(state);
+      })
+      .catch(error => {
+        if (mounted) setShutdownAfterBackup(current => ({ ...current, phase: 'error', message: error.message }));
+      });
+    const handleShutdownAfterBackupStatus = (_event, state) => {
+      if (state) setShutdownAfterBackup(state);
+    };
+    ipcRenderer.on('sync:shutdownAfterBackupStatus', handleShutdownAfterBackupStatus);
+    return () => {
+      mounted = false;
+      ipcRenderer.removeListener('sync:shutdownAfterBackupStatus', handleShutdownAfterBackupStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (shutdownAfterBackup.phase !== 'countdown' || !shutdownAfterBackup.dueAt) {
+      setShutdownCountdownSeconds(0);
+      return undefined;
+    }
+    const updateCountdown = () => {
+      setShutdownCountdownSeconds(Math.max(0, Math.ceil((Date.parse(shutdownAfterBackup.dueAt) - Date.now()) / 1000)));
+    };
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [shutdownAfterBackup.phase, shutdownAfterBackup.dueAt]);
 
   // Search & Analytics State
   const [searchQuery, setSearchQuery] = useState('');
@@ -1702,6 +1741,21 @@ export default function LabSuiteBackup({ active = true }) {
   const handleSyncNow = async () => {
     setSyncDetails('Starting backup...');
     await ipcRenderer.invoke('sync:triggerNow');
+  };
+
+  const handleShutdownAfterBackup = async () => {
+    const enabled = !shutdownAfterBackup.armed;
+    try {
+      const state = await ipcRenderer.invoke('sync:setShutdownAfterBackup', { enabled });
+      if (state) setShutdownAfterBackup(state);
+    } catch (error) {
+      setShutdownAfterBackup(current => ({
+        ...current,
+        armed: false,
+        phase: 'error',
+        message: error.message || 'Could not enable shutdown after backup.'
+      }));
+    }
   };
 
   const handlePauseSync = async () => {
@@ -3425,7 +3479,32 @@ export default function LabSuiteBackup({ active = true }) {
                   <button className="btn btn-primary" style={{ marginLeft: '8px' }} disabled={syncStatus === 'syncing' || syncStatus === 'draining' || syncStatus === 'paused'} onClick={handleSyncNow}>
                     Back Up Now
                   </button>
+                  <button
+                    className={shutdownAfterBackup.armed ? 'btn btn-danger' : 'btn btn-secondary'}
+                    disabled={syncStatus === 'paused' && !shutdownAfterBackup.armed}
+                    onClick={handleShutdownAfterBackup}
+                    title={shutdownAfterBackup.armed
+                      ? 'Cancel the automatic Windows shutdown'
+                      : 'Start or finish the backup, then shut down this Windows PC after a 3-minute grace period'}
+                  >
+                    {shutdownAfterBackup.phase === 'countdown'
+                      ? 'Cancel scheduled shutdown'
+                      : shutdownAfterBackup.armed
+                        ? 'Cancel shutdown after backup'
+                        : 'Shut down after backup'}
+                  </button>
                 </div>
+                {(shutdownAfterBackup.armed || shutdownAfterBackup.phase === 'error' || shutdownAfterBackup.message) && (
+                  <div
+                    className={`shutdown-after-backup-status shutdown-after-backup-status-${shutdownAfterBackup.phase || 'off'}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {shutdownAfterBackup.phase === 'countdown' && shutdownCountdownSeconds > 0
+                      ? `Backup complete. Windows will shut down in ${Math.ceil(shutdownCountdownSeconds / 60)} minute${Math.ceil(shutdownCountdownSeconds / 60) === 1 ? '' : 's'}. Click Cancel scheduled shutdown to keep the PC on.`
+                      : shutdownAfterBackup.message}
+                  </div>
+                )}
               </div>
 
               {currentRestoreJob && (
