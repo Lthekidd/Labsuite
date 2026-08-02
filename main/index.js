@@ -67,7 +67,12 @@ const db = {
   flushWrites: (...args) => require('./database').flushWrites(...args),
   flushWritesAsync: (...args) => require('./database').flushWritesAsync(...args)
 };
-crashMonitor.configure({ db });
+crashMonitor.configure({
+  db,
+  logPath: () => getLogPath(),
+  crashDumpsDir: () => app.getPath('crashDumps'),
+  appVersion: () => app.getVersion()
+});
 
 const watcher = {
   initWatcher: (...args) => require('./watcher').initWatcher(...args),
@@ -105,6 +110,8 @@ const diagnosticWindows = new WeakSet();
 const diagnosticWindowLabels = new WeakMap();
 const rendererRecoveryHistory = new WeakMap();
 let mainLoopWatchdog = null;
+let crashSessionHeartbeat = null;
+let lastMainLoopCrashReportAt = 0;
 let updaterInitialized = false;
 let updateCheckPromise = null;
 let updateStatus = {
@@ -213,7 +220,10 @@ function attachWindowDiagnostics(win, label = '') {
   });
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error(`LabSuite diagnostics: ${getLabel()} failed to load:`, errorCode, errorDescription, validatedURL);
+    const windowLabel = getLabel();
+    const extra = { windowId: win.id, errorCode, errorDescription, validatedURL };
+    console.error(`LabSuite diagnostics: ${windowLabel} failed to load:`, errorCode, errorDescription, validatedURL);
+    crashMonitor.report('windowLoadFailed', new Error(`${windowLabel} failed to load: ${errorDescription || errorCode}`), extra);
   });
 
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -238,6 +248,13 @@ function startMainLoopWatchdog() {
       lagMs,
       processes: getProcessDiagnostics()
     });
+    if (lagMs >= 5000 && now - lastMainLoopCrashReportAt >= 60000) {
+      lastMainLoopCrashReportAt = now;
+      crashMonitor.report('mainLoopBlocked', new Error(`Electron main loop was blocked for approximately ${lagMs}ms`), {
+        lagMs,
+        processes: getProcessDiagnostics()
+      });
+    }
   }, intervalMs);
   mainLoopWatchdog.unref?.();
 }
@@ -687,9 +704,22 @@ function createWindow() {
   initTray(mainWindow, () => mainWindow);
 
   // ── Expose log file path to renderer ─────────────────────────────────────
-  const { ipcMain, shell } = require('electron');
+  const { ipcMain, shell, clipboard } = require('electron');
   ipcMain.handle('app:getLogPath', () => getLogPath());
   ipcMain.handle('app:getVersion', () => app.getVersion());
+  ipcMain.handle('diagnostics:getCrashReportSummary', () => crashMonitor.getSummary());
+  ipcMain.handle('diagnostics:copyCrashReports', () => {
+    const summary = crashMonitor.getSummary();
+    clipboard.writeText(crashMonitor.formatReportsForClipboard());
+    return { success: true, ...summary };
+  });
+  ipcMain.handle('diagnostics:openCrashReportsFolder', async () => {
+    const reportDir = crashMonitor.getReportDir();
+    fs.mkdirSync(reportDir, { recursive: true });
+    const error = await shell.openPath(reportDir);
+    if (error) throw new Error(error);
+    return { success: true, reportDir };
+  });
   ipcMain.handle('updates:getStatus', () => getUpdateStatus());
   ipcMain.handle('updates:check', () => checkForLabSuiteUpdates({ notify: false }));
   ipcMain.handle('updates:install', () => restartAndInstallUpdate());
@@ -732,6 +762,13 @@ app.on('ready', () => {
     app.quit();
     return;
   }
+
+  const previousSessionWasUnclean = crashMonitor.beginSession();
+  if (previousSessionWasUnclean) {
+    console.warn('LabSuite diagnostics: The previous session ended without completing a clean shutdown. A local crash report was saved.');
+  }
+  crashSessionHeartbeat = setInterval(() => crashMonitor.heartbeat(), 15000);
+  crashSessionHeartbeat.unref?.();
 
   if (app.isPackaged) {
     try {
@@ -913,4 +950,12 @@ app.on('before-quit', (event) => {
       });
     }
   }
+});
+
+app.on('will-quit', () => {
+  if (crashSessionHeartbeat) {
+    clearInterval(crashSessionHeartbeat);
+    crashSessionHeartbeat = null;
+  }
+  crashMonitor.endSession();
 });

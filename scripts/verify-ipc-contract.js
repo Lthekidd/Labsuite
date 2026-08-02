@@ -37,6 +37,8 @@ assert.ok(
   'Restore disk mounts must not permit writes to the encrypted backup vault.'
 );
 assert.ok(allowed.has('updates:install'), 'The renderer must be allowed to request restart-and-install.');
+assert.ok(allowed.has('diagnostics:copyCrashReports'), 'The renderer must be allowed to copy the seven-day crash archive.');
+assert.ok(allowed.has('diagnostics:openCrashReportsFolder'), 'The renderer must be allowed to open the crash-report folder.');
 assert.ok(
   mainSources.includes("'theme',") && mainSources.includes('RENDERER_WRITABLE_SETTINGS'),
   'Theme changes must be writable through the renderer settings contract.'
@@ -48,6 +50,10 @@ assert.ok(
 assert.ok(
   fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteSettings.jsx'), 'utf8').includes('Restart & Install'),
   'Software Updates must expose the restart-and-install action.'
+);
+assert.ok(
+  fs.readFileSync(path.join(root, 'renderer', 'apps', 'LabSuiteSettings.jsx'), 'utf8').includes('Copy Crash Reports'),
+  'Suite Settings must expose the one-click crash-report copy action.'
 );
 assert.ok(
   mainSources.includes("app.exit(0);") && mainSources.includes("if (!gotTheLock)"),

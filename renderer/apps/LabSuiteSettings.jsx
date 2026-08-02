@@ -39,10 +39,19 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
   const [googleClientMessage, setGoogleClientMessage] = useState('');
   const [googleClientError, setGoogleClientError] = useState('');
   const [isReconnectingGoogle, setIsReconnectingGoogle] = useState(false);
+  const [crashReportSummary, setCrashReportSummary] = useState({
+    reportCount: 0,
+    dumpCount: 0,
+    retentionDays: 7,
+    newestAt: null
+  });
+  const [crashReportMessage, setCrashReportMessage] = useState('');
+  const [isCopyingCrashReports, setIsCopyingCrashReports] = useState(false);
 
   useEffect(() => {
     loadSettings();
     loadGoogleClientStatus();
+    loadCrashReportSummary();
     ipcRenderer.invoke('updates:getStatus')
       .then((status) => setUpdateStatus(status || {}))
       .catch((error) => setUpdateStatus({
@@ -74,6 +83,41 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
       setGoogleClientStatus(status || {});
     } catch (error) {
       console.error('Failed to load Google OAuth client status:', error);
+    }
+  };
+
+  const loadCrashReportSummary = async () => {
+    try {
+      const summary = await ipcRenderer.invoke('diagnostics:getCrashReportSummary');
+      setCrashReportSummary(summary || {});
+    } catch (error) {
+      console.error('Failed to load crash report summary:', error);
+    }
+  };
+
+  const copyCrashReports = async () => {
+    setIsCopyingCrashReports(true);
+    setCrashReportMessage('');
+    try {
+      const result = await ipcRenderer.invoke('diagnostics:copyCrashReports');
+      setCrashReportSummary(result || {});
+      const itemCount = Number(result?.reportCount || 0) + Number(result?.dumpCount || 0);
+      setCrashReportMessage(itemCount
+        ? `Copied ${itemCount} crash diagnostic item${itemCount === 1 ? '' : 's'} to the clipboard.`
+        : 'Copied a diagnostic summary. No crash reports were found in the last 7 days.');
+    } catch (error) {
+      setCrashReportMessage(`Could not copy crash reports: ${error.message}`);
+    } finally {
+      setIsCopyingCrashReports(false);
+    }
+  };
+
+  const openCrashReportsFolder = async () => {
+    setCrashReportMessage('');
+    try {
+      await ipcRenderer.invoke('diagnostics:openCrashReportsFolder');
+    } catch (error) {
+      setCrashReportMessage(`Could not open the crash reports folder: ${error.message}`);
     }
   };
 
@@ -815,6 +859,46 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
               LabSuite will safely close its background services, install the update, and reopen automatically.
             </p>
           )}
+        </section>
+
+        {/* Crash Reports */}
+        <section style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+          <h2 style={{ fontSize: '18px', marginBottom: '8px', color: 'var(--text-primary)' }}>Crash Reports</h2>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 8px', lineHeight: 1.5 }}>
+            LabSuite keeps local crash, hang, and unclean-exit reports for the last {crashReportSummary.retentionDays || 7} days, then deletes them automatically.
+          </p>
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 18px' }}>
+            {Number(crashReportSummary.reportCount || 0)} readable report{Number(crashReportSummary.reportCount || 0) === 1 ? '' : 's'} and{' '}
+            {Number(crashReportSummary.dumpCount || 0)} native crash dump{Number(crashReportSummary.dumpCount || 0) === 1 ? '' : 's'} saved.
+            {crashReportSummary.newestAt ? ` Newest: ${new Date(crashReportSummary.newestAt).toLocaleString()}.` : ''}
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={copyCrashReports}
+              disabled={isCopyingCrashReports}
+              style={{ padding: '10px 16px' }}
+            >
+              {isCopyingCrashReports ? 'Copying...' : 'Copy Crash Reports'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={openCrashReportsFolder}
+              style={{ padding: '10px 16px' }}
+            >
+              Open Reports Folder
+            </button>
+            {crashReportMessage && (
+              <span role="status" aria-live="polite" style={{ fontSize: '12px', color: crashReportMessage.startsWith('Could not') ? 'var(--accent-error)' : 'var(--accent-secondary)' }}>
+                {crashReportMessage}
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: '14px 0 0', lineHeight: 1.5 }}>
+            Copied text includes error stacks, process details, recent app-log context, and the paths of any native .dmp files. Common credentials are redacted.
+          </p>
         </section>
 
         {/* Advanced Emergency Tools */}

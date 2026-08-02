@@ -178,6 +178,17 @@ async function run() {
     return settings.theme === 'cyberpunk' && document.body.classList.contains('theme-cyberpunk');
   })()`), true, 'Theme selection did not persist through the settings IPC contract.');
 
+  assert.strictEqual(await evaluate(`(async () => {
+    const panel = document.querySelector('[data-workspace-id="settings"]');
+    const button = [...panel.querySelectorAll('button')]
+      .find(item => item.textContent.trim() === 'Copy Crash Reports');
+    if (!button) return false;
+    button.click();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    return panel.textContent.includes('Copied a diagnostic summary')
+      || panel.textContent.includes('crash diagnostic item');
+  })()`), true, 'Crash reports could not be copied from Suite Settings.');
+
   const timedNavigation = async (label, workspaceId) => {
     const alreadyActive = await evaluate(
       `document.querySelector('[data-workspace-id="${workspaceId}"]')?.dataset.workspaceActive === 'true'`
