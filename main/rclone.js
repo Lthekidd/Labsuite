@@ -11,7 +11,11 @@ const { buildExcludeArgs } = require('./filesystem');
 const { resolveBundledRclonePath } = require('./runtimePaths');
 
 const REMOTE = 'gdrive-crypt';         // encrypted remote
-const ENCRYPTED_FOLDER = 'LabSuite-Encrypted';
+const UNIFIED_CLOUD_ROOT = "LABSUITE - DON'T DELETE";
+const ENCRYPTED_FOLDER = `${UNIFIED_CLOUD_ROOT}/Encrypted`;
+const APPS_FOLDER = `${UNIFIED_CLOUD_ROOT}/Apps`;
+const CONTROL_FOLDER = `${UNIFIED_CLOUD_ROOT}/Control`;
+const PREVIOUS_ENCRYPTED_FOLDER = 'LabSuite-Encrypted';
 const LEGACY_ENCRYPTED_FOLDER = 'VaultSync-Encrypted';
 const RAW_REMOTE = 'gdrive';
 const RCLONE_VERSION = '1.74.4';
@@ -222,11 +226,18 @@ function getEncryptedFolder() {
 }
 
 function getVaultBrand() {
+  if (getEncryptedFolder().toLowerCase().startsWith(`${UNIFIED_CLOUD_ROOT.toLowerCase()}/`)) return 'LabSuite';
   return /^VaultSync-Encrypted$/i.test(getEncryptedFolder()) ? 'VaultSync' : 'LabSuite';
 }
 
 function getControlFolderName() {
+  if (getEncryptedFolder().toLowerCase().startsWith(`${UNIFIED_CLOUD_ROOT.toLowerCase()}/`)) return CONTROL_FOLDER;
   return `${getVaultBrand()}-Control`;
+}
+
+function getAppsFolderName() {
+  if (getEncryptedFolder().toLowerCase().startsWith(`${UNIFIED_CLOUD_ROOT.toLowerCase()}/`)) return APPS_FOLDER;
+  return `${getVaultBrand()}-Apps`;
 }
 
 function getVaultNamespace() {
@@ -250,17 +261,125 @@ async function rawFolderExists(remotePath) {
 
 async function detectEncryptedFolder() {
   const configured = getEncryptedFolder();
-  if (configured && !/^LabSuite-Encrypted$/i.test(configured)) {
+  const knownLabSuiteRoots = [ENCRYPTED_FOLDER, PREVIOUS_ENCRYPTED_FOLDER]
+    .map(value => value.toLowerCase());
+  if (configured && !knownLabSuiteRoots.includes(configured.toLowerCase())) {
     return configured;
   }
 
   if (await rawFolderExists(ENCRYPTED_FOLDER)) {
     return ENCRYPTED_FOLDER;
   }
+  if (await rawFolderExists(PREVIOUS_ENCRYPTED_FOLDER)) {
+    return PREVIOUS_ENCRYPTED_FOLDER;
+  }
   if (await rawFolderExists(LEGACY_ENCRYPTED_FOLDER)) {
     return LEGACY_ENCRYPTED_FOLDER;
   }
   return configured || ENCRYPTED_FOLDER;
+}
+
+async function moveRawTreeInto(sourcePath, destinationPath) {
+  if (!sourcePath || sourcePath.toLowerCase() === destinationPath.toLowerCase()) return false;
+  if (!(await remotePathExists(getRawRemoteName(), sourcePath))) return false;
+  const source = getRawRemotePath(sourcePath);
+  const destination = getRawRemotePath(destinationPath);
+  if (!(await remotePathExists(getRawRemoteName(), destinationPath))) {
+    await runRclone(['moveto', source, destination], { timeoutMs: 0, applyTransferControls: false });
+  } else {
+    await runRclone(['move', source, destination, '--delete-empty-src-dirs'], { timeoutMs: 0, applyTransferControls: false });
+  }
+  return true;
+}
+
+function writeRcloneConfigAtomically(configPath, content) {
+  const tempPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, content, 'utf8');
+  try {
+    fs.renameSync(tempPath, configPath);
+  } finally {
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (_) {}
+  }
+  hardenConfigFilePermissions(configPath);
+}
+
+async function ensureUnifiedCloudLayout() {
+  const { configPath } = getPaths();
+  if (!fs.existsSync(configPath)) return { migrated: false, reason: 'not-configured' };
+  const config = await checkConfig();
+  if (!config.hasGDrive || !config.hasCrypt) return { migrated: false, reason: 'not-configured' };
+
+  const rawRemote = getRawRemoteName();
+  const cryptRemote = getRemote();
+  const configuredEncryptedFolder = getEncryptedFolder();
+  let configUpdated = false;
+  let encryptedMoved = false;
+
+  if (configuredEncryptedFolder.toLowerCase() !== ENCRYPTED_FOLDER.toLowerCase()) {
+    const [sourceExists, destinationExists] = await Promise.all([
+      remotePathExists(rawRemote, configuredEncryptedFolder),
+      remotePathExists(rawRemote, ENCRYPTED_FOLDER)
+    ]);
+    // Do not repoint a working crypt remote when Drive is offline or neither
+    // path can be confirmed. The migration will retry on the next launch.
+    if (!sourceExists && !destinationExists) {
+      return { migrated: false, deferred: true, reason: 'encrypted-root-unavailable' };
+    }
+    // Move first and repoint the crypt remote second. If the app exits between
+    // those operations, the next launch sees the destination and safely
+    // finishes the config update instead of pointing at a half-moved vault.
+    encryptedMoved = sourceExists
+      ? await moveRawTreeInto(configuredEncryptedFolder, ENCRYPTED_FOLDER)
+      : false;
+    const previousConfig = fs.readFileSync(configPath, 'utf8');
+    const updatedConfig = updateRcloneRemoteConfig(previousConfig, cryptRemote, {
+      remote: `${rawRemote}:${ENCRYPTED_FOLDER}`
+    });
+    writeRcloneConfigAtomically(configPath, updatedConfig);
+    configUpdated = true;
+  }
+
+  const movedRoots = [];
+  // Retry known encrypted roots even when the config already uses the unified
+  // destination. This completes migrations interrupted during an earlier move.
+  for (const source of [LEGACY_ENCRYPTED_FOLDER, PREVIOUS_ENCRYPTED_FOLDER]) {
+    if (await moveRawTreeInto(source, ENCRYPTED_FOLDER)) {
+      movedRoots.push(source);
+      encryptedMoved = true;
+    }
+  }
+  for (const source of ['VaultSync-Control', 'LabSuite-Control']) {
+    if (await moveRawTreeInto(source, CONTROL_FOLDER)) movedRoots.push(source);
+  }
+  // Move the older app root first so the current LabSuite app data wins if a
+  // legacy and current file share the same path.
+  for (const source of ['VaultSync-Apps', 'LabSuite-Apps']) {
+    if (await moveRawTreeInto(source, APPS_FOLDER)) movedRoots.push(source);
+  }
+
+  const notePath = path.join(os.tmpdir(), `labsuite-dont-delete-${process.pid}.txt`);
+  const note = [
+    'LABSUITE DATA - DO NOT DELETE',
+    '',
+    'This folder contains encrypted backups, restore metadata, and LabSuite app data.',
+    'Deleting or renaming this folder can prevent backups and restores from working.',
+    `Last verified by LabSuite: ${new Date().toISOString()}`,
+    ''
+  ].join('\n');
+  try {
+    fs.writeFileSync(notePath, note, 'utf8');
+    await syncRawFile(notePath, `${UNIFIED_CLOUD_ROOT}/DONT DELETE - LABSUITE DATA.txt`);
+  } finally {
+    try { fs.unlinkSync(notePath); } catch (_) {}
+  }
+
+  return {
+    migrated: configUpdated || encryptedMoved || movedRoots.length > 0,
+    root: UNIFIED_CLOUD_ROOT,
+    encryptedMoved,
+    movedRoots,
+    configUpdated
+  };
 }
 
 function hardenConfigFilePermissions(configPath) {
@@ -2427,12 +2546,18 @@ async function getVersion() {
 }
 
 module.exports = {
+  UNIFIED_CLOUD_ROOT,
   ENCRYPTED_FOLDER,
+  APPS_FOLDER,
+  CONTROL_FOLDER,
+  PREVIOUS_ENCRYPTED_FOLDER,
   LEGACY_ENCRYPTED_FOLDER,
   getConfiguredCryptRemoteRoot,
   getEncryptedFolder,
   detectEncryptedFolder,
+  ensureUnifiedCloudLayout,
   getControlFolderName,
+  getAppsFolderName,
   getVaultNamespace,
   getVaultPath,
   getRemote,

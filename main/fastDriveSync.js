@@ -3,10 +3,12 @@ const path = require('path');
 const fs = require('fs');
 const { resolveBundledRclonePath } = require('./runtimePaths');
 
-const APPS_FOLDER = 'LabSuite-Apps';
-
 function getRawRemote() {
   return require('./rclone').getRawRemoteName();
+}
+
+function getAppsFolder() {
+  return require('./rclone').getAppsFolderName();
 }
 
 function getRcloneBin() {
@@ -85,7 +87,7 @@ async function uploadData(appName, fileName, data) {
   const os = require('os');
   const tempPath = path.join(os.tmpdir(), `vs-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
   fs.writeFileSync(tempPath, data);
-  const remotePath = `${getRawRemote()}:/${APPS_FOLDER}/${appName}/${fileName}`;
+  const remotePath = `${getRawRemote()}:/${getAppsFolder()}/${appName}/${fileName}`;
   try {
     await runRcloneCommand(['copyto', tempPath, remotePath], { timeoutMs: 20000 });
   } finally {
@@ -96,7 +98,7 @@ async function uploadData(appName, fileName, data) {
 async function downloadData(appName, fileName) {
   const os = require('os');
   const tempPath = path.join(os.tmpdir(), `vs-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
-  const remotePath = `${getRawRemote()}:/${APPS_FOLDER}/${appName}/${fileName}`;
+  const remotePath = `${getRawRemote()}:/${getAppsFolder()}/${appName}/${fileName}`;
   try {
     await runRcloneCommand(['copyto', remotePath, tempPath], { timeoutMs: 12000 });
     return fs.readFileSync(tempPath, 'utf8');
@@ -106,7 +108,7 @@ async function downloadData(appName, fileName) {
 }
 
 async function listFiles(appName) {
-  const remotePath = `${getRawRemote()}:/${APPS_FOLDER}/${appName}`;
+  const remotePath = `${getRawRemote()}:/${getAppsFolder()}/${appName}`;
   try {
     const output = await runRcloneCommand(['lsjson', remotePath], { timeoutMs: 12000 });
     return JSON.parse(output);
@@ -119,7 +121,7 @@ async function listFiles(appName) {
 }
 
 async function deleteFile(appName, fileName) {
-  const remotePath = `${getRawRemote()}:/${APPS_FOLDER}/${appName}/${fileName}`;
+  const remotePath = `${getRawRemote()}:/${getAppsFolder()}/${appName}/${fileName}`;
   await runRcloneCommand(['deletefile', remotePath], { timeoutMs: 12000 });
 }
 

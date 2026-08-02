@@ -40,6 +40,9 @@ function getVaultMetadataRawPath() {
 }
 
 function getControlFolderNameForEncryptedFolder(encryptedFolder = '') {
+  if (String(encryptedFolder || '').toLowerCase().startsWith(`${rclone.UNIFIED_CLOUD_ROOT.toLowerCase()}/`)) {
+    return rclone.CONTROL_FOLDER;
+  }
   return /^VaultSync-Encrypted$/i.test(String(encryptedFolder || '')) ? 'VaultSync-Control' : 'LabSuite-Control';
 }
 
@@ -185,6 +188,7 @@ async function inspectRawVault() {
   const candidates = [
     rclone.getEncryptedFolder(),
     rclone.ENCRYPTED_FOLDER,
+    rclone.PREVIOUS_ENCRYPTED_FOLDER,
     rclone.LEGACY_ENCRYPTED_FOLDER
   ].filter((value, index, list) => value && list.indexOf(value) === index);
 

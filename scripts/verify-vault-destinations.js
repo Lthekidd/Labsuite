@@ -22,6 +22,7 @@ const mockRclone = {
   getRawRemoteName: () => db.getSetting('active_raw_remote') || 'gdrive',
   getEncryptedFolder: () => 'LabSuite-Encrypted',
   getControlFolderName: () => 'LabSuite-Control',
+  getAppsFolderName: () => 'LabSuite-Apps',
   startGoogleAuthForRemote: async () => true,
   getGDriveInfoForRemote: async remote => ({
     email: `${remote}@example.test`, accountEmail: `${remote}@example.test`, displayName: 'Test Drive', used: 0, total: 10_000_000, free: 10_000_000

@@ -5,7 +5,6 @@ const keychain = require('./keychain');
 
 const DESTINATIONS_SETTING = 'vault_destinations';
 const JOBS_SETTING = 'vault_transfer_jobs';
-const APPS_ROOT = 'LabSuite-Apps';
 
 function readList(key) {
   try {
@@ -82,7 +81,7 @@ function getVaultRoots() {
   return [
     { key: 'vault', label: 'Encrypted backup vault', path: rclone.getEncryptedFolder(), required: true },
     { key: 'control', label: 'Vault metadata and restore catalog', path: rclone.getControlFolderName(), required: false },
-    { key: 'apps', label: 'Encrypted LabSuite app data', path: APPS_ROOT, required: false }
+    { key: 'apps', label: 'Encrypted LabSuite app data', path: rclone.getAppsFolderName(), required: false }
   ];
 }
 

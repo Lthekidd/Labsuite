@@ -1584,6 +1584,9 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
             console.warn('LabSuite: Remote restore catalog import skipped:', catalogError.message);
           }
         }
+        await rclone.ensureUnifiedCloudLayout().catch(error => {
+          console.warn('LabSuite: Cloud folder consolidation will retry later:', error.message);
+        });
         db.setSetting('setup_complete', '1');
         if (db.getSetting('password_hint')) {
           await remoteSafety.ensureVaultMetadata().catch(error => {
@@ -1594,6 +1597,9 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
         if (passwordHint !== undefined) {
           db.setSetting('password_hint', passwordHint || '');
         }
+        await rclone.ensureUnifiedCloudLayout().catch(error => {
+          console.warn('LabSuite: Cloud folder initialization will retry later:', error.message);
+        });
         await remoteSafety.ensureVaultMarker();
         await remoteSafety.ensureVaultMetadata().catch(error => {
           console.warn('LabSuite: Failed to publish vault metadata:', error.message);

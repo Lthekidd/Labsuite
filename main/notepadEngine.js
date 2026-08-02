@@ -143,7 +143,7 @@ async function saveWithVersioning(filePath, newContent) {
   
   try {
     const encryptedData = await fastCrypt.encrypt(oldContent);
-    // Upload to gdrive:/LabSuite-Apps/NotepadVersions/<hash>/<versionId>.enc
+    // Upload below the unified LabSuite cloud root: Apps/NotepadVersions/...
     await fastDriveSync.uploadData(`NotepadVersions/${fileHash}`, `${versionId}.enc`, encryptedData);
     
     // Prune old versions (keep last 10)

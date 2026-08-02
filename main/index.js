@@ -852,7 +852,23 @@ app.on('ready', () => {
   const isPaused = db.getSetting('sync_paused') === '1';
 
   if (setupComplete) {
-    if (!isPaused) {
+    updateTrayStatus(isPaused ? 'paused' : 'idle', isPaused ? '' : 'Organizing Google Drive storage...', mainWindow);
+    (async () => {
+      try {
+        const layout = await require('./rclone').ensureUnifiedCloudLayout();
+        if (layout.migrated) {
+          console.log(`LabSuite: Google Drive data consolidated under "${layout.root}".`, layout);
+        } else if (layout.deferred) {
+          console.warn('LabSuite: Google Drive folder consolidation was deferred and will retry next launch.');
+        }
+      } catch (error) {
+        console.warn('LabSuite: Google Drive folder consolidation failed; existing layout remains usable and migration will retry:', error.message);
+      }
+
+      if (isPaused) {
+        updateTrayStatus('paused', '', mainWindow);
+        return;
+      }
       watcher.initWatcher();
       scheduler.startScheduler();
       try {
@@ -867,7 +883,7 @@ app.on('ready', () => {
       }
       updateTrayStatus('idle', '', mainWindow);
 
-      // Trigger immediate sync on startup if any folder has never synced
+      // Trigger immediate sync on startup if any folder has never synced.
       const folders = db.getEnabledFolders();
       const hasUnsynced = folders.some(f => !f.last_success_at);
       if (hasUnsynced) {
@@ -876,9 +892,10 @@ app.on('ready', () => {
           console.error('LabSuite: Startup backup failed:', err.message);
         });
       }
-    } else {
-      updateTrayStatus('paused', '', mainWindow);
-    }
+    })().catch(error => {
+      console.error('LabSuite: Backup services could not start:', error.message);
+      updateTrayStatus('error', error.message, mainWindow);
+    });
   } else {
     updateTrayStatus('idle', 'Onboarding required', mainWindow);
   }
