@@ -73,6 +73,7 @@ let backupShortcutCache = null;
 let backupShortcutRefresh = null;
 
 const RENDERER_WRITABLE_SETTINGS = new Set([
+  'theme',
   'sync_interval_minutes',
   'sync_on_file_change',
   'start_on_login',

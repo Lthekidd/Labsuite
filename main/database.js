@@ -23,6 +23,8 @@ let hasDeferredWrite = false;
 let isLoaded = false;
 const ASYNC_WRITE_THRESHOLD_BYTES = 4 * 1024 * 1024;
 const ASYNC_WRITE_DEBOUNCE_MS = 250;
+const ASYNC_SERIALIZE_CHUNK_BYTES = 256 * 1024;
+const ASYNC_SERIALIZE_ACTIONS_PER_TURN = 2000;
 let preferAsyncPersistence = false;
 let primaryIsKnownGood = false;
 let requestedWriteRevision = 0;
@@ -94,6 +96,7 @@ function getReadableDatabaseSource() {
 }
 
 const DEFAULT_SETTINGS = {
+  theme: 'default',
   sync_interval_minutes: '15',
   sync_on_file_change: '1',
   start_on_login: '1',
@@ -163,7 +166,8 @@ let data = {
   cache: {},
   telegramInstalls: [],
   telegramArchiveChats: [],
-  wolDevices: []
+  wolDevices: [],
+  labshot_history: []
 };
 
 function normalizeStoredErrorMessage(errorMessage) {
@@ -357,6 +361,7 @@ function loadDatabase() {
       if (!data.telegramInstalls) data.telegramInstalls = [];
       if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
       if (!data.wolDevices) data.wolDevices = [];
+      if (!data.labshot_history) data.labshot_history = [];
 
       // ── Migrations ──────────────────────────────────────────────────────
       let migrated = databaseSource.path !== dbPath;
@@ -509,6 +514,7 @@ function loadDatabase() {
         if (!data.cache) data.cache = {};
         if (!data.telegramInstalls) data.telegramInstalls = [];
         if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
+        if (!data.labshot_history) data.labshot_history = [];
 
         console.warn('Database recovered from backup copy.');
         primaryIsKnownGood = false;
@@ -527,7 +533,8 @@ function loadDatabase() {
           settings: { ...DEFAULT_SETTINGS },
           cache: {},
           telegramInstalls: [],
-          telegramArchiveChats: []
+          telegramArchiveChats: [],
+          labshot_history: []
         };
         saveDatabase();
         isLoaded = true;
@@ -649,14 +656,107 @@ async function renameWithRetry(source, destination) {
   throw lastError || new Error('Database rename did not complete.');
 }
 
+function isJsonObjectValue(value) {
+  return value !== null && typeof value === 'object';
+}
+
+function shouldOmitJsonObjectValue(value) {
+  return value === undefined || typeof value === 'function' || typeof value === 'symbol';
+}
+
+/**
+ * Serialize the JSON database without monopolizing Electron's main loop.
+ *
+ * JSON.stringify() on a large backup manifest is a single, uninterruptible CPU
+ * task. This iterative writer preserves JSON semantics for the plain data held
+ * by the database while yielding between bounded chunks so windows, IPC, and
+ * tray events remain responsive during persistence.
+ */
+async function writeJsonFileIncrementally(filePath, rootValue) {
+  const handle = await fs.promises.open(filePath, 'w');
+  const stack = [{ kind: 'value', value: rootValue, inArray: false }];
+  let buffer = '';
+  let actionsThisTurn = 0;
+
+  const append = value => {
+    buffer += value;
+  };
+
+  const flushAndYield = async force => {
+    if (buffer && (force || buffer.length >= ASYNC_SERIALIZE_CHUNK_BYTES || actionsThisTurn >= ASYNC_SERIALIZE_ACTIONS_PER_TURN)) {
+      await handle.write(buffer, null, 'utf8');
+      buffer = '';
+    }
+    if (!force && actionsThisTurn >= ASYNC_SERIALIZE_ACTIONS_PER_TURN) {
+      actionsThisTurn = 0;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+
+  try {
+    while (stack.length > 0) {
+      actionsThisTurn += 1;
+      const action = stack.pop();
+
+      if (action.kind === 'array') {
+        if (action.index >= action.value.length) {
+          append(']');
+        } else {
+          if (action.index > 0) append(',');
+          const value = action.value[action.index];
+          action.index += 1;
+          stack.push(action);
+          stack.push({ kind: 'value', value, inArray: true });
+        }
+      } else if (action.kind === 'object') {
+        if (action.index >= action.keys.length) {
+          append('}');
+        } else {
+          const key = action.keys[action.index];
+          if (action.index > 0) append(',');
+          append(`${JSON.stringify(key)}:`);
+          action.index += 1;
+          stack.push(action);
+          stack.push({ kind: 'value', value: action.value[key], inArray: false });
+        }
+      } else {
+        let value = action.value;
+        if (isJsonObjectValue(value) && typeof value.toJSON === 'function') {
+          value = value.toJSON();
+        }
+
+        if (Array.isArray(value)) {
+          append('[');
+          stack.push({ kind: 'array', value, index: 0 });
+        } else if (isJsonObjectValue(value)) {
+          const keys = Object.keys(value).filter(key => !shouldOmitJsonObjectValue(value[key]));
+          append('{');
+          stack.push({ kind: 'object', value, keys, index: 0 });
+        } else if (value === null || value === undefined || typeof value === 'function' || typeof value === 'symbol') {
+          append('null');
+        } else if (typeof value === 'number') {
+          append(Number.isFinite(value) ? String(value) : 'null');
+        } else {
+          const serialized = JSON.stringify(value);
+          append(serialized === undefined ? (action.inArray ? 'null' : '') : serialized);
+        }
+      }
+
+      if (buffer.length >= ASYNC_SERIALIZE_CHUNK_BYTES || actionsThisTurn >= ASYNC_SERIALIZE_ACTIONS_PER_TURN) {
+        await flushAndYield(false);
+      }
+    }
+    await flushAndYield(true);
+  } finally {
+    await handle.close();
+  }
+}
+
 async function persistDatabaseRevision(revision) {
   const tempPath = `${dbPath}.${process.pid}.${Date.now()}.${revision}.tmp`;
+  const startedAt = Date.now();
   let handle = null;
   try {
-    // JSON serialization is the only CPU work left on the main thread. Compact
-    // JSON cuts the large manifest snapshot by several MB; copying, flushing,
-    // and renaming are all asynchronous so Electron keeps pumping messages.
-    const serialized = JSON.stringify(data);
     if (primaryIsKnownGood && fs.existsSync(dbPath)) {
       try {
         await fs.promises.copyFile(dbPath, dbBackupPath);
@@ -665,7 +765,7 @@ async function persistDatabaseRevision(revision) {
       }
     }
 
-    await fs.promises.writeFile(tempPath, serialized, 'utf8');
+    await writeJsonFileIncrementally(tempPath, data);
     try {
       handle = await fs.promises.open(tempPath, 'r+');
       await handle.datasync();
@@ -686,6 +786,10 @@ async function persistDatabaseRevision(revision) {
       try { await handle.close(); } catch (_) {}
     }
     try { await fs.promises.unlink(tempPath); } catch (_) {}
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= 1000) {
+      console.warn(`Database: Persistence attempt for revision ${revision} took ${durationMs}ms.`);
+    }
   }
 }
 
@@ -711,6 +815,11 @@ function startAsyncWriter() {
       await persistDatabaseRevision(revision);
       // Mutations that happened while the file operation was awaiting are
       // captured by one more pass, instead of launching concurrent writers.
+      // Give bursty watcher traffic another debounce window first so a busy VM
+      // cannot force back-to-back full manifest serializations indefinitely.
+      if (persistedWriteRevision < requestedWriteRevision) {
+        await delay(ASYNC_WRITE_DEBOUNCE_MS);
+      }
     } while (persistedWriteRevision < requestedWriteRevision);
   })()
     .then(() => {
@@ -757,6 +866,13 @@ function saveDatabase() {
     return;
   }
   saveDatabaseSync();
+}
+
+function saveDatabaseDeferred() {
+  // Manifest and progress mutations are bursty by design. Large databases use
+  // the debounced/yielding path; small databases retain synchronous durability
+  // and the existing failure semantics expected by callers.
+  saveDatabase();
 }
 
 async function withWriteBatch(fn) {
@@ -812,6 +928,18 @@ module.exports = {
   },
   
   getDb: () => data,
+
+  getLabShotHistory: () => {
+    loadDatabase();
+    return (data.labshot_history || []).map(item => ({ ...item }));
+  },
+
+  setLabShotHistory: (history = []) => {
+    loadDatabase();
+    data.labshot_history = Array.isArray(history) ? history.slice(0, 50) : [];
+    saveDatabase();
+    return data.labshot_history.map(item => ({ ...item }));
+  },
 
   // Folders operations
   getFolders: () => {
@@ -973,7 +1101,7 @@ module.exports = {
       if (!folder.exclusions) folder.exclusions = [];
       if (!folder.exclusions.includes(excludePath)) {
         folder.exclusions.push(excludePath);
-        saveDatabase();
+        saveDatabaseDeferred();
       }
     }
     return true;
@@ -1050,7 +1178,7 @@ module.exports = {
       const lastPersistedAt = folderProgressPersistedAt.get(id) || 0;
       if (terminal || Date.now() - lastPersistedAt >= FOLDER_PROGRESS_PERSIST_INTERVAL_MS) {
         folderProgressPersistedAt.set(id, Date.now());
-        saveDatabase();
+        saveDatabaseDeferred();
       }
     }
   },
@@ -1069,7 +1197,7 @@ module.exports = {
     folder.consecutive_failures = 0;
     folder.last_error = '';
     folder.missing_source_at = new Date().toISOString();
-    saveDatabase();
+    saveDatabaseDeferred();
     return true;
   },
 
@@ -1119,14 +1247,14 @@ module.exports = {
     };
     data.sync_log.push(logItem);
     if (data.sync_log.length > 500) data.sync_log = data.sync_log.slice(-500);
-    saveDatabase();
+    saveDatabaseDeferred();
     return logItem;
   },
 
   clearSyncLogs: () => {
     loadDatabase();
     data.sync_log = [];
-    saveDatabase();
+    saveDatabaseDeferred();
     return true;
   },
 
@@ -1174,7 +1302,7 @@ module.exports = {
     } else {
       data.active_restores.push(updated);
     }
-    saveDatabase();
+    saveDatabaseDeferred();
     return updated;
   },
 
@@ -1212,7 +1340,7 @@ module.exports = {
       updated_at: new Date().toISOString()
     };
     invalidateManifestSummaryCache();
-    saveDatabase();
+    saveDatabaseDeferred();
     return data.backup_manifest[key][relativePath];
   },
 
@@ -1231,7 +1359,7 @@ module.exports = {
       updated_at: new Date().toISOString()
     };
     invalidateManifestSummaryCache();
-    saveDatabase();
+    saveDatabaseDeferred();
     return data.backup_manifest[key][relativePath];
   },
 
@@ -1253,7 +1381,7 @@ module.exports = {
       updated_at: new Date().toISOString()
     };
     invalidateManifestSummaryCache();
-    saveDatabase();
+    saveDatabaseDeferred();
     return data.backup_manifest[key][relativePath];
   },
 
@@ -1261,7 +1389,7 @@ module.exports = {
     loadDatabase();
     delete data.backup_manifest[String(folderId)];
     invalidateManifestSummaryCache();
-    saveDatabase();
+    saveDatabaseDeferred();
     return true;
   },
 
@@ -1271,7 +1399,7 @@ module.exports = {
     if (data.backup_manifest[key]) {
       delete data.backup_manifest[key][relativePath];
       invalidateManifestSummaryCache();
-      saveDatabase();
+      saveDatabaseDeferred();
     }
     return true;
   },
@@ -1292,7 +1420,7 @@ module.exports = {
     }
     if (removed > 0) {
       invalidateManifestSummaryCache();
-      saveDatabase();
+      saveDatabaseDeferred();
     }
     return removed;
   },

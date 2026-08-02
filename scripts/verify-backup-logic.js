@@ -311,10 +311,19 @@ backupWorker.currentRunStats = {
 let capturedOverallProgress = null;
 backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
 backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: null });
-assert.strictEqual(capturedOverallProgress.etaSec, null, 'Logical queue bytes must not fabricate an upload ETA.');
+assert.strictEqual(
+  capturedOverallProgress.etaSec,
+  Math.round((1024 * 1024 * 1024) / 123),
+  'Overall queue ETA should use the latest observed transfer speed.'
+);
+assert.strictEqual(capturedOverallProgress.etaIsEstimate, true);
 backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
 backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: 45 });
-assert.strictEqual(capturedOverallProgress.etaSec, 45, 'Current rclone transfer ETA should remain available.');
+assert.strictEqual(
+  capturedOverallProgress.etaSec,
+  Math.round((1024 * 1024 * 1024) / 123),
+  'A batch ETA must not be mislabeled as the ETA for the entire queue.'
+);
 backupWorker.currentRunStats = originalRunStats;
 assert.strictEqual(remoteSafety.VAULT_MARKER_PATH, rclone.getVaultPath('control', 'vault-marker.json'));
 assert.ok(network.__private.isWithinWindow('23:00', '06:00') === true || network.__private.isWithinWindow('23:00', '06:00') === false);

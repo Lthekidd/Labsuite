@@ -284,6 +284,11 @@ class BackupWorker extends EventEmitter {
       globalBytesTotal: 0,
       globalFilesDone: 0,
       globalBytesDone: 0,
+      lastGlobalBytesDone: 0,
+      lastGlobalFilesDone: 0,
+      lastAdvanceAt: Date.now(),
+      lastTransferSpeed: 0,
+      lastTransferSampleAt: 0,
       startedAt: Date.now()
     };
     this.emit('backup:start', {});
@@ -313,6 +318,8 @@ class BackupWorker extends EventEmitter {
       const planner = require('./backupPlanner');
       for (const folder of effective) {
         this.throwIfPauseBoundaryReached();
+        const planningStartedAt = Date.now();
+        console.log(`BackupWorker: Planning ${options.dirtyOnly ? 'changed files in' : 'full contents of'} ${folder.local_path}...`);
         try {
           const folderPlan = !!options.dirtyOnly
             ? await planner.planDirtyFolderAsync(folder)
@@ -330,9 +337,10 @@ class BackupWorker extends EventEmitter {
           this.currentRunStats.globalBytesTotal += folderBytes;
 
           folderPlans.set(folder.id, { plan: folderPlan, filesTotal: folderFiles, bytesTotal: folderBytes });
+          console.log(`BackupWorker: Planned ${folder.local_path} in ${Date.now() - planningStartedAt}ms (${folderFiles} queued file(s), ${folderBytes} byte(s)).`);
         } catch (e) {
           this.rethrowIfCancelled(e);
-          console.warn(`BackupWorker: pre-planning failed for folder ${folder.id}:`, e.message);
+          console.warn(`BackupWorker: pre-planning failed for folder ${folder.id} after ${Date.now() - planningStartedAt}ms:`, e.message);
         }
       }
 
@@ -574,16 +582,44 @@ class BackupWorker extends EventEmitter {
       percent = Math.round((globalFilesDone / globalFilesTotal) * 100);
     }
 
-    const speed = folderProgress.speed || 0;
-    
-    // Queue progress includes work that rclone can skip after comparing an
-    // existing remote object, as well as cloud-side moves into history. Those
-    // bytes are not necessarily network uploads, so never derive an overall
-    // upload ETA from logical queue bytes completed.
-    const etaSec = folderProgress.etaSec !== null && folderProgress.etaSec !== undefined &&
-      Number.isFinite(Number(folderProgress.etaSec)) && Number(folderProgress.etaSec) >= 0
-      ? Number(folderProgress.etaSec)
-      : null;
+    if (
+      globalBytesDone > Number(stats.lastGlobalBytesDone || 0) ||
+      globalFilesDone > Number(stats.lastGlobalFilesDone || 0)
+    ) {
+      stats.lastAdvanceAt = now;
+      stats.lastGlobalBytesDone = globalBytesDone;
+      stats.lastGlobalFilesDone = globalFilesDone;
+    }
+
+    const reportedSpeed = Math.max(0, Number(folderProgress.speed) || 0);
+    if (reportedSpeed > 0) {
+      stats.lastTransferSpeed = reportedSpeed;
+      stats.lastTransferSampleAt = now;
+    }
+    const hasRecentTransferSample = Number(stats.lastTransferSpeed) > 0 && now - Number(stats.lastTransferSampleAt || 0) <= 15000;
+    const speed = reportedSpeed > 0
+      ? reportedSpeed
+      : (hasRecentTransferSample ? Number(stats.lastTransferSpeed) : 0);
+    const remainingBytes = Math.max(0, globalBytesTotal - globalBytesDone);
+    const etaSec = speed > 0 && remainingBytes > 0
+      ? Math.round(remainingBytes / speed)
+      : (remainingBytes === 0 && globalBytesTotal > 0 ? 0 : null);
+    const stage = String(folderProgress.stage || folderProgress.phase || 'preparing');
+    const stalledForSec = Math.max(0, Math.round((now - Number(stats.lastAdvanceAt || now)) / 1000));
+    const transferStage = ['encrypting_uploading', 'uploading'].includes(stage);
+    const telemetryStatus = reportedSpeed > 0
+      ? 'transferring'
+      : stage === 'scanning'
+        ? 'scanning'
+        : stage === 'packing'
+          ? 'packing'
+          : ['versioning', 'deleting', 'verifying'].includes(stage)
+            ? stage
+            : transferStage && stalledForSec >= 30
+              ? 'stalled'
+              : transferStage
+                ? 'starting'
+                : 'waiting';
 
     const progressPayload = {
       percent: Math.max(0, Math.min(100, percent)),
@@ -593,9 +629,15 @@ class BackupWorker extends EventEmitter {
       filesTotal: globalFilesTotal,
       speed,
       etaSec,
+      etaIsEstimate: etaSec !== null,
+      telemetryStatus,
+      stage,
+      stageLabel: folderProgress.stageLabel || '',
+      stalledForSec,
       elapsed,
       currentFolder: folderProgress.folderPath,
-      currentItem: folderProgress.currentItem || ''
+      currentItem: folderProgress.currentItem || '',
+      updatedAt: new Date(now).toISOString()
     };
 
     this.emit('backup:overall-progress', progressPayload);

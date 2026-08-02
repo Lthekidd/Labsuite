@@ -268,24 +268,39 @@ function pinToScreen({ dataUrl, width = 320, height = 240, x, y }) {
 /**
  * Save screenshot to local LabShot history and encrypted DB
  */
-function recordScreenshotHistory(entry) {
-  const history = db.getDb().labshot_history || [];
+function getLabShotHistoryDir() {
+  return path.join(app.getPath('userData'), 'LabShot', 'History');
+}
+
+async function writeHistoryImage(dataUrl, recordId) {
+  if (!dataUrl) return null;
+  const historyDir = getLabShotHistoryDir();
+  await fs.promises.mkdir(historyDir, { recursive: true });
+  const targetPath = path.join(historyDir, `${recordId}.png`);
+  const image = nativeImage.createFromDataURL(dataUrl);
+  if (image.isEmpty()) throw new Error('Screenshot history image is invalid.');
+  await fs.promises.writeFile(targetPath, image.toPNG());
+  return targetPath;
+}
+
+async function recordScreenshotHistory(entry) {
+  const history = db.getLabShotHistory();
+  const id = `shot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const savedToDisk = entry.savedToDisk || await writeHistoryImage(entry.dataUrl, id);
   const record = {
-    id: `shot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    id,
     timestamp: new Date().toISOString(),
     title: entry.title || `LabShot ${new Date().toLocaleString()}`,
-    dataUrl: entry.dataUrl,
     width: entry.width || 0,
     height: entry.height || 0,
     savedToVault: !!entry.savedToVault,
-    savedToDisk: entry.savedToDisk || null
+    savedToDisk
   };
 
   history.unshift(record);
   // Keep last 50 screenshots in memory database
   if (history.length > 50) history.length = 50;
-  db.getDb().labshot_history = history;
-  db.saveDatabase();
+  db.setLabShotHistory(history);
 
   return record;
 }
@@ -397,7 +412,7 @@ function initIpc() {
     if (!dataUrl) throw new Error('No image data provided for clipboard.');
     const image = nativeImage.createFromDataURL(dataUrl);
     clipboard.writeImage(image);
-    recordScreenshotHistory({ dataUrl, title: 'Copied Screenshot' });
+    await recordScreenshotHistory({ dataUrl, title: 'Copied Screenshot' });
     return { success: true };
   });
 
@@ -420,7 +435,7 @@ function initIpc() {
     }
 
     await fs.promises.writeFile(targetPath, pngBuffer);
-    recordScreenshotHistory({ dataUrl, title: path.basename(targetPath), savedToDisk: targetPath });
+    await recordScreenshotHistory({ dataUrl, title: path.basename(targetPath), savedToDisk: targetPath });
     return { success: true, filePath: targetPath };
   });
 
@@ -438,7 +453,7 @@ function initIpc() {
     const targetPath = path.join(labshotDir, fileName);
     await fs.promises.writeFile(targetPath, pngBuffer);
 
-    const record = recordScreenshotHistory({
+    const record = await recordScreenshotHistory({
       dataUrl,
       title: title || fileName,
       savedToVault: true,
@@ -461,7 +476,52 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:getGallery', async () => {
-    const memoryHistory = [...(db.getDb().labshot_history || [])];
+    const storedHistory = db.getLabShotHistory();
+    const memoryHistory = [];
+    const compactedHistory = [];
+    let historyChanged = false;
+
+    // Older builds embedded full base64 screenshots in labsuite_db.json. Move
+    // them to files lazily so the main database remains small and cheap to save.
+    for (const stored of storedHistory) {
+      const compacted = { ...stored };
+      let dataUrl = stored.dataUrl || null;
+      let savedToDisk = stored.savedToDisk || null;
+
+      if (dataUrl) {
+        try {
+          if (savedToDisk) {
+            await fs.promises.access(savedToDisk, fs.constants.F_OK);
+          } else {
+            savedToDisk = await writeHistoryImage(dataUrl, stored.id || `legacy-${Date.now()}`);
+            compacted.savedToDisk = savedToDisk;
+          }
+          delete compacted.dataUrl;
+          historyChanged = true;
+        } catch (error) {
+          try {
+            savedToDisk = await writeHistoryImage(dataUrl, stored.id || `legacy-${Date.now()}`);
+            compacted.savedToDisk = savedToDisk;
+            delete compacted.dataUrl;
+            historyChanged = true;
+          } catch (fallbackError) {
+            console.warn('LabShot: Could not externalize legacy screenshot history:', fallbackError.message || error.message);
+          }
+        }
+      }
+
+      if (!dataUrl && savedToDisk) {
+        try {
+          const imageBuf = await fs.promises.readFile(savedToDisk);
+          dataUrl = `data:image/png;base64,${imageBuf.toString('base64')}`;
+        } catch (_) {}
+      }
+
+      compactedHistory.push(compacted);
+      memoryHistory.push({ ...compacted, dataUrl });
+    }
+
+    if (historyChanged) db.setLabShotHistory(compactedHistory);
     const memoryPaths = new Set(memoryHistory.map(item => item.savedToDisk).filter(Boolean));
 
     // Also scan LabSuite Screenshots directory for vault / decrypted files
@@ -499,7 +559,7 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:deleteScreenshot', async (event, { id }) => {
-    let history = db.getDb().labshot_history || [];
+    let history = db.getLabShotHistory();
     const itemToDelete = history.find(item => item.id === id);
 
     // If file exists on disk, remove it
@@ -518,8 +578,7 @@ function initIpc() {
     }
 
     history = history.filter(item => item.id !== id);
-    db.getDb().labshot_history = history;
-    db.saveDatabase();
+    db.setLabShotHistory(history);
     return { success: true };
   });
 }

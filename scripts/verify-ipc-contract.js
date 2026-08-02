@@ -38,6 +38,10 @@ assert.ok(
 );
 assert.ok(allowed.has('updates:install'), 'The renderer must be allowed to request restart-and-install.');
 assert.ok(
+  mainSources.includes("'theme',") && mainSources.includes('RENDERER_WRITABLE_SETTINGS'),
+  'Theme changes must be writable through the renderer settings contract.'
+);
+assert.ok(
   mainSources.includes('autoUpdater.quitAndInstall(true, true)'),
   'Downloaded updates must support silent installation followed by automatic relaunch.'
 );

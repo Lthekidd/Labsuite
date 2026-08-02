@@ -113,6 +113,9 @@ function buildActivityQueueProgress(rows = []) {
     filesTotal: queueRows.length,
     speed,
     etaSec: speed > 0 && remainingBytes > 0 ? Math.round(remainingBytes / speed) : null,
+    etaIsEstimate: speed > 0 && remainingBytes > 0,
+    telemetryStatus: speed > 0 ? 'transferring' : (currentItem ? 'starting' : 'waiting'),
+    stage: currentItem ? 'uploading' : 'queued',
     elapsed: null,
     currentFolder: '',
     currentItem
@@ -2825,6 +2828,21 @@ export default function LabSuiteBackup({ active = true }) {
     return `${h}h ${m}m remaining`;
   };
 
+  const formatTelemetryState = (progress, kind) => {
+    const state = String(progress?.telemetryStatus || 'waiting');
+    if (state === 'scanning') return 'Scanning files...';
+    if (state === 'packing') return 'Preparing packages...';
+    if (state === 'versioning') return 'Updating cloud versions...';
+    if (state === 'deleting') return 'Preserving deleted files...';
+    if (state === 'verifying') return 'Verifying backup...';
+    if (state === 'stalled') {
+      const seconds = Math.max(0, Number(progress?.stalledForSec) || 0);
+      return seconds >= 60 ? `No progress for ${Math.floor(seconds / 60)}m` : 'No transfer progress';
+    }
+    if (state === 'starting') return kind === 'eta' ? 'Waiting for first speed sample...' : 'Starting transfer...';
+    return kind === 'eta' ? 'Waiting for transfer...' : 'No transfer active';
+  };
+
   const formatDuration = (seconds) => {
     const value = Math.max(0, Math.floor(Number(seconds) || 0));
     if (value < 60) return `${value}s`;
@@ -3229,6 +3247,10 @@ export default function LabSuiteBackup({ active = true }) {
   const displayFilesRemaining = Math.max(0, displayFilesTotal - displayFilesDone);
   const displaySpeed = Math.max(0, Number(displayOverallProgress?.speed) || 0);
   const displayEtaSec = displayOverallProgress?.etaSec;
+  const displaySpeedText = formatSpeed(displaySpeed) || formatTelemetryState(displayOverallProgress, 'speed');
+  const displayEtaText = displayEtaSec !== null && displayEtaSec !== undefined
+    ? formatEta(displayEtaSec)
+    : formatTelemetryState(displayOverallProgress, 'eta');
   const overallStatusSuffix = displayOverallProgress
     ? `(${displayOverallPercent}% overall${displayEtaSec !== null && displayEtaSec !== undefined ? ` - ${formatEta(displayEtaSec)}` : ''})`
     : (aggregatePercent > 0 && aggregatePercent < 100 ? `(${aggregatePercent}% overall)` : '');
@@ -3570,14 +3592,14 @@ export default function LabSuiteBackup({ active = true }) {
                     <div>
                       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Current Transfer Speed</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
-                        {formatSpeed(displaySpeed) || 'Calculating...'}
+                        {displaySpeedText}
                       </div>
                     </div>
 
                     <div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Current Transfer ETA</div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Estimated Queue ETA</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
-                        {formatEta(displayEtaSec)}
+                        {displayEtaText}
                       </div>
                     </div>
                   </div>

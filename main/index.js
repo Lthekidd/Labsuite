@@ -1,5 +1,5 @@
 // file_crc: 0x4c6162
-const { app, BrowserWindow, shell: electronShell } = require('electron');
+const { app, BrowserWindow, crashReporter, shell: electronShell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
@@ -15,6 +15,18 @@ if (process.platform === 'win32') {
 // ── Logger ──────────────────────────────────────────────────────────────────
 // Init first so all subsequent require()'s are covered by the patched console.
 initLogger(isDev);
+try {
+  crashReporter.start({
+    productName: 'LabSuite',
+    companyName: 'LabSuite',
+    uploadToServer: false,
+    compress: false,
+    ignoreSystemCrashHandler: false,
+    rateLimit: false
+  });
+} catch (error) {
+  console.warn('LabSuite diagnostics: Local crash dump capture could not be started:', error.message);
+}
 
 // ── Late requires (after logger is live) ────────────────────────────────────
 // Lazy-load backend modules using wrappers to avoid synchronous require at startup
@@ -89,6 +101,10 @@ let quitDatabaseFlushPromise = null;
 const recentRendererMessages = new Map();
 let autoUpdater = null;
 const childWindows = new Map(); // appId -> BrowserWindow
+const diagnosticWindows = new WeakSet();
+const diagnosticWindowLabels = new WeakMap();
+const rendererRecoveryHistory = new WeakMap();
+let mainLoopWatchdog = null;
 let updaterInitialized = false;
 let updateCheckPromise = null;
 let updateStatus = {
@@ -145,6 +161,95 @@ function captureRendererConsole(level, message, line, sourceId) {
   }
   writeLog('RENDERER', [`[${level}] ${text}${sourceId ? ` (${sourceId}:${line || 0})` : ''}`]);
 }
+
+function getProcessDiagnostics() {
+  try {
+    return app.getAppMetrics().map(metric => ({
+      pid: metric.pid,
+      type: metric.type,
+      cpuPercent: Number(metric.cpu && metric.cpu.percentCPU) || 0,
+      workingSetKb: Number(metric.memory && metric.memory.workingSetSize) || 0,
+      privateKb: Number(metric.memory && metric.memory.privateBytes) || 0
+    }));
+  } catch (_) {
+    return [];
+  }
+}
+
+function recoverRenderer(win, label, details = {}) {
+  if (isQuitting || !win || win.isDestroyed() || details.reason === 'clean-exit') return;
+  const now = Date.now();
+  const recent = (rendererRecoveryHistory.get(win) || []).filter(timestamp => now - timestamp < 60000);
+  if (recent.length >= 2) {
+    console.error(`LabSuite diagnostics: ${label} renderer recovery suppressed after ${recent.length} failures in 60 seconds.`);
+    return;
+  }
+  recent.push(now);
+  rendererRecoveryHistory.set(win, recent);
+  setTimeout(() => {
+    if (isQuitting || win.isDestroyed() || win.webContents.isDestroyed()) return;
+    console.warn(`LabSuite diagnostics: Reloading ${label} after renderer termination.`);
+    win.reload();
+  }, 750);
+}
+
+function attachWindowDiagnostics(win, label = '') {
+  if (!win || win.isDestroyed()) return;
+  if (label) diagnosticWindowLabels.set(win, label);
+  if (diagnosticWindows.has(win)) return;
+  diagnosticWindows.add(win);
+  const getLabel = () => diagnosticWindowLabels.get(win) ||
+    (win.isLabShotOverlay ? 'labshot-overlay' : win.isLabShotPin ? 'labshot-pin' : `window-${win.id}`);
+
+  win.on('unresponsive', () => {
+    const windowLabel = getLabel();
+    const extra = { windowId: win.id, processes: getProcessDiagnostics() };
+    console.error(`LabSuite diagnostics: ${windowLabel} became unresponsive.`, extra);
+    crashMonitor.report('windowUnresponsive', new Error(`${windowLabel} became unresponsive`), extra);
+  });
+
+  win.on('responsive', () => {
+    console.warn(`LabSuite diagnostics: ${getLabel()} became responsive again.`);
+  });
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(`LabSuite diagnostics: ${getLabel()} failed to load:`, errorCode, errorDescription, validatedURL);
+  });
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const windowLabel = getLabel();
+    const extra = { windowId: win.id, ...(details || {}), processes: getProcessDiagnostics() };
+    console.error(`LabSuite diagnostics: ${windowLabel} renderer process gone.`, extra);
+    crashMonitor.report('renderProcessGone', new Error(`${windowLabel} renderer process gone`), extra);
+    recoverRenderer(win, windowLabel, details || {});
+  });
+}
+
+function startMainLoopWatchdog() {
+  if (mainLoopWatchdog) return;
+  const intervalMs = 5000;
+  let expectedAt = Date.now() + intervalMs;
+  mainLoopWatchdog = setInterval(() => {
+    const now = Date.now();
+    const lagMs = Math.max(0, now - expectedAt);
+    expectedAt = now + intervalMs;
+    if (lagMs < 2000) return;
+    console.warn(`LabSuite diagnostics: Electron main loop was blocked for approximately ${lagMs}ms.`, {
+      lagMs,
+      processes: getProcessDiagnostics()
+    });
+  }, intervalMs);
+  mainLoopWatchdog.unref?.();
+}
+
+app.on('browser-window-created', (_event, win) => {
+  attachWindowDiagnostics(win);
+});
+
+app.on('child-process-gone', (_event, details) => {
+  console.error('LabSuite diagnostics: Electron child process gone.', details || {});
+  crashMonitor.report('childProcessGone', new Error('Electron child process gone'), details || {});
+});
 
 // ── Single instance lock ─────────────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
@@ -421,6 +526,7 @@ function createAppWindow(appId, extraParams = {}) {
       preload: path.join(__dirname, 'preload.js'),
     }
   });
+  attachWindowDiagnostics(win, `app:${appId}`);
 
   win.removeMenu();
   win.setMenuBarVisibility(false);
@@ -474,6 +580,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     }
   });
+  attachWindowDiagnostics(mainWindow, 'main-window');
 
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     captureRendererConsole(level, message, line, sourceId);
@@ -528,15 +635,6 @@ function createWindow() {
       showMainWindow();
     });
   }
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error('LabSuite: Renderer failed to load:', errorCode, errorDescription, validatedURL);
-  });
-
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('LabSuite: Renderer process gone:', details && JSON.stringify(details));
-    crashMonitor.report('renderProcessGone', new Error('Renderer process gone'), details || {});
-  });
 
   mainWindow.on('ready-to-show', () => {
     if (!startHidden) {
@@ -652,6 +750,10 @@ app.on('ready', () => {
   } catch (err) {
     console.warn('LabSuite: Failed to initialize LabShot:', err.message);
   }
+  startMainLoopWatchdog();
+  try {
+    console.log(`LabSuite diagnostics: Local crash dumps directory: ${app.getPath('crashDumps')}`);
+  } catch (_) {}
 
   try {
     require('./labHwMonitor').init();

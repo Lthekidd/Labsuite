@@ -29,13 +29,18 @@ function getTempColor(tempC) {
   }
 }
 
-export default function LabHWMonitor() {
+export default function LabHWMonitor({ active = true }) {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tempUnit, setTempUnit] = useState('C'); // 'C' or 'F'
 
   // Subscribe to live metrics when mounted; Unsubscribe on unmount (Zero Idle Overhead!)
   useEffect(() => {
+    if (!active) {
+      setLoading(false);
+      ipcRenderer?.invoke('hwmonitor:unsubscribe');
+      return undefined;
+    }
     let mounted = true;
 
     async function startSubscription() {
@@ -73,7 +78,7 @@ export default function LabHWMonitor() {
       // Unsubscribe on unmount to completely stop hardware sampling loop
       ipcRenderer?.invoke('hwmonitor:unsubscribe');
     };
-  }, []);
+  }, [active]);
 
   const handleManualRefresh = async () => {
     setLoading(true);

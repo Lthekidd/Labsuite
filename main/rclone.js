@@ -542,10 +542,27 @@ function withTransferStats(args, onProgress, labels = {}) {
   let stderrBuffer = '';
   let lastProgress = null;
   let lastMessage = '';
+  let progressParseFailures = 0;
   const idleStage = labels.idleStage || 'preparing';
   const activeStage = labels.activeStage || 'encrypting_uploading';
   const idleLabel = labels.idleLabel || 'Starting Google Drive operation';
   const activeLabel = labels.activeLabel || 'Transferring files';
+
+  lastProgress = {
+    stage: idleStage,
+    stageLabel: idleLabel,
+    filesDone: 0,
+    filesTotal: 0,
+    bytesDone: 0,
+    bytesTotal: 0,
+    percent: 0,
+    speed: 0,
+    etaSec: null,
+    elapsed: 0,
+    transferring: [],
+    currentItem: ''
+  };
+  onProgress(lastProgress);
 
   const heartbeat = setInterval(() => {
     onProgress({
@@ -583,7 +600,13 @@ function withTransferStats(args, onProgress, labels = {}) {
           const bytesTotal = Number(s.totalBytes) || 0;
           const windowMs = now - lastTime;
           const byteDelta = bytesDone - lastBytes;
-          const speed = windowMs > 0 ? (byteDelta / windowMs) * 1000 : 0;
+          const rollingSpeed = windowMs > 0 && byteDelta > 0 ? (byteDelta / windowMs) * 1000 : 0;
+          const reportedSpeed = Math.max(
+            0,
+            Number(s.speed) || 0,
+            ...(Array.isArray(s.transferring) ? s.transferring.map(item => Number(item.speed || item.Speed) || 0) : [0])
+          );
+          const speed = rollingSpeed > 0 ? rollingSpeed : reportedSpeed;
           const remaining = bytesTotal - bytesDone;
           const etaSec = speed > 0 && remaining > 0 ? Math.round(remaining / speed) : null;
           const transferring = (s.transferring || []).map(normalizeTransferItem);
@@ -608,7 +631,12 @@ function withTransferStats(args, onProgress, labels = {}) {
             currentItem: transferring[0]?.name || lastMessage || ''
           };
           onProgress(lastProgress);
-        } catch (_) {}
+        } catch (error) {
+          progressParseFailures += 1;
+          if (progressParseFailures === 1 || progressParseFailures % 25 === 0) {
+            console.warn(`rclone: Could not parse progress JSON (${progressParseFailures} failure${progressParseFailures === 1 ? '' : 's'}): ${error.message}; sample=${trimmed.slice(0, 300)}`);
+          }
+        }
       }
     }
   }).finally(() => {

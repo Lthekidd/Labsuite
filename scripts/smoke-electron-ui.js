@@ -52,7 +52,7 @@ fs.writeFileSync(path.join(tempDir, 'labsuite_db.json'), JSON.stringify({
     setup_complete: '1',
     sync_paused: '1',
     start_on_login: '0',
-    installed_apps: JSON.stringify(['notebook', 'sheets', 'lan', 'vm-protect', 'todo'])
+    installed_apps: JSON.stringify(['notebook', 'sheets', 'lan', 'vm-protect', 'todo', 'labshot', 'hwmonitor'])
   },
   cache: {}
 }), 'utf8');
@@ -142,7 +142,7 @@ async function run() {
     return true;
   })()`);
 
-  const labels = ['Network Drive', 'VM Protect', 'Encrypted Tables', 'Secure Notebook', 'Task Board', 'Crypto Portfolio', 'Suite Settings'];
+  const labels = ['Network Drive', 'VM Protect', 'Encrypted Tables', 'Secure Notebook', 'Task Board', 'LabShot', 'LabHWMonitor', 'Crypto Portfolio', 'Suite Settings'];
   for (const label of labels) {
     const clicked = await evaluate(`(() => {
       const button = [...document.querySelectorAll('.suite-sidebar .nav-item')]
@@ -166,6 +166,17 @@ async function run() {
       assert.strictEqual(vmWindowOpened, true, 'VM Protect standalone window did not open.');
     }
   }
+
+  assert.strictEqual(await evaluate(`(async () => {
+    const panel = document.querySelector('[data-workspace-id="settings"]');
+    const label = [...panel.querySelectorAll('div')]
+      .find(item => item.textContent.trim() === 'Cyberpunk Neon');
+    if (!label) return false;
+    label.click();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const settings = await window.electron.ipcRenderer.invoke('settings:get');
+    return settings.theme === 'cyberpunk' && document.body.classList.contains('theme-cyberpunk');
+  })()`), true, 'Theme selection did not persist through the settings IPC contract.');
 
   const timedNavigation = async (label, workspaceId) => {
     const alreadyActive = await evaluate(

@@ -44,10 +44,14 @@ require.cache[require.resolve('electron')] = {
     db.setSetting('async_write_sentinel', 'persisted');
     const schedulingMs = Date.now() - startedAt;
     assert.ok(schedulingMs < 500, `Large database mutation blocked for ${schedulingMs}ms.`);
+    let eventLoopTicks = 0;
+    const heartbeat = setInterval(() => { eventLoopTicks += 1; }, 5);
     await db.flushWritesAsync();
+    clearInterval(heartbeat);
     const saved = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     assert.strictEqual(saved.settings.async_write_sentinel, 'persisted');
     assert.ok(fs.existsSync(`${dbPath}.bak`), 'Large async writes must retain a recovery copy.');
+    assert.ok(eventLoopTicks > 0, 'Large manifest serialization must yield to the event loop.');
     console.log(`Large database async verification passed (scheduled in ${schedulingMs}ms).`);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

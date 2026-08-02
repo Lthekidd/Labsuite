@@ -13,6 +13,11 @@ async function verifyLabShot() {
   assert(typeof labShot.startCapture === 'function', 'labShot.startCapture must be a function');
   assert(typeof labShot.pinToScreen === 'function', 'labShot.pinToScreen must be a function');
   assert(typeof labShot.getVirtualDesktopBounds === 'function', 'labShot.getVirtualDesktopBounds must be a function');
+  const labShotSource = fs.readFileSync(labShotPath, 'utf8');
+  assert.ok(labShotSource.includes('db.setLabShotHistory(history)'), 'LabShot history must use the public database persistence API.');
+  assert.ok(!labShotSource.includes('db.saveDatabase()'), 'LabShot must not call a non-exported database method.');
+  assert.ok(labShotSource.includes('writeHistoryImage'), 'LabShot screenshots must be stored outside the JSON database.');
+  assert.ok(!labShotSource.includes('dataUrl: entry.dataUrl'), 'New LabShot history records must not embed full screenshots in the JSON database.');
 
   const virtualBounds = labShot.getVirtualDesktopBounds([
     { bounds: { x: -1920, y: 0, width: 1920, height: 1080 } },

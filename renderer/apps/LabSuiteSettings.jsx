@@ -103,9 +103,11 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
     try {
       await ipcRenderer.invoke('settings:set', { key, value: String(value) });
       invalidateResource('settings:get');
+      return true;
     } catch (e) {
       console.error(`Failed to update ${key}:`, e);
-      loadSettings({ force: true }); // revert on fail
+      await loadSettings({ force: true }); // revert on fail
+      return false;
     }
   };
 
@@ -379,9 +381,13 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
               return (
                 <div
                   key={t.id}
-                  onClick={() => {
-                    updateSetting('theme', t.id);
+                  onClick={async () => {
+                    const previousTheme = settings.theme || 'default';
                     window.dispatchEvent(new CustomEvent('settings-theme-changed', { detail: `theme-${t.id}` }));
+                    const saved = await updateSetting('theme', t.id);
+                    if (!saved) {
+                      window.dispatchEvent(new CustomEvent('settings-theme-changed', { detail: `theme-${previousTheme}` }));
+                    }
                   }}
                   style={{
                     border: isActive ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',

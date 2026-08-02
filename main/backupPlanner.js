@@ -5,6 +5,7 @@ try {
   fs = require('fs');
 }
 const path = require('path');
+const fsPromises = fs.promises || require('fs').promises;
 const db = require('./database');
 const filesystem = require('./filesystem');
 const manifest = require('./backupManifest');
@@ -118,6 +119,30 @@ function handleUnavailableStandaloneSource(folder, plan, entries) {
   }
 
   return handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
+}
+
+async function handleUnavailableStandaloneSourceAsync(folder, plan, entries) {
+  if (folder.source_type !== 'file') return false;
+  const includes = Array.isArray(folder.include_paths) ? folder.include_paths : [];
+  const selectionPath = folder.selection_path || (includes[0] ? path.join(folder.local_path, includes[0]) : '');
+  const relativePath = includes[0] || manifest.getRelativePath(folder, selectionPath);
+
+  try {
+    if (selectionPath && (await fsPromises.stat(selectionPath)).isFile()) return false;
+  } catch (error) {
+    if (!error || !['ENOENT', 'ENOTDIR'].includes(error.code)) return false;
+  }
+
+  return handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
+}
+
+async function pathExistsAsync(targetPath) {
+  try {
+    await fsPromises.access(targetPath, fs.constants.F_OK);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function finishPlan(plan) {
@@ -300,8 +325,33 @@ function walkFolder(folder, plan, entries) {
 async function walkFolderAsync(folder, plan, entries) {
   const includes = Array.isArray(folder.include_paths) ? folder.include_paths : [];
   if (includes.length > 0) {
-    walkFolder(folder, plan, entries);
-    await yieldToEventLoop();
+    let visited = 0;
+    for (const relativePath of includes) {
+      visited += 1;
+      await maybeYield(visited);
+      const normalized = manifest.normalizeRelativePath(relativePath);
+      if (!normalized || normalized.split('/').includes('..')) continue;
+      const filePath = path.join(folder.local_path, ...normalized.split('/'));
+      if (filesystem.isPathExcluded(filePath, folder)) continue;
+      try {
+        const stat = await fsPromises.stat(filePath);
+        if (!stat.isFile()) {
+          handleMissingFileDuringScan(folder, plan, entries, normalized, { code: 'ENOENT' });
+          continue;
+        }
+        const fileInfo = toFileInfo(folder, filePath, stat);
+        addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
+      } catch (error) {
+        if (handleMissingFileDuringScan(folder, plan, entries, normalized, error)) continue;
+        plan.workItems.push({
+          type: 'scan_error',
+          folderId: folder.id,
+          localPath: filePath,
+          relativePath: normalized,
+          error: error.message
+        });
+      }
+    }
     return;
   }
   const stack = [folder.local_path];
@@ -314,7 +364,7 @@ async function walkFolderAsync(folder, plan, entries) {
 
     let children;
     try {
-      children = fs.readdirSync(current, { withFileTypes: true });
+      children = await fsPromises.readdir(current, { withFileTypes: true });
     } catch (error) {
       if (error && error.code === 'ENOENT') {
         plan.skipped += 1;
@@ -344,7 +394,7 @@ async function walkFolderAsync(folder, plan, entries) {
       let isFile = child.isFile();
       if (!isDir && !isFile) {
         try {
-          const st = fs.statSync(childPath);
+          const st = await fsPromises.stat(childPath);
           isDir = st.isDirectory();
           isFile = st.isFile();
         } catch (_) {}
@@ -361,7 +411,7 @@ async function walkFolderAsync(folder, plan, entries) {
       }
 
       try {
-        const stat = fs.statSync(childPath);
+        const stat = await fsPromises.stat(childPath);
         const fileInfo = toFileInfo(folder, childPath, stat);
         addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
       } catch (error) {
@@ -413,7 +463,7 @@ async function addDirtyManifestUploadsAsync(folder, plan, entries) {
       continue;
     }
     try {
-      const stat = fs.statSync(localPath);
+      const stat = await fsPromises.stat(localPath);
       if (!stat.isFile()) {
         handleMissingFileDuringScan(folder, plan, entries, relativePath, { code: 'ENOENT' });
         continue;
@@ -511,9 +561,9 @@ async function planFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
 
-  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
+  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlan(plan);
 
-  if (!fs.existsSync(folder.local_path)) {
+  if (!(await pathExistsAsync(folder.local_path))) {
     plan.workItems.push({
       type: 'folder_missing',
       folderId: folder.id,
@@ -559,9 +609,9 @@ async function planDirtyFolderAsync(folder) {
   const plan = makeEmptyPlan(folder);
   const entries = db.getManifestEntries(folder.id);
 
-  if (handleUnavailableStandaloneSource(folder, plan, entries)) return finishPlan(plan);
+  if (await handleUnavailableStandaloneSourceAsync(folder, plan, entries)) return finishPlan(plan);
 
-  if (!fs.existsSync(folder.local_path)) {
+  if (!(await pathExistsAsync(folder.local_path))) {
     plan.workItems.push({
       type: 'folder_missing',
       folderId: folder.id,
@@ -589,6 +639,8 @@ module.exports = {
   __private: {
     makeMissingFileDeleteItem,
     handleMissingFileDuringScan,
-    handleUnavailableStandaloneSource
+    handleUnavailableStandaloneSource,
+    handleUnavailableStandaloneSourceAsync,
+    pathExistsAsync
   }
 };

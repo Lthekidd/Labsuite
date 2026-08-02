@@ -6,6 +6,9 @@ let activeSubscribers = new Set();
 let samplingTimer = null;
 let cachedSnapshot = null;
 let lastCpuTimes = null;
+let collectionInFlight = null;
+let samplingCycleInFlight = false;
+const SAMPLING_INTERVAL_MS = 5000;
 
 function runPowerShell(command, timeoutMs = 4000) {
   return new Promise((resolve) => {
@@ -62,7 +65,7 @@ function getCpuUsage() {
 /**
  * Fetch advanced hardware metrics (WMI + OS)
  */
-async function collectMetricsSnapshot() {
+async function collectMetricsSnapshotInternal() {
   const cpuUsage = getCpuUsage();
   const cpus = os.cpus();
   const cpuModel = cpus[0]?.model || 'Processor';
@@ -193,6 +196,25 @@ async function collectMetricsSnapshot() {
   return cachedSnapshot;
 }
 
+function collectMetricsSnapshot() {
+  if (collectionInFlight) return collectionInFlight;
+  collectionInFlight = collectMetricsSnapshotInternal().finally(() => {
+    collectionInFlight = null;
+  });
+  return collectionInFlight;
+}
+
+async function runSamplingCycle() {
+  if (samplingCycleInFlight || activeSubscribers.size === 0) return;
+  samplingCycleInFlight = true;
+  try {
+    const snapshot = await collectMetricsSnapshot();
+    if (activeSubscribers.size > 0) broadcastSnapshot(snapshot);
+  } finally {
+    samplingCycleInFlight = false;
+  }
+}
+
 /**
  * Start or update sampling loop when active subscribers exist
  */
@@ -200,19 +222,20 @@ function startSamplingLoop() {
   if (samplingTimer) return;
 
   // Take immediate snapshot
-  collectMetricsSnapshot().then(snapshot => {
-    broadcastSnapshot(snapshot);
+  runSamplingCycle().catch(error => {
+    console.warn('LabHWMonitor: Initial sampling cycle failed:', error.message);
   });
 
-  // Sample every 1.5 seconds while open
-  samplingTimer = setInterval(async () => {
+  // WMI queries can take several seconds on some PCs. Never overlap cycles.
+  samplingTimer = setInterval(() => {
     if (activeSubscribers.size === 0) {
       stopSamplingLoop();
       return;
     }
-    const snapshot = await collectMetricsSnapshot();
-    broadcastSnapshot(snapshot);
-  }, 1500);
+    runSamplingCycle().catch(error => {
+      console.warn('LabHWMonitor: Sampling cycle failed:', error.message);
+    });
+  }, SAMPLING_INTERVAL_MS);
 
   console.log('LabHWMonitor: Sampling loop STARTED.');
 }

@@ -92,7 +92,18 @@ function openStream() {
 function formatLine(level, args) {
   const ts = new Date().toISOString();
   const msg = args
-    .map(a => (typeof a === 'object' ? JSON.stringify(a, null, 0) : String(a)))
+    .map(a => {
+      if (a instanceof Error) {
+        return JSON.stringify({
+          name: a.name,
+          message: a.message,
+          stack: a.stack,
+          code: a.code
+        });
+      }
+      if (typeof a !== 'object' || a === null) return String(a);
+      try { return JSON.stringify(a, null, 0); } catch (_) { return String(a); }
+    })
     .join(' ');
   return `[${ts}] [${level}] ${msg}\n`;
 }
