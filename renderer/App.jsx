@@ -309,7 +309,11 @@ export default function App() {
 
   const hasRealEmail = globalGDriveInfo.accountEmail || (globalGDriveInfo.email && !['Connected Account', 'Disconnected', 'Google Drive Account'].includes(globalGDriveInfo.email));
   const realEmail = globalGDriveInfo.accountEmail || (hasRealEmail ? globalGDriveInfo.email : '');
-  const isConnected = healthStatus === 'Connected' || (hasRealEmail && healthStatus !== 'Disconnected');
+  // The account identity is durable connection evidence. A transient health
+  // probe can fail while Drive is busy, but it must not make only the global
+  // sidebar say Disconnected while the Backup workspace shows the same
+  // authenticated account as Connected.
+  const isConnected = healthStatus === 'Connected' || !!hasRealEmail;
   const storagePercent = globalGDriveInfo.total > 0
     ? Math.min(100, (globalGDriveInfo.used / globalGDriveInfo.total) * 100)
     : 0;

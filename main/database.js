@@ -288,6 +288,7 @@ let manifestSummaryRevision = 0;
 let manifestSummaryCache = null;
 let manifestSummaryCacheRevision = -1;
 let manifestSummaryFolderSignature = '';
+let manifestSummaryPromise = null;
 
 function invalidateManifestSummaryCache() {
   manifestSummaryRevision += 1;
@@ -302,18 +303,61 @@ function getManifestSummarySignature() {
 
 function computeManifestSummary() {
   return (data.folders || []).map(folder => {
-    const entries = Object.values(data.backup_manifest[String(folder.id)] || {});
-    return {
+    const summary = {
       folderId: folder.id,
       folderPath: folder.local_path,
-      protectedFiles: entries.filter(entry => entry.status === 'backed_up').length,
-      pendingFiles: entries.filter(entry => ['dirty', 'deleted_pending_history', 'failed', 'active_repair_needed'].includes(entry.status)).length,
-      deletedFiles: entries.filter(entry => entry.status === 'deleted').length,
-      failedFiles: entries.filter(entry => entry.status === 'failed').length,
-      atRiskFiles: entries.filter(entry => entry.status === 'active_repair_needed').length,
-      versionCount: entries.reduce((sum, entry) => sum + (Array.isArray(entry.versions) ? entry.versions.length : 0), 0)
+      protectedFiles: 0,
+      pendingFiles: 0,
+      deletedFiles: 0,
+      failedFiles: 0,
+      atRiskFiles: 0,
+      versionCount: 0
     };
+    const entries = data.backup_manifest[String(folder.id)] || {};
+    for (const relativePath in entries) {
+      if (!Object.prototype.hasOwnProperty.call(entries, relativePath)) continue;
+      const entry = entries[relativePath] || {};
+      if (entry.status === 'backed_up') summary.protectedFiles += 1;
+      if (['dirty', 'deleted_pending_history', 'failed', 'active_repair_needed'].includes(entry.status)) summary.pendingFiles += 1;
+      if (entry.status === 'deleted') summary.deletedFiles += 1;
+      if (entry.status === 'failed') summary.failedFiles += 1;
+      if (entry.status === 'active_repair_needed') summary.atRiskFiles += 1;
+      if (Array.isArray(entry.versions)) summary.versionCount += entry.versions.length;
+    }
+    return summary;
   });
+}
+
+async function computeManifestSummaryAsync() {
+  const summaries = [];
+  let visited = 0;
+  for (const folder of data.folders || []) {
+    const summary = {
+      folderId: folder.id,
+      folderPath: folder.local_path,
+      protectedFiles: 0,
+      pendingFiles: 0,
+      deletedFiles: 0,
+      failedFiles: 0,
+      atRiskFiles: 0,
+      versionCount: 0
+    };
+    const entries = data.backup_manifest[String(folder.id)] || {};
+    for (const relativePath in entries) {
+      if (!Object.prototype.hasOwnProperty.call(entries, relativePath)) continue;
+      const entry = entries[relativePath] || {};
+      if (entry.status === 'backed_up') summary.protectedFiles += 1;
+      if (['dirty', 'deleted_pending_history', 'failed', 'active_repair_needed'].includes(entry.status)) summary.pendingFiles += 1;
+      if (entry.status === 'deleted') summary.deletedFiles += 1;
+      if (entry.status === 'failed') summary.failedFiles += 1;
+      if (entry.status === 'active_repair_needed') summary.atRiskFiles += 1;
+      if (Array.isArray(entry.versions)) summary.versionCount += entry.versions.length;
+      visited += 1;
+      if (visited % 250 === 0) await new Promise(resolve => setImmediate(resolve));
+    }
+    summaries.push(summary);
+  }
+  return summaries;
 }
 
 function getCachedManifestSummary() {
@@ -331,6 +375,40 @@ function getCachedManifestSummary() {
   manifestSummaryCacheRevision = manifestSummaryRevision;
   manifestSummaryFolderSignature = folderSignature;
   return manifestSummaryCache.map(item => ({ ...item }));
+}
+
+async function getCachedManifestSummaryAsync() {
+  loadDatabase();
+  const folderSignature = getManifestSummarySignature();
+  if (
+    manifestSummaryCache &&
+    manifestSummaryCacheRevision === manifestSummaryRevision &&
+    manifestSummaryFolderSignature === folderSignature
+  ) {
+    return manifestSummaryCache.map(item => ({ ...item }));
+  }
+  if (manifestSummaryPromise) {
+    const pending = await manifestSummaryPromise;
+    return pending.map(item => ({ ...item }));
+  }
+
+  const startingRevision = manifestSummaryRevision;
+  const startingSignature = folderSignature;
+  manifestSummaryPromise = computeManifestSummaryAsync();
+  try {
+    const summary = await manifestSummaryPromise;
+    if (
+      manifestSummaryRevision === startingRevision &&
+      getManifestSummarySignature() === startingSignature
+    ) {
+      manifestSummaryCache = summary;
+      manifestSummaryCacheRevision = startingRevision;
+      manifestSummaryFolderSignature = startingSignature;
+    }
+    return summary.map(item => ({ ...item }));
+  } finally {
+    manifestSummaryPromise = null;
+  }
 }
 
 /**
@@ -1588,6 +1666,7 @@ module.exports = {
   },
 
   getManifestSummary: () => getCachedManifestSummary(),
+  getManifestSummaryAsync: () => getCachedManifestSummaryAsync(),
 
   getAnalyticsSummary: () => {
     loadDatabase();

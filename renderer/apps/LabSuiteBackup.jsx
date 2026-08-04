@@ -3212,7 +3212,7 @@ export default function LabSuiteBackup({ active = true }) {
   const accountInitial = accountLabel && accountLabel !== 'Not Connected'
     ? accountLabel.charAt(0).toUpperCase()
     : 'U';
-  const driveStatus = healthInfo.gdriveStatus === 'Connected' || (hasRealEmail && healthInfo.gdriveStatus !== 'Disconnected')
+  const driveStatus = healthInfo.gdriveStatus === 'Connected' || hasRealEmail
     ? 'connected'
     : healthInfo.gdriveStatus === 'Disconnected' || gdriveInfo.email === 'Disconnected'
       ? 'disconnected'

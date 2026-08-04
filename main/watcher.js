@@ -59,12 +59,6 @@ function refreshWatcherFolderConfigs() {
   }));
 }
 
-function isWindowsDriveRoot(localPath) {
-  if (process.platform !== 'win32') return false;
-  const resolved = path.resolve(localPath);
-  return resolved.toLowerCase() === path.parse(resolved).root.toLowerCase();
-}
-
 function findWatcherConfig(filePath) {
   return watcherFolderConfigs.find(({ folder, isExcluded }) => (
     isPathInsideFolder(filePath, folder.local_path) &&
@@ -100,7 +94,7 @@ function queueNativeEvent(rootPath, eventType, filename) {
   }, 400));
 }
 
-function addNativeDriveWatcher(localPath) {
+function addNativeRecursiveWatcher(localPath) {
   if (nativeWatchers.has(localPath)) return true;
   try {
     const nativeWatcher = fs.watch(localPath, { persistent: true, recursive: true }, (eventType, filename) => {
@@ -109,7 +103,7 @@ function addNativeDriveWatcher(localPath) {
     nativeWatcher.on('error', error => console.error(`Native watcher error for ${localPath}: ${error.message}`));
     nativeWatchers.set(localPath, nativeWatcher);
     watchedPaths.add(localPath);
-    console.log(`Watcher: Using low-overhead native recursive watch for drive root: ${localPath}`);
+    console.log(`Watcher: Using low-overhead native recursive watch for: ${localPath}`);
     return true;
   } catch (error) {
     console.warn(`Watcher: Native recursive watch unavailable for ${localPath}; falling back to chokidar:`, error.message);
@@ -146,7 +140,13 @@ function initWatcher() {
     return;
   }
 
-  const chokidarPaths = pathsToWatch.filter(localPath => !isWindowsDriveRoot(localPath) || !addNativeDriveWatcher(localPath));
+  // On Windows, fs.watch supports recursive directory notifications without
+  // crawling every file first. Chokidar must inventory the full tree even
+  // with ignoreInitial, which can freeze Electron and duplicate the backup
+  // planner's work for photo archives containing tens of thousands of files.
+  const chokidarPaths = pathsToWatch.filter(localPath => (
+    process.platform !== 'win32' || !addNativeRecursiveWatcher(localPath)
+  ));
   if (chokidarPaths.length === 0) return;
 
   watcherInstance = chokidar.watch(chokidarPaths, {
@@ -168,7 +168,7 @@ function initWatcher() {
  */
 function addPath(localPath) {
   refreshWatcherFolderConfigs();
-  if (isWindowsDriveRoot(localPath) && addNativeDriveWatcher(localPath)) return;
+  if (process.platform === 'win32' && addNativeRecursiveWatcher(localPath)) return;
   if (!watcherInstance) {
     // No watcher yet — create one seeded with this path
     watcherInstance = chokidar.watch(localPath, {

@@ -16,6 +16,10 @@ const remoteCatalog = require('./remoteCatalog');
 const FILE_ACTIVITY_PREVIEW_LIMIT = 200;
 const DB_COMPLETION_BATCH_SIZE = 200;
 const DRAIN_PAUSE_SETTING = 'sync_pause_after_current';
+const BULK_TRANSFER_BATCH_FILES = 512;
+const BULK_TRANSFER_BATCH_BYTES = 4 * 1024 * 1024 * 1024;
+const VERSION_TRANSFER_BATCH_FILES = 128;
+const VERSION_TRANSFER_BATCH_BYTES = 1024 * 1024 * 1024;
 
 class BackupPausedError extends Error {
   constructor(reason = 'Backup paused') {
@@ -170,14 +174,28 @@ class BackupWorker extends EventEmitter {
     }
   }
 
-  *getTransferBatches(items) {
-    const batchSize = Math.max(1, Number(rclone.getTransferConcurrency?.()) || 4);
-    for (let index = 0; index < items.length; index += batchSize) {
-      // Yield one batch at a time. Building an array containing 100,000+
-      // child arrays caused another large synchronous allocation for very
-      // large backup queues.
-      yield items.slice(index, index + batchSize);
+  *getTransferBatches(items, options = {}) {
+    const maxFiles = Math.max(1, Number(options.maxFiles) || BULK_TRANSFER_BATCH_FILES);
+    const maxBytes = Math.max(1, Number(options.maxBytes) || BULK_TRANSFER_BATCH_BYTES);
+    let batch = [];
+    let batchBytes = 0;
+
+    for (const item of items) {
+      const itemBytes = Math.max(0, Number(item && item.size) || 0);
+      if (batch.length > 0 && (batch.length >= maxFiles || batchBytes + itemBytes > maxBytes)) {
+        yield batch;
+        batch = [];
+        batchBytes = 0;
+      }
+      batch.push(item);
+      batchBytes += itemBytes;
     }
+    if (batch.length > 0) yield batch;
+  }
+
+  isBatchWideTransferError(error) {
+    const message = String(error && error.message || error || '').toLowerCase();
+    return /could not connect|network|timed out|timeout|login session expired|unauthorized|storage or api rate limit|quota|local hard drive is full|backup destination was not found|decryption failed|duplicate destination folders|operation cancelled/.test(message);
   }
 
   clearDirtyFolder(folderId) {
@@ -1617,30 +1635,42 @@ class BackupWorker extends EventEmitter {
 
     for (const batch of this.getTransferBatches(items)) {
       this.throwIfPauseBoundaryReached();
-      try {
-        await rclone.copyFilesFrom(folder.local_path, folder.remote_path, batch.map(item => item.relativePath), progress => {
-          this.emitActiveTransfers(folder, batch, progress, 'uploading');
-          this.emitBatchProgress(folder, base, coveredChildren, counters, totals, progress, 'Starting Google Drive upload');
+      await this.uploadNewFileBatch(folder, batch, base, coveredChildren, counters, totals);
+    }
+  }
+
+  async uploadNewFileBatch(folder, batch, base, coveredChildren, counters, totals) {
+    try {
+      await rclone.copyFilesFrom(folder.local_path, folder.remote_path, batch.map(item => item.relativePath), progress => {
+        this.emitActiveTransfers(folder, batch, progress, 'uploading');
+        this.emitBatchProgress(folder, base, coveredChildren, counters, totals, progress, 'Uploading continuously to Google Drive');
+      });
+      await this.recordCompletedItems(folder, batch, counters, item => {
+        manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
+        db.addSyncLog({
+          folderId: folder.id,
+          filePath: item.localPath,
+          action: 'backup-upload',
+          status: 'success',
+          sizeBytes: item.size
         });
-        await this.recordCompletedItems(folder, batch, counters, item => {
-          manifest.recordBackedUp(folder, item, manifest.getRemoteFilePath(folder, item.relativePath));
-          db.addSyncLog({
-            folderId: folder.id,
-            filePath: item.localPath,
-            action: 'backup-upload',
-            status: 'success',
-            sizeBytes: item.size
-          });
-        });
-      } catch (error) {
-        this.rethrowIfCancelled(error);
-        this.throwIfPauseBoundaryReached();
-        console.warn('BackupWorker: batch upload failed; falling back to per-file uploads:', error.message);
-        for (const item of batch) {
-          this.throwIfPauseBoundaryReached();
-          await this.uploadSingleItem(folder, item, counters);
-        }
+      });
+    } catch (error) {
+      this.rethrowIfCancelled(error);
+      this.throwIfPauseBoundaryReached();
+      if (this.isBatchWideTransferError(error)) throw error;
+      if (batch.length === 1) {
+        await this.uploadSingleItem(folder, batch[0], counters);
+        return;
       }
+
+      // A single unreadable/locked file must not force hundreds of one-file
+      // rclone launches. Divide only the failed batch until the bad item is
+      // isolated; successful remote files are skipped cheaply on each retry.
+      console.warn(`BackupWorker: ${batch.length}-file upload batch had an item-specific failure; isolating the affected file(s).`);
+      const middle = Math.ceil(batch.length / 2);
+      await this.uploadNewFileBatch(folder, batch.slice(0, middle), base, coveredChildren, counters, totals);
+      await this.uploadNewFileBatch(folder, batch.slice(middle), base, coveredChildren, counters, totals);
     }
   }
 
@@ -1672,7 +1702,10 @@ class BackupWorker extends EventEmitter {
       error: 'Migrating packed file to Explorer-visible backup'
     });
 
-    for (const batch of this.getTransferBatches(items)) {
+    for (const batch of this.getTransferBatches(items, {
+      maxFiles: VERSION_TRANSFER_BATCH_FILES,
+      maxBytes: VERSION_TRANSFER_BATCH_BYTES
+    })) {
       this.throwIfPauseBoundaryReached();
       try {
         await rclone.copyFilesFrom(folder.local_path, folder.remote_path, batch.map(item => item.relativePath), progress => {
@@ -1745,7 +1778,10 @@ class BackupWorker extends EventEmitter {
       return;
     }
 
-    for (const batch of this.getTransferBatches(items)) {
+    for (const batch of this.getTransferBatches(items, {
+      maxFiles: VERSION_TRANSFER_BATCH_FILES,
+      maxBytes: VERSION_TRANSFER_BATCH_BYTES
+    })) {
       this.throwIfPauseBoundaryReached();
       await this.uploadModifiedFileBatch(folder, batch, base, coveredChildren, counters, totals);
     }
@@ -1967,7 +2003,10 @@ class BackupWorker extends EventEmitter {
 
     const historyRoot = this.makeHistoryRoot(folder, this.makeRunId());
 
-    for (const batch of this.getTransferBatches(items)) {
+    for (const batch of this.getTransferBatches(items, {
+      maxFiles: VERSION_TRANSFER_BATCH_FILES,
+      maxBytes: VERSION_TRANSFER_BATCH_BYTES
+    })) {
       this.throwIfPauseBoundaryReached();
       try {
         await rclone.moveFilesFrom(folder.remote_path, historyRoot, batch.map(item => item.relativePath), progress => {

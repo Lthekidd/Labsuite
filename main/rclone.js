@@ -628,7 +628,10 @@ function getTransferFlagArgs() {
     `--transfers=${tuning.transfers}`,
     `--checkers=${tuning.checkers}`,
     `--drive-pacer-min-sleep=${tuning.pacerSleep}`,
-    `--drive-pacer-burst=${tuning.pacerBurst}`
+    `--drive-pacer-burst=${tuning.pacerBurst}`,
+    '--retries=8',
+    '--low-level-retries=20',
+    '--retries-sleep=5s'
   ];
 
   const db = require('./database');
@@ -643,6 +646,7 @@ function getTransferFlagArgs() {
 function withTransferStats(args, onProgress, labels = {}) {
   const finalArgs = [
     ...args,
+    // Includes bounded concurrency plus resilient in-process retries.
     ...getTransferFlagArgs(),
     '--stats=2s',
     '--stats-one-line',
@@ -1821,12 +1825,9 @@ function restore(remotePath, localDestination, onProgress, options = {}) {
     // fully completed files (correct size) are skipped instantly.
     '--inplace',
     ...(options.overwrite === true ? [] : ['--ignore-existing']),
-    ...getTransferFlagArgs(),
     // Automatic retries within the same process — handles transient network
     // failures without losing the entire transfer's progress.
-    '--retries', '5',
-    '--low-level-retries', '20',
-    '--retries-sleep', '5s',
+    ...getTransferFlagArgs(),
     // Download large files using multiple parallel streams for better
     // throughput on high-latency connections.
     '--multi-thread-streams', '4',

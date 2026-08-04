@@ -253,7 +253,7 @@ function yieldToEventLoop() {
   return new Promise(resolve => setImmediate(resolve));
 }
 
-async function maybeYield(counter, every = 500) {
+async function maybeYield(counter, every = 100) {
   if (counter > 0 && counter % every === 0) {
     await yieldToEventLoop();
   }
@@ -398,9 +398,12 @@ async function walkFolderAsync(folder, plan, entries) {
     visited += 1;
     await maybeYield(visited);
 
-    let children;
+    let directory;
     try {
-      children = await fsPromises.readdir(current, { withFileTypes: true });
+      // opendir streams a small native buffer at a time. readdir returns one
+      // giant Dirent array and can block Electron while V8 materializes a
+      // directory containing tens or hundreds of thousands of files.
+      directory = await fsPromises.opendir(current, { bufferSize: 64 });
     } catch (error) {
       if (error && error.code === 'ENOENT') {
         plan.skipped += 1;
@@ -416,51 +419,61 @@ async function walkFolderAsync(folder, plan, entries) {
       continue;
     }
 
-    for (const child of children) {
-      visited += 1;
-      if (visited % 500 === 0) await yieldToEventLoop();
+    try {
+      for await (const child of directory) {
+        visited += 1;
+        if (visited % 100 === 0) await yieldToEventLoop();
 
-      const childPath = path.join(current, child.name);
-      if (isExcluded(childPath)) {
-        plan.skipped += 1;
-        continue;
-      }
+        const childPath = path.join(current, child.name);
+        if (isExcluded(childPath)) {
+          plan.skipped += 1;
+          continue;
+        }
 
-      let isDir = child.isDirectory();
-      let isFile = child.isFile();
-      if (!isDir && !isFile) {
+        let isDir = child.isDirectory();
+        let isFile = child.isFile();
+        if (!isDir && !isFile) {
+          try {
+            const st = await fsPromises.stat(childPath);
+            isDir = st.isDirectory();
+            isFile = st.isFile();
+          } catch (_) {}
+        }
+
+        if (isDir) {
+          stack.push(childPath);
+          continue;
+        }
+
+        if (!isFile) {
+          plan.skipped += 1;
+          continue;
+        }
+
         try {
-          const st = await fsPromises.stat(childPath);
-          isDir = st.isDirectory();
-          isFile = st.isFile();
-        } catch (_) {}
+          const stat = await fsPromises.stat(childPath);
+          const fileInfo = toFileInfo(folder, childPath, stat);
+          addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
+        } catch (error) {
+          const relativePath = manifest.getRelativePath(folder, childPath);
+          if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
+          plan.workItems.push({
+            type: 'scan_error',
+            folderId: folder.id,
+            localPath: childPath,
+            relativePath,
+            error: error.message
+          });
+        }
       }
-
-      if (isDir) {
-        stack.push(childPath);
-        continue;
-      }
-
-      if (!isFile) {
-        plan.skipped += 1;
-        continue;
-      }
-
-      try {
-        const stat = await fsPromises.stat(childPath);
-        const fileInfo = toFileInfo(folder, childPath, stat);
-        addUploadIfNeeded(plan, fileInfo, entries[fileInfo.relativePath]);
-      } catch (error) {
-        const relativePath = manifest.getRelativePath(folder, childPath);
-        if (handleMissingFileDuringScan(folder, plan, entries, relativePath, error)) continue;
-        plan.workItems.push({
-          type: 'scan_error',
-          folderId: folder.id,
-          localPath: childPath,
-          relativePath,
-          error: error.message
-        });
-      }
+    } catch (error) {
+      plan.workItems.push({
+        type: 'scan_error',
+        folderId: folder.id,
+        localPath: current,
+        relativePath: manifest.getRelativePath(folder, current),
+        error: error.message
+      });
     }
   }
 }

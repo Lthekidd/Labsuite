@@ -11,8 +11,9 @@ const asyncWalkStart = planner.indexOf('async function walkFolderAsync');
 const asyncWalkEnd = planner.indexOf('async function addManifestRepairsAsync');
 assert.ok(asyncWalkStart >= 0 && asyncWalkEnd > asyncWalkStart, 'Could not locate the asynchronous backup walker.');
 const asyncWalk = planner.slice(asyncWalkStart, asyncWalkEnd);
-assert.ok(asyncWalk.includes('fsPromises.readdir'), 'Async backup walking must use asynchronous directory reads.');
+assert.ok(asyncWalk.includes('fsPromises.opendir'), 'Async backup walking must stream directory entries.');
 assert.ok(asyncWalk.includes('fsPromises.stat'), 'Async backup walking must use asynchronous stat calls.');
+assert.ok(!asyncWalk.includes('fsPromises.readdir'), 'Async backup walking must not materialize huge directory arrays.');
 assert.ok(!asyncWalk.includes('readdirSync'), 'Async backup walking must not block on readdirSync.');
 assert.ok(!asyncWalk.includes('statSync'), 'Async backup walking must not block on statSync.');
 const asyncManifestLoops = planner.slice(asyncWalkEnd, planner.indexOf('function addManifestDeletes'));
@@ -24,21 +25,33 @@ assert.ok(database.includes('writeJsonFileIncrementally'), 'Large database persi
 assert.ok(database.includes('await new Promise(resolve => setImmediate(resolve))'), 'Database serialization must yield to Electron.');
 assert.ok(database.includes('saveDatabaseDeferred();'), 'Manifest traffic must use debounced persistence.');
 assert.ok(database.includes('getManifestEntriesView'), 'Large backup planning must avoid cloning the entire manifest.');
+assert.ok(database.includes('computeManifestSummaryAsync'), 'Large manifest summaries must yield to Electron.');
+
+const watcher = read('main/watcher.js');
+assert.ok(watcher.includes('addNativeRecursiveWatcher'), 'Windows folder watching must use low-overhead native recursion.');
+assert.ok(watcher.includes("process.platform !== 'win32' || !addNativeRecursiveWatcher(localPath)"), 'All Windows backup folders must avoid Chokidar startup crawls when native watching is available.');
 
 const backupWorker = read('main/backupWorker.js');
 assert.ok(backupWorker.includes('groupPlanWorkItems'), 'Large backup plans must be grouped with yielding loops.');
 assert.ok(backupWorker.includes('partitionUploadItemsAsync'), 'Large upload queues must be partitioned without blocking Electron.');
 assert.ok(!backupWorker.includes('const folderPlans = new Map()'), 'All folder plans must not be retained in memory before uploads begin.');
-assert.ok(backupWorker.includes('*getTransferBatches(items)'), 'Transfer batches must be generated lazily for very large queues.');
+assert.ok(backupWorker.includes('*getTransferBatches(items, options = {})'), 'Transfer batches must be generated lazily for very large queues.');
+assert.ok(backupWorker.includes('BULK_TRANSFER_BATCH_FILES = 512'), 'Bulk uploads must keep rclone alive across hundreds of files.');
+assert.ok(!backupWorker.includes('const batchSize = Math.max(1, Number(rclone.getTransferConcurrency'), 'Transfer process lifetime must not be limited to active transfer slots.');
 
 const rclone = read('main/rclone.js');
 assert.ok(rclone.includes('Number(s.speed)'), 'Progress must consume rclone-reported speed when byte deltas are unavailable.');
 assert.ok(rclone.includes('Could not parse progress JSON'), 'Progress parse failures must be diagnosable.');
+assert.ok(rclone.includes("'--retries=8'"), 'Long-running cloud transfers must retry transient failures in the same process.');
 
 const backupUi = read('renderer/apps/LabSuiteBackup.jsx');
 assert.ok(backupUi.includes('formatTelemetryState'), 'Backup UI must show the current non-transfer stage.');
 assert.ok(backupUi.includes('Estimated Queue ETA'), 'The queue ETA must be labeled as an estimate.');
 assert.ok(!backupUi.includes("formatSpeed(displaySpeed) || 'Calculating...'"), 'Transfer speed must not remain indefinitely on Calculating.');
+assert.ok(backupUi.includes("healthInfo.gdriveStatus === 'Connected' || hasRealEmail"), 'Backup connection status must trust the authenticated account identity.');
+
+const appUi = read('renderer/App.jsx');
+assert.ok(appUi.includes("healthStatus === 'Connected' || !!hasRealEmail"), 'Global and Backup connection indicators must use the same account evidence.');
 
 const hwBackend = read('main/labHwMonitor.js');
 const hwUi = read('renderer/apps/LabHWMonitor.jsx');

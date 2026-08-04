@@ -71,11 +71,15 @@ async function run() {
     db.setSetting = (key, value) => {
       settings[key] = String(value);
     };
-    rclone.getTransferConcurrency = () => 2;
     assert.deepStrictEqual(
-      Array.from(backupWorker.getTransferBatches([1, 2, 3, 4, 5])),
+      Array.from(backupWorker.getTransferBatches([1, 2, 3, 4, 5], { maxFiles: 2, maxBytes: 100 })),
       [[1, 2], [3, 4], [5]],
-      'transfer batches must not hide queued files behind the active upload slots'
+      'transfer batches must remain lazy and honor explicit safety bounds'
+    );
+    assert.strictEqual(
+      Array.from(backupWorker.getTransferBatches(Array.from({ length: 513 }, (_, index) => ({ size: 1, index })))).length,
+      2,
+      'bulk backup must keep one rclone process alive for hundreds of files instead of restarting at transfer concurrency'
     );
 
     backupWorker.isRunning = true;

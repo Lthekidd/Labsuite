@@ -1814,7 +1814,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   });
 
   ipcMain.handle('backup:manifestSummary', async () => {
-    return db.getManifestSummary();
+    return db.getManifestSummaryAsync();
   });
 
   ipcMain.handle('activity:clear', async () => {
