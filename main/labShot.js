@@ -1,7 +1,10 @@
 const { app, BrowserWindow, Tray, Menu, desktopCapturer, screen, globalShortcut, clipboard, nativeImage, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const db = require('./database');
+const fastCrypt = require('./fastCrypt');
+
 
 let labShotTray = null;
 let activeOverlayWindows = [];
@@ -276,21 +279,52 @@ async function writeHistoryImage(dataUrl, recordId) {
   if (!dataUrl) return null;
   const historyDir = getLabShotHistoryDir();
   await fs.promises.mkdir(historyDir, { recursive: true });
-  const targetPath = path.join(historyDir, `${recordId}.png`);
-  const image = nativeImage.createFromDataURL(dataUrl);
-  if (image.isEmpty()) throw new Error('Screenshot history image is invalid.');
-  await fs.promises.writeFile(targetPath, image.toPNG());
-  return targetPath;
+  const targetPath = path.join(historyDir, `${recordId}.enc`);
+  try {
+    const encryptedData = await fastCrypt.encrypt(dataUrl);
+    await fs.promises.writeFile(targetPath, encryptedData, 'utf8');
+    return targetPath;
+  } catch (err) {
+    const pngPath = path.join(historyDir, `${recordId}.png`);
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (!image.isEmpty()) {
+      await fs.promises.writeFile(pngPath, image.toPNG());
+      return pngPath;
+    }
+    throw err;
+  }
+}
+
+async function readImageFile(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return null;
+  try {
+    const fileContent = await fs.promises.readFile(filePath, 'utf8');
+    if (filePath.endsWith('.enc')) {
+      return await fastCrypt.decrypt(fileContent);
+    }
+    try {
+      const decrypted = await fastCrypt.decrypt(fileContent);
+      if (decrypted && decrypted.startsWith('data:image/')) return decrypted;
+    } catch (_) {}
+  } catch (_) {}
+
+  try {
+    const buf = await fs.promises.readFile(filePath);
+    return `data:image/png;base64,${buf.toString('base64')}`;
+  } catch (_) {
+    return null;
+  }
 }
 
 async function recordScreenshotHistory(entry) {
   const history = db.getLabShotHistory();
-  const id = `shot-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const randomHash = crypto.randomBytes(6).toString('hex');
+  const id = `shot-${randomHash}`;
   const savedToDisk = entry.savedToDisk || await writeHistoryImage(entry.dataUrl, id);
   const record = {
     id,
     timestamp: new Date().toISOString(),
-    title: entry.title || `LabShot ${new Date().toLocaleString()}`,
+    title: entry.title || `Screenshot ${new Date().toLocaleString()}`,
     width: entry.width || 0,
     height: entry.height || 0,
     savedToVault: !!entry.savedToVault,
@@ -425,9 +459,10 @@ function initIpc() {
     if (!targetPath) {
       const { dialog } = require('electron');
       const win = getMainWindow();
+      const randomName = `capture_${crypto.randomBytes(6).toString('hex')}.png`;
       const result = await dialog.showSaveDialog(win, {
         title: 'Save Screenshot',
-        defaultPath: path.join(app.getPath('pictures'), `LabShot_${Date.now()}.png`),
+        defaultPath: path.join(app.getPath('pictures'), randomName),
         filters: [{ name: 'PNG Images', extensions: ['png'] }]
       });
       if (result.canceled || !result.filePath) return { cancelled: true };
@@ -442,20 +477,19 @@ function initIpc() {
   ipcMain.handle('labshot:saveToVault', async (event, { dataUrl, title }) => {
     if (!dataUrl) throw new Error('No image data provided.');
 
-    const image = nativeImage.createFromDataURL(dataUrl);
-    const pngBuffer = image.toPNG();
-
-    // Save to user documents / LabSuite screenshots folder
     const labshotDir = path.join(app.getPath('documents'), 'LabSuite', 'Screenshots');
     await fs.promises.mkdir(labshotDir, { recursive: true });
 
-    const fileName = `LabShot_${Date.now()}.png`;
-    const targetPath = path.join(labshotDir, fileName);
-    await fs.promises.writeFile(targetPath, pngBuffer);
+    const randomName = `capture_${crypto.randomBytes(8).toString('hex')}.enc`;
+    const targetPath = path.join(labshotDir, randomName);
+
+    // Encrypt PNG/dataUrl before saving to Vault
+    const encryptedData = await fastCrypt.encrypt(dataUrl);
+    await fs.promises.writeFile(targetPath, encryptedData, 'utf8');
 
     const record = await recordScreenshotHistory({
       dataUrl,
-      title: title || fileName,
+      title: title || `Vault Capture (${randomName})`,
       savedToVault: true,
       savedToDisk: targetPath
     });
@@ -511,14 +545,13 @@ function initIpc() {
       }
 
       if (!dataUrl && savedToDisk) {
-        try {
-          const imageBuf = await fs.promises.readFile(savedToDisk);
-          dataUrl = `data:image/png;base64,${imageBuf.toString('base64')}`;
-        } catch (_) {}
+        dataUrl = await readImageFile(savedToDisk);
       }
 
       compactedHistory.push(compacted);
-      memoryHistory.push({ ...compacted, dataUrl });
+      if (dataUrl) {
+        memoryHistory.push({ ...compacted, dataUrl });
+      }
     }
 
     if (historyChanged) db.setLabShotHistory(compactedHistory);
@@ -530,19 +563,19 @@ function initIpc() {
       if (fs.existsSync(labshotDir)) {
         const files = await fs.promises.readdir(labshotDir);
         for (const file of files) {
-          if (!/\.(png|jpg|jpeg|webp)$/i.test(file)) continue;
+          if (!/\.(enc|png|jpg|jpeg|webp)$/i.test(file)) continue;
           const fullPath = path.join(labshotDir, file);
           if (memoryPaths.has(fullPath)) continue;
 
           try {
             const stat = await fs.promises.stat(fullPath);
-            const imageBuf = await fs.promises.readFile(fullPath);
-            const dataUrl = `data:image/png;base64,${imageBuf.toString('base64')}`;
+            const dataUrl = await readImageFile(fullPath);
+            if (!dataUrl) continue;
 
             memoryHistory.push({
               id: `vault-${file}`,
               timestamp: stat.mtime.toISOString(),
-              title: file,
+              title: file.endsWith('.enc') ? `Encrypted Vault Capture (${file})` : file,
               dataUrl,
               savedToVault: true,
               savedToDisk: fullPath

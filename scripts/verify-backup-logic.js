@@ -306,22 +306,23 @@ backupWorker.currentRunStats = {
   globalBytesTotal: 2 * 1024 * 1024 * 1024,
   globalFilesDone: 1,
   globalFilesTotal: 2,
-  startedAt: Date.now() - 1000
+  progressSamples: [],
+  startedAt: Date.now() - (60 * 60 * 1000)
 };
 let capturedOverallProgress = null;
 backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
 backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: null });
 assert.strictEqual(
   capturedOverallProgress.etaSec,
-  Math.round((1024 * 1024 * 1024) / 123),
-  'Overall queue ETA should use the latest observed transfer speed.'
+  3600,
+  'Overall queue ETA should use elapsed progress across bytes and files.'
 );
 assert.strictEqual(capturedOverallProgress.etaIsEstimate, true);
 backupWorker.once('backup:overall-progress', progress => { capturedOverallProgress = progress; });
 backupWorker.emitOverallProgress({ bytesDone: 0, filesDone: 0, speed: 123, etaSec: 45 });
 assert.strictEqual(
   capturedOverallProgress.etaSec,
-  Math.round((1024 * 1024 * 1024) / 123),
+  3600,
   'A batch ETA must not be mislabeled as the ETA for the entire queue.'
 );
 backupWorker.currentRunStats = originalRunStats;

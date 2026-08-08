@@ -544,6 +544,9 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
                   </>
                 )}
               </select>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                This is a maximum, not a guaranteed speed. Choose Unlimited to let LabSuite use all available upload bandwidth.
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -553,9 +556,9 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
                 onChange={(e) => updateSetting('backup_transfer_profile', e.target.value)}
                 style={inputStyle}
               >
-                <option value="conservative">Conservative</option>
-                <option value="fast">Fast</option>
-                <option value="turbo">Turbo</option>
+                <option value="conservative">Conservative - 4 parallel uploads</option>
+                <option value="fast">Fast - 8 parallel uploads</option>
+                <option value="turbo">Turbo - 12 parallel uploads</option>
               </select>
             </div>
 

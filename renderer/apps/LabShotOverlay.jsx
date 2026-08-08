@@ -64,13 +64,36 @@ export default function LabShotOverlay() {
   }, []);
 
   const handleAutoRedact = () => {
-    const target = selection && selection.w > 20 && selection.h > 20 ? selection : { x: 40, y: 40, w: window.innerWidth - 80, h: window.innerHeight - 80 };
-    const autoBlurs = [
-      { id: Date.now() + 1, type: 'blur', x: target.x + target.w * 0.15, y: target.y + target.h * 0.25, w: target.w * 0.35, h: Math.min(32, target.h * 0.15), isFinal: true },
-      { id: Date.now() + 2, type: 'blur', x: target.x + target.w * 0.1, y: target.y + target.h * 0.55, w: target.w * 0.45, h: Math.min(32, target.h * 0.15), isFinal: true }
-    ];
-    setAnnotations(prev => [...prev, ...autoBlurs]);
-    setStatusMsg('🛡️ Auto-redacted sensitive data regions!');
+    if (selection && selection.w > 10 && selection.h > 10) {
+      const selectionBlur = {
+        id: Date.now(),
+        type: 'blur',
+        x: selection.x,
+        y: selection.y,
+        w: selection.w,
+        h: selection.h,
+        isFinal: true
+      };
+      setAnnotations(prev => [...prev, selectionBlur]);
+      setStatusMsg('🛡️ Redacted selected area!');
+    } else {
+      const defaultW = Math.min(360, window.innerWidth * 0.4);
+      const defaultH = Math.min(180, window.innerHeight * 0.25);
+      const defaultX = (window.innerWidth - defaultW) / 2;
+      const defaultY = (window.innerHeight - defaultH) / 2;
+      const blurRegion = {
+        id: Date.now(),
+        type: 'blur',
+        x: defaultX,
+        y: defaultY,
+        w: defaultW,
+        h: defaultH,
+        isFinal: true
+      };
+      setSelection({ x: defaultX, y: defaultY, w: defaultW, h: defaultH });
+      setAnnotations(prev => [...prev, blurRegion]);
+      setStatusMsg('🛡️ Applied redaction mask to selection region!');
+    }
     setTimeout(() => setStatusMsg(''), 3000);
   };
 

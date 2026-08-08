@@ -609,13 +609,13 @@ function getTransferTuning() {
   const profile = String(settings.backup_transfer_profile || 'fast').toLowerCase();
 
   if (profile === 'turbo') {
-    return { transfers: 8, checkers: 16, pacerSleep: '10ms', pacerBurst: 200 };
+    return { transfers: 12, checkers: 24, pacerSleep: '10ms', pacerBurst: 200 };
   }
   if (profile === 'conservative') {
     return { transfers: 4, checkers: 8, pacerSleep: '20ms', pacerBurst: 100 };
   }
 
-  return { transfers: 6, checkers: 12, pacerSleep: '15ms', pacerBurst: 150 };
+  return { transfers: 8, checkers: 16, pacerSleep: '15ms', pacerBurst: 150 };
 }
 
 function getTransferConcurrency() {
@@ -1679,7 +1679,11 @@ async function copyFilesFrom(localRoot, remoteRoot, relativePaths, onProgress, o
       localRoot,
       getRemotePath(remoteRoot),
       '--files-from',
-      listPath
+      listPath,
+      // Each LabSuite process carries a bounded subset of an already-planned
+      // queue. Do not recursively re-list a large Drive destination before
+      // every 512-file batch; check only the explicit destination paths.
+      '--no-traverse'
     ], onProgress, {
       idleStage: 'preparing',
       activeStage: 'encrypting_uploading',

@@ -81,6 +81,32 @@ async function run() {
       2,
       'bulk backup must keep one rclone process alive for hundreds of files instead of restarting at transfer concurrency'
     );
+    assert.strictEqual(
+      backupWorker.estimateOverallRunEta({
+        elapsed: 3600,
+        bytesDone: 5,
+        bytesTotal: 100,
+        filesDone: 10,
+        filesTotal: 100,
+        remainingBytes: 95,
+        remainingFiles: 90
+      }),
+      44400,
+      'queue ETA must blend byte and file progress instead of extrapolating one tiny file speed'
+    );
+    assert.strictEqual(
+      backupWorker.estimateOverallRunEta({
+        elapsed: 10,
+        bytesDone: 5,
+        bytesTotal: 100,
+        filesDone: 10,
+        filesTotal: 100,
+        remainingBytes: 95,
+        remainingFiles: 90
+      }),
+      null,
+      'queue ETA must wait for a stable run sample'
+    );
 
     backupWorker.isRunning = true;
     backupWorker.activeRun = { cancelRequested: false, cancelReason: '' };

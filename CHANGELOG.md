@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.10.11 - 2026-08-08
+
+### Security & OPSEC Hardening
+
+- **LabShot AES-256-GCM Vault & History Encryption**:
+  - Encrypted all screenshots saved to the Vault (`Documents/LabSuite/Screenshots/`) using AES-256-GCM authenticated encryption (`.enc` format).
+  - Encrypted local history screenshot cache in `%APPDATA%\LabSuite\LabShot\History\`.
+  - Added backward-compatible reading for legacy unencrypted `.png` vault images.
+
+- **Sanitized Export File Naming**:
+  - Replaced `LabShot_<timestamp_ms>.png` export filenames with randomized, metadata-neutral names (`capture_<random_hex>.png`) to eliminate application identity and millisecond timing leaks.
+
+- **Selection Region Redaction**:
+  - Replaced static coordinate blurs in the LabShot overlay UI with active selection region blurring.
+
 ## 2.8.0 - 2026-07-29
 
 ### Added

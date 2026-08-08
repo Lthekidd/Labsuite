@@ -20,6 +20,10 @@ const BULK_TRANSFER_BATCH_FILES = 512;
 const BULK_TRANSFER_BATCH_BYTES = 4 * 1024 * 1024 * 1024;
 const VERSION_TRANSFER_BATCH_FILES = 128;
 const VERSION_TRANSFER_BATCH_BYTES = 1024 * 1024 * 1024;
+const PROGRESS_RATE_WINDOW_MS = 5 * 60 * 1000;
+const PROGRESS_RATE_MIN_SECONDS = 5;
+const ETA_MIN_ELAPSED_SECONDS = 45;
+const ETA_MIN_COMPLETED_FRACTION = 0.002;
 
 class BackupPausedError extends Error {
   constructor(reason = 'Backup paused') {
@@ -308,6 +312,7 @@ class BackupWorker extends EventEmitter {
       lastAdvanceAt: Date.now(),
       lastTransferSpeed: 0,
       lastTransferSampleAt: 0,
+      progressSamples: [],
       startedAt: Date.now()
     };
     this.emit('backup:start', {});
@@ -582,13 +587,25 @@ class BackupWorker extends EventEmitter {
       stats.lastTransferSampleAt = now;
     }
     const hasRecentTransferSample = Number(stats.lastTransferSpeed) > 0 && now - Number(stats.lastTransferSampleAt || 0) <= 15000;
-    const speed = reportedSpeed > 0
+    const instantaneousSpeed = reportedSpeed > 0
       ? reportedSpeed
       : (hasRecentTransferSample ? Number(stats.lastTransferSpeed) : 0);
     const remainingBytes = Math.max(0, globalBytesTotal - globalBytesDone);
-    const etaSec = speed > 0 && remainingBytes > 0
-      ? Math.round(remainingBytes / speed)
-      : (remainingBytes === 0 && globalBytesTotal > 0 ? 0 : null);
+    const remainingFiles = Math.max(0, globalFilesTotal - globalFilesDone);
+    const rates = this.updateOverallRunRates(stats, {
+      bytesDone: globalBytesDone,
+      filesDone: globalFilesDone
+    }, now);
+    const speed = rates.effectiveSpeed > 0 ? rates.effectiveSpeed : instantaneousSpeed;
+    const etaSec = this.estimateOverallRunEta({
+      elapsed,
+      bytesDone: globalBytesDone,
+      bytesTotal: globalBytesTotal,
+      filesDone: globalFilesDone,
+      filesTotal: globalFilesTotal,
+      remainingBytes,
+      remainingFiles
+    });
     const stage = String(folderProgress.stage || folderProgress.phase || 'preparing');
     const stalledForSec = Math.max(0, Math.round((now - Number(stats.lastAdvanceAt || now)) / 1000));
     const transferStage = ['encrypting_uploading', 'uploading'].includes(stage);
@@ -613,6 +630,9 @@ class BackupWorker extends EventEmitter {
       filesDone: globalFilesDone,
       filesTotal: globalFilesTotal,
       speed,
+      instantaneousSpeed,
+      effectiveSpeed: rates.effectiveSpeed,
+      filesPerSec: rates.filesPerSec,
       etaSec,
       etaIsEstimate: etaSec !== null,
       telemetryStatus,
@@ -626,6 +646,63 @@ class BackupWorker extends EventEmitter {
     };
 
     this.emit('backup:overall-progress', progressPayload);
+  }
+
+  updateOverallRunRates(stats, progress, now = Date.now()) {
+    if (!Array.isArray(stats.progressSamples)) stats.progressSamples = [];
+    const samples = stats.progressSamples;
+    const current = {
+      at: now,
+      bytesDone: Math.max(0, Number(progress.bytesDone) || 0),
+      filesDone: Math.max(0, Number(progress.filesDone) || 0)
+    };
+    const previous = samples[samples.length - 1];
+    if (
+      !previous ||
+      current.bytesDone !== previous.bytesDone ||
+      current.filesDone !== previous.filesDone ||
+      now - previous.at >= 5000
+    ) {
+      samples.push(current);
+    }
+
+    const cutoff = now - PROGRESS_RATE_WINDOW_MS;
+    while (samples.length > 2 && samples[1].at < cutoff) samples.shift();
+    const baseline = samples[0];
+    const elapsedSec = baseline ? (now - baseline.at) / 1000 : 0;
+    if (!baseline || elapsedSec < PROGRESS_RATE_MIN_SECONDS) {
+      return { effectiveSpeed: 0, filesPerSec: 0 };
+    }
+
+    return {
+      effectiveSpeed: Math.max(0, (current.bytesDone - baseline.bytesDone) / elapsedSec),
+      filesPerSec: Math.max(0, (current.filesDone - baseline.filesDone) / elapsedSec)
+    };
+  }
+
+  estimateOverallRunEta(progress) {
+    const remainingBytes = Math.max(0, Number(progress.remainingBytes) || 0);
+    const remainingFiles = Math.max(0, Number(progress.remainingFiles) || 0);
+    const bytesTotal = Math.max(0, Number(progress.bytesTotal) || 0);
+    const filesTotal = Math.max(0, Number(progress.filesTotal) || 0);
+    if ((bytesTotal > 0 || filesTotal > 0) && remainingBytes === 0 && remainingFiles === 0) return 0;
+
+    const fractions = [];
+    if (bytesTotal > 0) {
+      fractions.push(Math.max(0, Math.min(1, (Number(progress.bytesDone) || 0) / bytesTotal)));
+    }
+    if (filesTotal > 0) {
+      fractions.push(Math.max(0, Math.min(1, (Number(progress.filesDone) || 0) / filesTotal)));
+    }
+    if (fractions.length === 0) return null;
+
+    // A Drive upload has both payload work and per-file API work. Estimating
+    // the whole queue from one tiny JSON file's current byte speed can produce
+    // absurd multi-year ETAs, so use progress across both dimensions instead.
+    const completedFraction = fractions.reduce((sum, value) => sum + value, 0) / fractions.length;
+    const elapsed = Math.max(0, Number(progress.elapsed) || 0);
+    if (elapsed < ETA_MIN_ELAPSED_SECONDS || completedFraction < ETA_MIN_COMPLETED_FRACTION) return null;
+    return Math.max(0, Math.round(elapsed * ((1 - completedFraction) / completedFraction)));
   }
 
   emitFolderProgress(folder, progress, coveredChildren = []) {

@@ -2877,6 +2877,11 @@ export default function LabSuiteBackup({ active = true }) {
     if (etaSec === null || etaSec === undefined || etaSec < 0) return 'Calculating...';
     if (etaSec < 60) return `${etaSec}s remaining`;
     if (etaSec < 3600) return `${Math.round(etaSec / 60)}m remaining`;
+    if (etaSec >= 86400) {
+      const d = Math.floor(etaSec / 86400);
+      const h = Math.round((etaSec % 86400) / 3600);
+      return `${d}d ${h}h remaining`;
+    }
     const h = Math.floor(etaSec / 3600);
     const m = Math.round((etaSec % 3600) / 60);
     return `${h}h ${m}m remaining`;
@@ -3300,6 +3305,8 @@ export default function LabSuiteBackup({ active = true }) {
   const displayFilesTotal = Math.max(0, Number(displayOverallProgress?.filesTotal) || 0);
   const displayFilesRemaining = Math.max(0, displayFilesTotal - displayFilesDone);
   const displaySpeed = Math.max(0, Number(displayOverallProgress?.speed) || 0);
+  const displayInstantaneousSpeed = Math.max(0, Number(displayOverallProgress?.instantaneousSpeed) || 0);
+  const displayFilesPerSec = Math.max(0, Number(displayOverallProgress?.filesPerSec) || 0);
   const displayEtaSec = displayOverallProgress?.etaSec;
   const displaySpeedText = formatSpeed(displaySpeed) || formatTelemetryState(displayOverallProgress, 'speed');
   const displayEtaText = displayEtaSec !== null && displayEtaSec !== undefined
@@ -3622,7 +3629,7 @@ export default function LabSuiteBackup({ active = true }) {
                         Overall Backup Queue
                       </span>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        Includes queued files
+                        Current planned folder; additional folders may follow
                       </span>
                     </div>
                     <span style={{ fontSize: '18px', fontWeight: 800, color: 'var(--accent-primary)', fontFamily: 'monospace' }}>
@@ -3669,10 +3676,17 @@ export default function LabSuiteBackup({ active = true }) {
                     </div>
 
                     <div>
-                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Current Transfer Speed</div>
+                      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Effective Transfer Rate</div>
                       <div style={{ fontSize: '13px', fontWeight: 600, marginTop: '2px', color: 'var(--text-secondary)' }}>
                         {displaySpeedText}
                       </div>
+                      {(displayFilesPerSec > 0 || (displayInstantaneousSpeed > 0 && Math.abs(displayInstantaneousSpeed - displaySpeed) > 1024)) && (
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          {displayFilesPerSec > 0 ? `${displayFilesPerSec < 1 ? displayFilesPerSec.toFixed(2) : displayFilesPerSec.toFixed(1)} files/s` : ''}
+                          {displayFilesPerSec > 0 && displayInstantaneousSpeed > 0 ? ' - ' : ''}
+                          {displayInstantaneousSpeed > 0 ? `${formatSpeed(displayInstantaneousSpeed)} active payload` : ''}
+                        </div>
+                      )}
                     </div>
 
                     <div>

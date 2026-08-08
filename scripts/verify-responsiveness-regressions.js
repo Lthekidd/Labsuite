@@ -38,15 +38,20 @@ assert.ok(!backupWorker.includes('const folderPlans = new Map()'), 'All folder p
 assert.ok(backupWorker.includes('*getTransferBatches(items, options = {})'), 'Transfer batches must be generated lazily for very large queues.');
 assert.ok(backupWorker.includes('BULK_TRANSFER_BATCH_FILES = 512'), 'Bulk uploads must keep rclone alive across hundreds of files.');
 assert.ok(!backupWorker.includes('const batchSize = Math.max(1, Number(rclone.getTransferConcurrency'), 'Transfer process lifetime must not be limited to active transfer slots.');
+assert.ok(backupWorker.includes('estimateOverallRunEta'), 'Overall ETA must use run progress instead of a tiny file speed sample.');
+assert.ok(backupWorker.includes('filesPerSec'), 'Small-file workloads must expose an effective file rate.');
 
 const rclone = read('main/rclone.js');
 assert.ok(rclone.includes('Number(s.speed)'), 'Progress must consume rclone-reported speed when byte deltas are unavailable.');
 assert.ok(rclone.includes('Could not parse progress JSON'), 'Progress parse failures must be diagnosable.');
 assert.ok(rclone.includes("'--retries=8'"), 'Long-running cloud transfers must retry transient failures in the same process.');
+assert.ok(rclone.includes("'--no-traverse'"), 'Bounded upload batches must not repeatedly traverse the full Drive destination.');
+assert.ok(rclone.includes('transfers: 8') && rclone.includes('transfers: 12'), 'Fast and Turbo profiles must provide useful small-file parallelism without excessive Drive pressure.');
 
 const backupUi = read('renderer/apps/LabSuiteBackup.jsx');
 assert.ok(backupUi.includes('formatTelemetryState'), 'Backup UI must show the current non-transfer stage.');
 assert.ok(backupUi.includes('Estimated Queue ETA'), 'The queue ETA must be labeled as an estimate.');
+assert.ok(backupUi.includes('Effective Transfer Rate'), 'The queue must distinguish effective throughput from one active file sample.');
 assert.ok(!backupUi.includes("formatSpeed(displaySpeed) || 'Calculating...'"), 'Transfer speed must not remain indefinitely on Calculating.');
 assert.ok(backupUi.includes("healthInfo.gdriveStatus === 'Connected' || hasRealEmail"), 'Backup connection status must trust the authenticated account identity.');
 
