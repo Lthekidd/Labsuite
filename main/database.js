@@ -153,7 +153,8 @@ const DEFAULT_SETTINGS = {
   active_crypt_remote: 'gdrive-crypt',
   vault_destinations: '[]',
   vault_transfer_jobs: '[]',
-  installed_apps: '[]'
+  installed_apps: '[]',
+  labmedia_settings: '{"schemaVersion":1,"enabled":true,"size":"normal","opacity":1,"showAlbumArt":true,"showProgress":true,"hideWhenFullscreen":true,"controls":{"previous":true,"playPause":true,"next":true}}'
 };
 
 // Default database structure matching SQLite schema

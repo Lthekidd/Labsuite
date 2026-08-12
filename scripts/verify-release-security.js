@@ -141,6 +141,15 @@ function checkSignedIfPackaged(filePath, label) {
   console.log(`release-security: ${label} signature ok.`);
 }
 
+function checkMediaWidgetHelper(binaryPath, label) {
+  if (process.platform === 'win32' && !fs.existsSync(binaryPath)) {
+    fail(`${label} is missing at ${binaryPath}.`);
+  }
+  if (fs.existsSync(binaryPath)) {
+    console.log(`release-security: ${label} ok.`);
+  }
+}
+
 function main() {
   checkNoInlineScripts();
   checkNoRendererElectronRequire();
@@ -155,6 +164,14 @@ function main() {
     checkRcloneBinary(
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'rclone-win.exe'),
       'packaged rclone'
+    );
+    checkMediaWidgetHelper(
+      path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabMediaWidget.exe'),
+      'packaged LabMediaWidget helper'
+    );
+    checkMediaWidgetHelper(
+      path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'THIRD_PARTY_NOTICES.md'),
+      'packaged third-party notices'
     );
   }
 

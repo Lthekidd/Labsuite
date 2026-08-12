@@ -8,7 +8,8 @@ const mainSources = [
   path.join(root, 'main', 'index.js'),
   path.join(root, 'main', 'ipc.js'),
   path.join(root, 'main', 'labShot.js'),
-  path.join(root, 'main', 'labHwMonitor.js')
+  path.join(root, 'main', 'labHwMonitor.js'),
+  path.join(root, 'main', 'mediaWidget.js')
 ].map(filePath => fs.readFileSync(filePath, 'utf8')).join('\n');
 
 const invokeBlock = preload.match(/const INVOKE_CHANNELS = new Set\(\[([\s\S]*?)\]\);/);

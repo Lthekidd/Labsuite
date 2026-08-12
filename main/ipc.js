@@ -38,6 +38,7 @@ const syncQueue = require('./syncQueue');
 const backupWorker = require('./backupWorker');
 const restorePlanner = require('./restorePlanner');
 const autostart = require('./autostart');
+const mediaWidget = require('./mediaWidget');
 const filesystem = require('./filesystem');
 const folderIdentity = require('./folderIdentity');
 const packStore = require('./packStore');
@@ -1473,6 +1474,9 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       return { success: applied, enabled: actual };
     }
     db.setSetting(key, value);
+    if (key === 'installed_apps') {
+      await mediaWidget.handleInstalledAppsChanged(value);
+    }
     // If the bandwidth limit changed, immediately apply it to any running
     // backup or restore processes so the user doesn't have to restart them.
     if (key === 'bwlimit' || key === 'bwlimit_scheduled_value') {
@@ -2097,6 +2101,14 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     runningRestoreJobs.set(jobId, transfer);
     return { started: true, jobId, remotePath: packRemotePath, localDestination };
   });
+
+  // LabMedia API
+  ipcMain.handle('labmedia:getStatus', async () => mediaWidget.getStatus());
+  ipcMain.handle('labmedia:setEnabled', async (_event, { enabled } = {}) => mediaWidget.setEnabled(enabled));
+  ipcMain.handle('labmedia:updateSettings', async (_event, { updates } = {}) => mediaWidget.updateSettings(updates));
+  ipcMain.handle('labmedia:resetSettings', async () => mediaWidget.resetSettings());
+  ipcMain.handle('labmedia:restart', async () => mediaWidget.restartWidget());
+  ipcMain.handle('labmedia:mediaAction', async (_event, { action } = {}) => mediaWidget.sendMediaAction(action));
 
   // Wire up backup engine events to Electron main window webContents
   backupWorker.on('backup:start', () => {

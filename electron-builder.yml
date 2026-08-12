@@ -18,6 +18,8 @@ files:
   - package.json
   - CHANGELOG.md
 extraResources:
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
   - from: bin
     to: bin
   - from: assets

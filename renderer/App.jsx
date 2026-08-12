@@ -28,7 +28,8 @@ const WORKSPACE_LOADERS = {
   'vm-protect': createModuleLoader(() => import('./apps/VMProtect')),
   labshot: createModuleLoader(() => import('./apps/LabShot')),
   hwmonitor: createModuleLoader(() => import('./apps/LabHWMonitor')),
-  wol: createModuleLoader(() => import('./apps/WakeOnLan'))
+  wol: createModuleLoader(() => import('./apps/WakeOnLan')),
+  labmedia: createModuleLoader(() => import('./apps/LabMedia'))
 };
 
 const LabSuiteBackup = React.memo(lazy(WORKSPACE_LOADERS.backup));
@@ -40,6 +41,7 @@ const LabShot = React.memo(lazy(WORKSPACE_LOADERS.labshot));
 const LabHWMonitor = React.memo(lazy(WORKSPACE_LOADERS.hwmonitor));
 const LanPeerDrive = React.memo(lazy(WORKSPACE_LOADERS.lan));
 const WakeOnLan = React.memo(lazy(WORKSPACE_LOADERS.wol));
+const LabMedia = React.memo(lazy(WORKSPACE_LOADERS.labmedia));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -55,7 +57,8 @@ const WORKSPACE_REGISTRY = {
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
   'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] },
-  wol: { id: 'wol', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.wol }
+  wol: { id: 'wol', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.wol },
+  labmedia: { id: 'labmedia', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.labmedia }
 };
 
 const MAX_HEAVY_WORKSPACES = 4;
@@ -270,6 +273,11 @@ export default function App() {
     };
     ipcRenderer.on('notepad:open-file', handleOpenNotepadFile);
 
+    const handleAppNavigate = (event, targetAppId) => {
+      if (targetAppId) activateWorkspace(targetAppId);
+    };
+    ipcRenderer.on('app:navigate', handleAppNavigate);
+
     invokeResource('auth:getGDriveInfo', [], { ttl: 60000 }).then(info => {
       if (info) setGlobalGDriveInfo(info);
     });
@@ -285,6 +293,7 @@ export default function App() {
 
     return () => {
       ipcRenderer.removeListener('notepad:open-file', handleOpenNotepadFile);
+      ipcRenderer.removeListener('app:navigate', handleAppNavigate);
       clearInterval(intervalId);
     };
   }, []);
@@ -397,6 +406,8 @@ export default function App() {
         return isAppInstalled('lan') ? <LanPeerDrive active={active} /> : null;
       case 'wol':
         return isAppInstalled('wol') ? <WakeOnLan active={active} /> : null;
+      case 'labmedia':
+        return isAppInstalled('labmedia') ? <LabMedia active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:

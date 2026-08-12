@@ -11,7 +11,9 @@ import { SquaresFour } from '@phosphor-icons/react/SquaresFour';
 import { Table } from '@phosphor-icons/react/Table';
 import { TelegramLogo } from '@phosphor-icons/react/TelegramLogo';
 import { Power } from '@phosphor-icons/react/Power';
+import { MusicNotes } from '@phosphor-icons/react/MusicNotes';
 import LabShotMark from './LabShotMark';
+import LabMediaMark from './LabMediaMark';
 
 const APP_ICONS = {
   hub: SquaresFour,
@@ -24,6 +26,7 @@ const APP_ICONS = {
   'vm-protect': DesktopTower,
   todo: Kanban,
   hwmonitor: Cpu,
+  labmedia: MusicNotes,
   settings: GearSix,
   device: DesktopTower,
   package: Package,
@@ -39,6 +42,9 @@ export default function AppIcon({
 }) {
   if (appId === 'labshot') {
     return <LabShotMark size={size} className={props.className || ''} style={props.style} />;
+  }
+  if (appId === 'labmedia') {
+    return <LabMediaMark size={size} className={props.className || ''} style={props.style} color={color} />;
   }
 
   const Icon = APP_ICONS[appId] || Package;

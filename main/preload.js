@@ -238,7 +238,15 @@ const INVOKE_CHANNELS = new Set([
   'telegramArchive:backupChat',
   'telegramArchive:getMessages',
   'telegramArchive:getFailureLog',
-  'telegramArchive:openFolder'
+  'telegramArchive:openFolder',
+
+  // LabMedia API
+  'labmedia:getStatus',
+  'labmedia:setEnabled',
+  'labmedia:updateSettings',
+  'labmedia:resetSettings',
+  'labmedia:restart',
+  'labmedia:mediaAction'
 ]);
 
 const LISTEN_CHANNELS = new Set([
@@ -279,7 +287,11 @@ const LISTEN_CHANNELS = new Set([
   'telegram:progress',
   'telegram:backup-complete',
   'telegramArchive:progress',
-  'telegramArchive:complete'
+  'telegramArchive:complete',
+
+  // LabMedia Listen Channels
+  'labmedia:statusChanged',
+  'app:navigate'
 ]);
 
 const SEND_CHANNELS = new Set([

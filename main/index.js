@@ -702,6 +702,7 @@ function createWindow() {
   // ── IPC layer needs mainWindow reference ──────────────────────────────────
   setupIpc(mainWindow, () => mainWindow, createAppWindow); // pass getter so IPC always has fresh ref
   initTray(mainWindow, () => mainWindow);
+  try { require('./mediaWidget').initMediaWidget(() => mainWindow); } catch (err) { console.error('Failed to init mediaWidget:', err.message); }
 
   // ── Expose log file path to renderer ─────────────────────────────────────
   const { ipcMain, shell, clipboard } = require('electron');

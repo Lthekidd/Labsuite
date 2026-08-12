@@ -7,8 +7,13 @@ const scheduler = require('./scheduler');
 const backupWorker = require('./backupWorker');
 const rclone = require('./rclone');
 const remoteSafety = require('./remoteSafety');
+const mediaWidget = require('./mediaWidget');
+
+let mainWindowGetter = null;
 
 function getMainWindow() {
+  const configuredWindow = typeof mainWindowGetter === 'function' ? mainWindowGetter() : null;
+  if (configuredWindow && !configuredWindow.isDestroyed()) return configuredWindow;
   const windows = BrowserWindow.getAllWindows();
   return windows.find(w => !w.isDestroyed());
 }
@@ -236,7 +241,7 @@ function updateTrayMenu() {
     ? `Drive free: ${Math.round(((lastDriveInfo.free || Math.max(0, lastDriveInfo.total - lastDriveInfo.used)) / lastDriveInfo.total) * 100)}%`
     : '';
 
-  const contextMenu = Menu.buildFromTemplate([
+  const template = [
     { label: 'LabSuite', enabled: false },
     { type: 'separator' },
     { label: statusText, enabled: false },
@@ -306,12 +311,57 @@ function updateTrayMenu() {
       label: 'Quit',
       click: () => app.quit()
     }
-  ]);
+  ];
+
+  const labMediaStatus = mediaWidget.getStatus();
+  if (labMediaStatus.supported && labMediaStatus.installed) {
+    template.splice(template.length - 1, 0,
+      {
+        label: 'LabMedia',
+        submenu: [
+          {
+            label: labMediaStatus.enabled ? 'Hide LabMedia' : 'Show LabMedia',
+            click: async () => {
+              try {
+                await mediaWidget.setEnabled(!mediaWidget.getStatus().enabled);
+                updateTrayMenu();
+              } catch (error) {
+                console.error('Tray: failed to toggle LabMedia:', error.message);
+              }
+            }
+          },
+          {
+            label: 'Open Settings',
+            click: () => {
+              const win = getMainWindow();
+              if (win) {
+                if (win.isMinimized()) win.restore();
+                win.show();
+                win.focus();
+                win.webContents.send('app:navigate', 'labmedia');
+              }
+            }
+          },
+          {
+            label: 'Restart Widget',
+            enabled: labMediaStatus.enabled,
+            click: () => mediaWidget.restartWidget().catch(error => {
+              console.error('Tray: failed to restart LabMedia:', error.message);
+            })
+          }
+        ]
+      },
+      { type: 'separator' }
+    );
+  }
+
+  const contextMenu = Menu.buildFromTemplate(template);
 
   trayInstance.setContextMenu(contextMenu);
 }
 
-function initTray() {
+function initTray(_mainWindow, getMainWindowArg) {
+  if (typeof getMainWindowArg === 'function') mainWindowGetter = getMainWindowArg;
   trayInstance = new Tray(createTrayImage(currentVisualStatus));
   applyTrayVisual();
 
@@ -351,6 +401,7 @@ function updateTrayStatus(status, details = '') {
 
 module.exports = {
   initTray,
+  updateTrayMenu,
   updateTrayStatus,
   refreshTrayHealth
 };

@@ -28,6 +28,7 @@ const HUB_APPS = [
   { id: 'vm-protect', icon: 'vm-protect', label: 'VM Protect', description: 'Protect selected files inside VMware guests without backing up their entire virtual disks.', color: '#2dd4bf', category: 'Security', mode: 'standalone' },
   { id: 'todo', icon: 'todo', label: 'Task Board', description: 'Organize your life with an encrypted Kanban board using native drag-and-drop mechanics.', color: '#ec4899', category: 'Productivity', mode: 'standalone' },
   { id: 'wol', icon: 'wol', label: 'Wake-on-LAN', description: 'Power on your configured local network computers remotely by sending UDP Magic Packets.', color: '#ea580c', category: 'Networking', mode: 'embedded' },
+  { id: 'labmedia', icon: 'labmedia', label: 'LabMedia', description: 'Displays Spotify, YouTube, and YouTube Music track details and playback controls in unused taskbar space.', color: '#1db954', category: 'Utilities', mode: 'embedded' },
 ];
 
 function renderIcon(icon, size = 32) {
@@ -229,9 +230,19 @@ function ShutdownTimerPanel({ active = true }) {
 export default function AppHub({ active = true, installedApps, onInstall, onUninstall, onOpenApp, onLaunchStandalone }) {
   const installedSet = new Set(installedApps || []);
   const isMac = /macintosh|mac os x/i.test(navigator.userAgent);
+  const [isWin11, setIsWin11] = useState(false);
+
+  useEffect(() => {
+    ipcRenderer?.invoke('labmedia:getStatus').then(status => {
+      if (status?.supported) setIsWin11(true);
+    }).catch(() => {});
+  }, []);
 
   const activeCoreApps = CORE_APPS.filter(app => !isMac || app.id !== 'telegram');
-  const activeHubApps = HUB_APPS.filter(app => !isMac || app.id === 'wol');
+  const activeHubApps = HUB_APPS.filter(app => {
+    if (isMac) return app.id === 'wol';
+    return true;
+  });
 
   const installedHubApps = activeHubApps.filter(a => installedSet.has(a.id));
   const availableHubApps = activeHubApps.filter(a => !installedSet.has(a.id));
