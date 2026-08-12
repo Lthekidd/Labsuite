@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.10.13 - 2026-08-12
+
+### LabMedia Taskbar Player Upgrades & Enhancements
+
+- **Per-App Target Volume Control**:
+  - Taskbar widget scroll-wheel volume gesture now target-adjusts active media application sessions (Spotify, YouTube, YouTube Music in Chrome, Edge, Firefox, Brave, Opera) without affecting Windows system master volume.
+- **Interactive Seek Timeline Bar**:
+  - Added interactive click-and-drag progress track on the taskbar player widget for precision seeking to any song or video timestamp via SMTC.
+- **Active Source App Badges**:
+  - Live preview card and taskbar player display active playback source app badges (Spotify, YouTube, Chrome, Edge).
+- **Custom Preset Themes**:
+  - Added 5 visual theme presets for the taskbar player surface (**Spotify Green**, **OLED Pure Black**, **Cyberpunk Neon**, **Glassmorphism**, **Minimalist**).
+
 ## 2.10.12 - 2026-08-12
 
 ### Features & Added Utilities
