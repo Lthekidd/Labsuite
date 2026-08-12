@@ -2108,7 +2108,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   ipcMain.handle('labmedia:updateSettings', async (_event, { updates } = {}) => mediaWidget.updateSettings(updates));
   ipcMain.handle('labmedia:resetSettings', async () => mediaWidget.resetSettings());
   ipcMain.handle('labmedia:restart', async () => mediaWidget.restartWidget());
-  ipcMain.handle('labmedia:mediaAction', async (_event, { action } = {}) => mediaWidget.sendMediaAction(action));
+  ipcMain.handle('labmedia:mediaAction', async (_event, { action, positionSeconds } = {}) => mediaWidget.sendMediaAction(action, { positionSeconds }));
 
   // Wire up backup engine events to Electron main window webContents
   backupWorker.on('backup:start', () => {

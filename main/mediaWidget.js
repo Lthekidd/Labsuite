@@ -10,6 +10,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   schemaVersion: 1,
   enabled: true,
   size: 'normal',
+  theme: 'spotify',
   opacity: 1.0,
   showAlbumArt: true,
   showProgress: true,
@@ -22,6 +23,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
 });
 
 const VALID_SIZES = new Set(['compact', 'normal', 'large']);
+const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal']);
 const CRASH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CRASHES_PER_WINDOW = 3;
 const BACKOFF_DELAYS_MS = [1000, 5000, 30000];
@@ -67,6 +69,12 @@ function validateSettings(raw = {}) {
     result.size = raw.size.toLowerCase();
   } else {
     result.size = DEFAULT_LABMEDIA_SETTINGS.size;
+  }
+
+  if (typeof raw.theme === 'string' && VALID_THEMES.has(raw.theme.toLowerCase())) {
+    result.theme = raw.theme.toLowerCase();
+  } else {
+    result.theme = DEFAULT_LABMEDIA_SETTINGS.theme;
   }
 
   if (typeof raw.opacity === 'number' && Number.isFinite(raw.opacity)) {
@@ -509,12 +517,16 @@ function initMediaWidget(getMainWindowArg) {
   });
 }
 
-function sendMediaAction(action = 'playPause') {
+function sendMediaAction(action = 'playPause', params = {}) {
   if (process.platform !== 'win32') return false;
   const scriptPath = path.join(__dirname, 'controlSmtc.ps1');
   if (fs.existsSync(scriptPath)) {
     try {
-      spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-action', action], { windowsHide: true });
+      const args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-action', action];
+      if (params && params.positionSeconds !== undefined) {
+        args.push('-positionSeconds', String(params.positionSeconds));
+      }
+      spawn('powershell.exe', args, { windowsHide: true });
       return true;
     } catch (_) {
       return false;

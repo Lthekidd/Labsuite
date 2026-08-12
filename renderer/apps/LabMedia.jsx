@@ -262,6 +262,52 @@ export default function LabMedia({ active = true }) {
           </div>
         </div>
 
+        {/* Custom Preset Themes */}
+        <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Widget Preset Theme
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+            Choose a visual style preset for the taskbar media surface.
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              { id: 'spotify', label: 'Spotify Green', bg: '#18181b', accent: '#1db954' },
+              { id: 'oled', label: 'OLED Black', bg: '#000000', accent: '#10b981' },
+              { id: 'neon', label: 'Cyberpunk Neon', bg: '#0d0221', accent: '#00f5d4' },
+              { id: 'glass', label: 'Glassmorphism', bg: '#1a1a2e', accent: '#38bdf8' },
+              { id: 'minimal', label: 'Minimalist', bg: '#111827', accent: '#9ca3af' }
+            ].map((theme) => {
+              const active = (settings.theme || 'spotify') === theme.id;
+              return (
+                <button
+                  key={theme.id}
+                  type="button"
+                  onClick={() => handleUpdateSetting('theme', theme.id)}
+                  disabled={!settings.enabled}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    height: '36px',
+                    padding: '0 14px',
+                    borderRadius: '8px',
+                    border: active ? `1.5px solid ${theme.accent}` : '1px solid var(--border-color)',
+                    background: active ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.2)',
+                    color: active ? '#ffffff' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: '12.5px',
+                    cursor: settings.enabled ? 'pointer' : 'default'
+                  }}
+                >
+                  <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: theme.accent, display: 'inline-block' }} />
+                  {theme.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Opacity Slider */}
         <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -305,8 +351,13 @@ export default function LabMedia({ active = true }) {
 
       {/* Live Session Card */}
       <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-        <div style={{ fontSize: '12px', color: '#1db954', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>
-          Live Session Preview
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ fontSize: '12px', color: '#1db954', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+            Live Session Preview
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            🔊 Hover taskbar widget &amp; scroll wheel to adjust volume
+          </div>
         </div>
         {session.hasSession ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -318,8 +369,25 @@ export default function LabMedia({ active = true }) {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
                   {session.title || 'Unknown Track'}
                 </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center' }}>
                   {session.artist || 'Unknown Artist'} • {session.isPlaying ? 'Playing' : 'Paused'}
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    background: 'rgba(29, 185, 84, 0.15)',
+                    color: '#4ade80',
+                    marginLeft: '8px'
+                  }}>
+                    {session.sourceApp?.toLowerCase().includes('spotify') ? 'Spotify' :
+                     session.sourceApp?.toLowerCase().includes('youtube') ? 'YouTube' :
+                     session.sourceApp?.toLowerCase().includes('chrome') ? 'Chrome' :
+                     session.sourceApp?.toLowerCase().includes('edge') ? 'Edge' :
+                     'SMTC Session'}
+                  </span>
                 </div>
               </div>
             </div>

@@ -65,6 +65,11 @@ namespace LabMediaWin32 {
         public const int WS_EX_TOOLWINDOW = 0x00000080;
         public const int WS_EX_NOACTIVATE = 0x08000000;
         public const int SW_RESTORE = 9;
+
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+        public static void VolUp() { keybd_event(0xAF, 0, 0, UIntPtr.Zero); keybd_event(0xAF, 0, 2, UIntPtr.Zero); }
+        public static void VolDown() { keybd_event(0xAE, 0, 0, UIntPtr.Zero); keybd_event(0xAE, 0, 2, UIntPtr.Zero); }
     }
 }
 "@
@@ -86,12 +91,26 @@ function Await-WinRT($asyncOp, $resultType) {
 # Parse Config if provided
 $targetWidth = 300
 $targetOpacity = 1.0
+$bgHex = "#18181b"
+$accentHex = "#1db954"
+$borderHex = "#27272a"
+
 if ($config -and (Test-Path $config)) {
     try {
         $json = Get-Content $config -Raw | ConvertFrom-Json
         if ($json.size -eq 'compact') { $targetWidth = 240 }
         elseif ($json.size -eq 'large') { $targetWidth = 380 }
         if ($json.opacity) { $targetOpacity = [double]$json.opacity }
+
+        if ($json.theme -eq 'oled') {
+            $bgHex = "#000000"; $accentHex = "#10b981"; $borderHex = "#18181b"
+        } elseif ($json.theme -eq 'neon') {
+            $bgHex = "#0d0221"; $accentHex = "#00f5d4"; $borderHex = "#7209b7"
+        } elseif ($json.theme -eq 'glass') {
+            $bgHex = "#1a1a2e"; $accentHex = "#38bdf8"; $borderHex = "#334155"
+        } elseif ($json.theme -eq 'minimal') {
+            $bgHex = "#111827"; $accentHex = "#9ca3af"; $borderHex = "#1f2937"
+        }
     } catch {}
 }
 
@@ -102,7 +121,7 @@ if ($config -and (Test-Path $config)) {
         Title="LabMedia" Height="40" Width="$targetWidth"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False">
-    <Border Name="MainBorder" Background="#18181b" BorderBrush="#27272a" BorderThickness="1" CornerRadius="8" Opacity="$targetOpacity" Margin="2">
+    <Border Name="MainBorder" Background="$bgHex" BorderBrush="$borderHex" BorderThickness="1" CornerRadius="8" Opacity="$targetOpacity" Margin="2">
         <Grid Margin="6,2,6,2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -112,7 +131,7 @@ if ($config -and (Test-Path $config)) {
 
             <!-- Album Art / Icon -->
             <Border Name="ArtContainer" Grid.Column="0" Width="30" Height="30" CornerRadius="6" Background="#27272a" Margin="0,0,8,0" Cursor="Hand">
-                <Path Name="PathIcon" Data="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z M 12,16.5 C 9.51,16.5 7.5,14.49 7.5,12 C 7.5,9.51 9.51,7.5 12,7.5 C 14.49,7.5 16.5,9.51 16.5,12 C 16.5,14.49 14.49,16.5 12,16.5 Z M 12,10.5 C 11.17,10.5 10.5,11.17 10.5,12 C 10.5,12.83 11.17,13.5 12,13.5 C 12.83,13.5 13.5,12.83 13.5,12 C 13.5,11.17 12.83,10.5 12,10.5 Z" Fill="#1db954" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                <Path Name="PathIcon" Data="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z M 12,16.5 C 9.51,16.5 7.5,14.49 7.5,12 C 7.5,9.51 9.51,7.5 12,7.5 C 14.49,7.5 16.5,9.51 16.5,12 C 16.5,14.49 14.49,16.5 12,16.5 Z M 12,10.5 C 11.17,10.5 10.5,11.17 10.5,12 C 10.5,12.83 11.17,13.5 12,13.5 C 12.83,13.5 13.5,12.83 13.5,12 C 13.5,11.17 12.83,10.5 12,10.5 Z" Fill="$accentHex" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
 
             <!-- Track Info -->
@@ -126,7 +145,7 @@ if ($config -and (Test-Path $config)) {
                 <Button Name="BtnPrev" Width="26" Height="26" Background="Transparent" BorderThickness="0" Cursor="Hand" Margin="0,0,2,0">
                     <Path Data="M 6,5 V 19 H 8 V 5 Z M 18,5.5 L 9.5,12 L 18,18.5 Z" Fill="#ffffff" Width="10" Height="10" Stretch="Uniform"/>
                 </Button>
-                <Button Name="BtnPlayPause" Width="26" Height="26" Background="#1db954" BorderThickness="0" Cursor="Hand" Margin="0,0,2,0">
+                <Button Name="BtnPlayPause" Width="26" Height="26" Background="$accentHex" BorderThickness="0" Cursor="Hand" Margin="0,0,2,0">
                     <Button.Resources>
                         <Style TargetType="Border">
                             <Setter Property="CornerRadius" Value="13"/>
@@ -138,6 +157,9 @@ if ($config -and (Test-Path $config)) {
                     <Path Data="M 16,5 V 19 H 18 V 5 Z M 6,5.5 L 14.5,12 L 6,18.5 Z" Fill="#ffffff" Width="10" Height="10" Stretch="Uniform"/>
                 </Button>
             </StackPanel>
+
+            <!-- Progress & Seeking Bar -->
+            <ProgressBar Name="ProgressTrack" Grid.Column="0" Grid.ColumnSpan="3" Height="3" VerticalAlignment="Bottom" Background="#20ffffff" Foreground="$accentHex" BorderThickness="0" Minimum="0" Maximum="100" Value="0" Cursor="Hand" Margin="-6,0,-6,-2"/>
         </Grid>
     </Border>
 </Window>
@@ -146,7 +168,8 @@ if ($config -and (Test-Path $config)) {
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
-# Get Window Controls
+$mainBorder = $window.FindName("MainBorder")
+$progressTrack = $window.FindName("ProgressTrack")
 $artContainer = $window.FindName("ArtContainer")
 $infoPanel = $window.FindName("InfoPanel")
 $txtTitle = $window.FindName("TxtTitle")
@@ -266,6 +289,53 @@ $btnPlayPause.Add_Click({ Send-MediaCommand 'playPause' })
 $btnPrev.Add_Click({ Send-MediaCommand 'previous' })
 $btnNext.Add_Click({ Send-MediaCommand 'next' })
 
+# Scroll Wheel Volume Control
+if ($mainBorder) {
+    $mainBorder.Add_MouseWheel({
+        param($sender, $e)
+        if ($e.Delta -gt 0) {
+            [LabMediaWin32.Native]::VolUp()
+        } else {
+            [LabMediaWin32.Native]::VolDown()
+        }
+    })
+}
+
+# Interactive Timeline Seeking
+$script:currentDurationSec = 0
+function Send-MediaSeek($targetSec) {
+    try {
+        $asyncMgr = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
+        $mgr = Await-WinRT $asyncMgr ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+        if ($mgr) {
+            $sessions = $mgr.GetSessions()
+            $s = $sessions | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' } | Select-Object -First 1
+            if (-not $s) { $s = $mgr.GetCurrentSession() }
+            if (-not $s) { $s = $sessions | Select-Object -First 1 }
+
+            if ($s) {
+                $ticks = [long]($targetSec * [TimeSpan]::TicksPerSecond)
+                $null = Await-WinRT ($s.TryChangePlaybackPositionAsync($ticks)) ([bool])
+            }
+        }
+    } catch {}
+}
+
+if ($progressTrack) {
+    $progressTrack.Add_MouseLeftButtonDown({
+        param($sender, $e)
+        try {
+            $pos = $e.GetPosition($progressTrack)
+            $totalWidth = $progressTrack.ActualWidth
+            if ($totalWidth -gt 0 -and $script:currentDurationSec -gt 0) {
+                $ratio = [Math]::Max(0.0, [Math]::Min(1.0, $pos.X / $totalWidth))
+                $targetSec = $ratio * $script:currentDurationSec
+                Send-MediaSeek $targetSec
+            }
+        } catch {}
+    })
+}
+
 # Timer for SMTC Monitoring
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromMilliseconds(500)
@@ -318,6 +388,21 @@ $timer.Add_Tick({
             if ($pathPlayPause) {
                 $pathPlayPause.Data = [System.Windows.Media.Geometry]::Parse(if ($isPlaying) { "M 6,5 H 10 V 19 H 6 Z M 14,5 H 18 V 19 H 14 Z" } else { "M 7,5 L 18,12 L 7,19 Z" })
             }
+
+            try {
+                $timeline = $s.GetTimelineProperties()
+                if ($timeline) {
+                    $posSec = $timeline.Position.TotalSeconds
+                    $durSec = ($timeline.EndTime - $timeline.StartTime).TotalSeconds
+                    if ($durSec -gt 0) {
+                        $script:currentDurationSec = $durSec
+                        if ($progressTrack) {
+                            $percent = [Math]::Max(0.0, [Math]::Min(100.0, ($posSec / $durSec) * 100))
+                            $progressTrack.Value = $percent
+                        }
+                    }
+                }
+            } catch {}
 
             if ($title -ne $script:lastTitle -or $artist -ne $script:lastArtist -or $isPlaying -ne $script:lastPlaying) {
                 $script:lastTitle = $title

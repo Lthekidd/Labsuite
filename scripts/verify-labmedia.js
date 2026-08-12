@@ -10,6 +10,7 @@ function testSettingsValidation() {
   assert.strictEqual(defaults.schemaVersion, 1);
   assert.strictEqual(defaults.enabled, true);
   assert.strictEqual(defaults.size, 'normal');
+  assert.strictEqual(defaults.theme, 'spotify');
   assert.strictEqual(defaults.opacity, 1.0);
   assert.strictEqual(defaults.showAlbumArt, true);
   assert.strictEqual(defaults.showProgress, true);
@@ -19,18 +20,21 @@ function testSettingsValidation() {
   // Custom valid settings
   const custom = mediaWidget.validateSettings({
     size: 'compact',
+    theme: 'neon',
     opacity: 0.75,
     showAlbumArt: false,
     controls: { previous: false, playPause: true, next: true }
   });
   assert.strictEqual(custom.size, 'compact');
+  assert.strictEqual(custom.theme, 'neon');
   assert.strictEqual(custom.opacity, 0.75);
   assert.strictEqual(custom.showAlbumArt, false);
   assert.strictEqual(custom.controls.previous, false);
 
-  // Invalid size string
-  const invalidSize = mediaWidget.validateSettings({ size: 'super_large' });
+  // Invalid size string & invalid theme string
+  const invalidSize = mediaWidget.validateSettings({ size: 'super_large', theme: 'invalid_theme' });
   assert.strictEqual(invalidSize.size, 'normal');
+  assert.strictEqual(invalidSize.theme, 'spotify');
 
   // Opacity clamping
   const lowOpacity = mediaWidget.validateSettings({ opacity: 0.1 });
