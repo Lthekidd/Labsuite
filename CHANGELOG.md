@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.12 - 2026-08-12
+
+### Features & Added Utilities
+
+- **LabMedia (Windows Taskbar Player)**:
+  - Added LabMedia as an optional App Hub utility for Windows taskbars.
+  - Multi-source media support for Spotify, YouTube, YouTube Music, and web browser media controls.
+  - Native zero-dependency WinRT SMTC session worker with live track information and playback controls.
+  - Custom high-DPI vector brand mark and playback control graphics.
+
 ## 2.10.11 - 2026-08-08
 
 ### Security & OPSEC Hardening
