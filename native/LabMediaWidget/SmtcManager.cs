@@ -33,6 +33,7 @@ namespace LabMediaWidget
         private string _albumArtKey = string.Empty;
         private BitmapImage? _cachedAlbumArt;
 
+        public MediaSessionState CurrentSessionState { get; private set; } = new MediaSessionState();
         public event EventHandler<MediaSessionState>? SessionStateChanged;
 
         public async Task InitializeAsync()
@@ -148,6 +149,7 @@ namespace LabMediaWidget
             if (_currentSession == null)
             {
                 state.HasSession = false;
+                CurrentSessionState = state;
                 SessionStateChanged?.Invoke(this, state);
                 return;
             }

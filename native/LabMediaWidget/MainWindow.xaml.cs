@@ -31,6 +31,19 @@ namespace LabMediaWidget
             _smtc = new SmtcManager();
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _pollTimer.Tick += PollTimer_Tick;
+            PreviewMouseWheel += Window_PreviewMouseWheel;
+        }
+
+        private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            try
+            {
+                float delta = e.Delta > 0 ? 0.05f : -0.05f;
+                string appHint = _smtc?.CurrentSessionState?.SourceApp ?? "";
+                AppVolume.AdjustMediaVolume(appHint, delta);
+                e.Handled = true;
+            }
+            catch { }
         }
 
         protected override async void OnSourceInitialized(EventArgs e)

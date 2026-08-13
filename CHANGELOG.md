@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.14 - 2026-08-13
+
+### Bug Fixes & Taskbar Player Scroll-Wheel Enhancements
+
+- **Global PreviewMouseWheel Interception**:
+  - Bound `PreviewMouseWheel` to the top-level WPF window surface (`$window.Add_PreviewMouseWheel`) across both companion processes (`LabMediaWidget.exe` and `smtcWorker.ps1`). This intercepts scroll-wheel gestures anywhere over album art, track text, artist names, or buttons.
+- **Smart WASAPI + Master Volume Fallback**:
+  - Targets active Spotify or browser process audio sessions (`Spotify.exe`, `chrome.exe`, `msedge.exe`, `firefox.exe`, `brave.exe`, `opera.exe`) with WASAPI session level controls, and seamlessly falls back to master volume steps if no per-app session is bound.
+
 ## 2.10.13 - 2026-08-12
 
 ### LabMedia Taskbar Player Upgrades & Enhancements
