@@ -25,6 +25,7 @@ namespace LabMediaWidget
         private SmtcManager _smtc;
         private NowPlayingPanel _panel;
         private QueueState _queueState = QueueState.Unavailable();
+        private YouTubeLibraryState _libraryState = YouTubeLibraryState.RequiresSetup();
         private TaskbarInfo _lastTaskbarInfo;
         private CancellationTokenSource _runtimeInputCancellation = new CancellationTokenSource();
         private uint _taskbarCreatedMsg;
@@ -39,7 +40,9 @@ namespace LabMediaWidget
             _panel = new NowPlayingPanel(_smtc)
             {
                 OpenSettingsRequested = () => EmitEvent("action", new { type = "openSettings" }),
-                ProviderActionRequested = action => EmitEvent("providerAction", new { action })
+                ProviderActionRequested = action => EmitEvent("providerAction", new { action }),
+                LibraryActionRequested = (action, playlistId, videoId) =>
+                    EmitEvent("libraryAction", new { action, playlistId, videoId })
             };
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _pollTimer.Tick += PollTimer_Tick;
@@ -150,13 +153,24 @@ namespace LabMediaWidget
                     {
                         var message = JsonSerializer.Deserialize<RuntimeMessage>(line,
                             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        if (message?.Type != "queue:update" || message.Queue == null) continue;
-                        QueueState queue = SanitizeQueueState(message.Queue);
-                        Dispatcher.Invoke(() =>
+                        if (message?.Type == "queue:update" && message.Queue != null)
                         {
-                            _queueState = queue;
-                            _panel.UpdateQueueState(queue);
-                        });
+                            QueueState queue = SanitizeQueueState(message.Queue);
+                            Dispatcher.Invoke(() =>
+                            {
+                                _queueState = queue;
+                                _panel.UpdateQueueState(queue);
+                            });
+                        }
+                        else if (message?.Type == "library:update" && message.Library != null)
+                        {
+                            YouTubeLibraryState library = SanitizeLibraryState(message.Library);
+                            Dispatcher.Invoke(() =>
+                            {
+                                _libraryState = library;
+                                _panel.UpdateLibraryState(library);
+                            });
+                        }
                     }
                     catch
                     {
@@ -207,6 +221,105 @@ namespace LabMediaWidget
                 ? LimitText(artwork.AbsoluteUri, 2048)
                 : string.Empty;
             return item;
+        }
+
+        private static YouTubeLibraryState SanitizeLibraryState(YouTubeLibraryState value)
+        {
+            value.Connection ??= new LibraryConnectionState();
+            value.Library ??= new LibraryContentState();
+            string[] connectionStatuses =
+            {
+                LibraryConnectionStatuses.RequiresSetup,
+                LibraryConnectionStatuses.RequiresAuth,
+                LibraryConnectionStatuses.Connecting,
+                LibraryConnectionStatuses.Connected,
+                LibraryConnectionStatuses.ReauthRequired,
+                LibraryConnectionStatuses.Error
+            };
+            if (!connectionStatuses.Contains(value.Connection.Status, StringComparer.Ordinal))
+                value.Connection.Status = LibraryConnectionStatuses.Error;
+            value.Connection.Email = LimitText(value.Connection.Email, 320);
+            value.Connection.ChannelTitle = LimitText(value.Connection.ChannelTitle, 200);
+            value.Connection.Message = LimitText(value.Connection.Message, 500);
+
+            string[] libraryStatuses =
+            {
+                LibraryStatuses.Idle,
+                LibraryStatuses.Loading,
+                LibraryStatuses.Ready,
+                LibraryStatuses.Empty,
+                LibraryStatuses.Offline,
+                LibraryStatuses.QuotaExceeded,
+                LibraryStatuses.Error
+            };
+            if (!libraryStatuses.Contains(value.Library.Status, StringComparer.Ordinal))
+                value.Library.Status = LibraryStatuses.Error;
+            value.Library.Message = LimitText(value.Library.Message, 500);
+            value.Library.Attribution = LimitText(value.Library.Attribution, 80);
+            value.Library.Playlists = (value.Library.Playlists ?? new System.Collections.Generic.List<LibraryPlaylist>())
+                .Where(item => IsSafeYouTubeId(item?.Id, 128))
+                .Take(200)
+                .Select(SanitizeLibraryPlaylist)
+                .GroupBy(item => item.Id, StringComparer.Ordinal)
+                .Select(group => group.First())
+                .ToList();
+
+            string selectedId = value.Library.SelectedPlaylist?.Id ?? string.Empty;
+            value.Library.SelectedPlaylist = value.Library.Playlists
+                .FirstOrDefault(item => string.Equals(item.Id, selectedId, StringComparison.Ordinal));
+            value.Library.Items = (value.Library.Items ?? new System.Collections.Generic.List<LibraryItem>())
+                .Take(500)
+                .Select((item, index) => SanitizeLibraryItem(item, index))
+                .ToList();
+            if (value.Library.SelectedPlaylist == null) value.Library.Items.Clear();
+            if (value.Library.Status == LibraryStatuses.Ready
+                && (value.Library.SelectedPlaylist != null ? value.Library.Items.Count == 0 : value.Library.Playlists.Count == 0))
+                value.Library.Status = LibraryStatuses.Empty;
+            return value;
+        }
+
+        private static LibraryPlaylist SanitizeLibraryPlaylist(LibraryPlaylist? item)
+        {
+            item ??= new LibraryPlaylist();
+            item.Id = LimitText(item.Id, 128);
+            item.Title = LimitText(item.Title, 300);
+            if (string.IsNullOrWhiteSpace(item.Title)) item.Title = "Untitled playlist";
+            item.ThumbnailUrl = SanitizeHttpsUrl(item.ThumbnailUrl);
+            item.ItemCount = Math.Max(0, item.ItemCount);
+            item.Attribution = "YouTube";
+            return item;
+        }
+
+        private static LibraryItem SanitizeLibraryItem(LibraryItem? item, int index)
+        {
+            item ??= new LibraryItem();
+            item.Id = LimitText(item.Id, 160);
+            if (string.IsNullOrWhiteSpace(item.Id)) item.Id = $"library-{index}";
+            item.VideoId = IsSafeYouTubeId(item.VideoId, 11) && item.VideoId.Length == 11 ? item.VideoId : string.Empty;
+            item.Title = LimitText(item.Title, 300);
+            if (string.IsNullOrWhiteSpace(item.Title)) item.Title = "Unavailable video";
+            item.Artist = LimitText(item.Artist, 300);
+            item.ThumbnailUrl = SanitizeHttpsUrl(item.ThumbnailUrl);
+            item.DurationMs = Math.Max(0, item.DurationMs);
+            item.Available = item.Available && item.VideoId.Length == 11;
+            item.UnavailableReason = LimitText(item.UnavailableReason, 300);
+            item.Attribution = "YouTube";
+            return item;
+        }
+
+        private static bool IsSafeYouTubeId(string? value, int maxLength)
+        {
+            string id = value ?? string.Empty;
+            return id.Length > 0 && id.Length <= maxLength
+                && id.All(character => char.IsLetterOrDigit(character) || character == '_' || character == '-');
+        }
+
+        private static string SanitizeHttpsUrl(string? value)
+        {
+            return Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
+                && uri.Scheme == Uri.UriSchemeHttps
+                ? LimitText(uri.AbsoluteUri, 2048)
+                : string.Empty;
         }
 
         private static string LimitText(string? value, int maxLength)
@@ -679,6 +792,7 @@ namespace LabMediaWidget
                 return;
 
             _panel.UpdateQueueState(_queueState);
+            _panel.UpdateLibraryState(_libraryState);
             _panel.ShowAnchored(_lastTaskbarInfo);
         }
 

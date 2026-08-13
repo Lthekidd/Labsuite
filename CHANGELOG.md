@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.10.25 - 2026-08-13
+
+### YouTube & YouTube Music OAuth Library Integration
+
+- **YouTube Library Provider (`youtubeLibrary.js`)**:
+  - Full PKCE-secured Google OAuth 2.0 loop (`code_challenge_method: S256`) with OS credential vault integration (`LabSuite.LabMedia.YouTube`).
+  - Read-only YouTube & YouTube Music playlist sync (Liked Videos, created playlists, playlist items) with memory caching and rate limit handling (`Retry-After`).
+  - Account integrity validation (verifies authenticated Google account matches the account configured in LabSuite).
+- **IPC & Preload Integration**:
+  - Registered IPC handlers: `labmedia:youtubeConnect`, `labmedia:youtubeReconnect`, `labmedia:youtubeDisconnect`, `labmedia:youtubeRefresh`.
+- **Expanded Now Playing Flyout**:
+  - Added native YouTube Library view in `NowPlayingPanel.xaml` / `NowPlayingPanel.xaml.cs`.
+
 ## 2.10.24 - 2026-08-13
 
 ### LabMedia Progressive-Disclosure Redesign
@@ -10,6 +23,13 @@
 - Reorganized settings into Taskbar, Expanded Panel, and History tabs with collapsed and expanded interactive previews.
 - Added a provider-neutral, read-only Up Next contract and bidirectional JSON-lines channel. Public builds report unsupported Spotify queue access honestly until eligible API access is available; provider credentials never enter the widget configuration or native helper.
 - Preserved Explorer isolation: neither native LabMedia window is parented to Explorer, and taskbar positioning continues without UI Automation.
+
+### LabMedia YouTube Playlist Library
+
+- Added a read-only YouTube Library tab for owned playlists and Liked Videos, with playlist drill-down, pagination, unavailable-entry handling, and handoff to YouTube Music.
+- Added a separate PKCE-protected YouTube OAuth grant that reuses the configured Google Desktop application identity while keeping the Drive token untouched and enforcing the same Gmail account.
+- Stored only the YouTube refresh credential and account identity in Windows Credential Manager; access tokens, API cursors, playlist data, and thumbnails remain memory-only.
+- Added honest setup, authorization, loading, offline, quota, empty, and error states plus settings controls for Connect, Reconnect, Refresh, and Disconnect.
 
 ## 2.10.23 - 2026-08-13
 

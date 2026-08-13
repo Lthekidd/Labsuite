@@ -6,6 +6,7 @@ const { spawn } = require('child_process');
 const readline = require('readline');
 const db = require('./database');
 const queueProvider = require('./labmediaQueue');
+const { YouTubeLibraryProvider } = require('./youtubeLibrary');
 
 const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   schemaVersion: 2,
@@ -51,6 +52,12 @@ let restartPromise = null;
 let initialized = false;
 let mainWindowGetter = null;
 const intentionalStops = new WeakSet();
+const youtubeLibraryProvider = new YouTubeLibraryProvider({
+  onChange: state => {
+    sendRuntimeMessage({ type: 'library:update', library: state });
+    notifyStatusChanged();
+  }
+});
 
 function isWindows11() {
   if (process.platform !== 'win32') return false;
@@ -235,7 +242,8 @@ function getStatus() {
       settings,
       error: 'LabMedia is supported only on Windows 11.',
       session: lastSessionInfo,
-      queue: currentQueueState
+      queue: currentQueueState,
+      youtubeLibrary: getYouTubeSettingsStatus()
     };
   }
 
@@ -247,7 +255,20 @@ function getStatus() {
     settings,
     error: currentError,
     session: lastSessionInfo,
-    queue: currentQueueState
+    queue: currentQueueState,
+    youtubeLibrary: getYouTubeSettingsStatus()
+  };
+}
+
+function getYouTubeSettingsStatus() {
+  const state = youtubeLibraryProvider.getState();
+  return {
+    connection: state.connection,
+    library: {
+      status: state.library.status,
+      message: state.library.message,
+      playlistCount: state.library.playlists.length
+    }
   };
 }
 
@@ -267,6 +288,12 @@ function updateQueueForSession(session = lastSessionInfo, target = childProcess)
   return currentQueueState;
 }
 
+function updateLibraryRuntime(target = childProcess) {
+  const library = youtubeLibraryProvider.getState();
+  sendRuntimeMessage({ type: 'library:update', library }, target);
+  return library;
+}
+
 function handleStdoutLine(line) {
   if (!line || !line.trim()) return;
   try {
@@ -275,6 +302,7 @@ function handleStdoutLine(line) {
 
     if (data.event === 'ready') {
       updateQueueForSession(lastSessionInfo);
+      updateLibraryRuntime();
       if (currentState === 'starting') {
         currentState = currentError ? 'error' : 'no_session';
         notifyStatusChanged();
@@ -370,6 +398,14 @@ function handleStdoutLine(line) {
           });
           sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
         });
+    } else if (data.event === 'libraryAction') {
+      youtubeLibraryProvider.handleAction(String(data.action || ''), {
+        playlistId: String(data.playlistId || ''),
+        videoId: String(data.videoId || '')
+      }).catch(() => {
+        updateLibraryRuntime();
+        notifyStatusChanged();
+      });
     } else if (data.event === 'error') {
       console.error('mediaWidget native helper error:', data.message);
       currentError = String(data.message || 'Unknown native helper error');
@@ -627,6 +663,7 @@ function initMediaWidget(getMainWindowArg) {
   if (typeof getMainWindowArg === 'function') mainWindowGetter = getMainWindowArg;
   if (initialized) return;
   initialized = true;
+  youtubeLibraryProvider.initialize().catch(() => {});
   if (!isSupported()) {
     currentState = 'unsupported';
     return;
@@ -638,8 +675,29 @@ function initMediaWidget(getMainWindowArg) {
   }
 
   app.on('before-quit', () => {
+    youtubeLibraryProvider.shutdown();
     stopWidget();
   });
+}
+
+async function connectYouTube() {
+  await youtubeLibraryProvider.handleAction('connect');
+  return getStatus();
+}
+
+async function reconnectYouTube() {
+  await youtubeLibraryProvider.handleAction('reconnect');
+  return getStatus();
+}
+
+async function disconnectYouTube() {
+  await youtubeLibraryProvider.handleAction('disconnect');
+  return getStatus();
+}
+
+async function refreshYouTubeLibrary() {
+  await youtubeLibraryProvider.handleAction('refresh');
+  return getStatus();
 }
 
 function sendMediaAction(action = 'playPause', params = {}) {
@@ -671,6 +729,10 @@ module.exports = {
   writeConfigFile,
   getStatus,
   getHistory,
+  connectYouTube,
+  reconnectYouTube,
+  disconnectYouTube,
+  refreshYouTubeLibrary,
   isInstalled,
   handleInstalledAppsChanged,
   setEnabled,

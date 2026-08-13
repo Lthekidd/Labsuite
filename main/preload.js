@@ -242,11 +242,17 @@ const INVOKE_CHANNELS = new Set([
 
   // LabMedia API
   'labmedia:getStatus',
+  'labmedia:getHistory',
   'labmedia:setEnabled',
   'labmedia:updateSettings',
   'labmedia:resetSettings',
   'labmedia:restart',
-  'labmedia:mediaAction'
+  'labmedia:youtubeConnect',
+  'labmedia:youtubeReconnect',
+  'labmedia:youtubeDisconnect',
+  'labmedia:youtubeRefresh',
+  'labmedia:mediaAction',
+  'labmedia:copyTrackInfo'
 ]);
 
 const LISTEN_CHANNELS = new Set([

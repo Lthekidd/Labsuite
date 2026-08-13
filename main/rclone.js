@@ -1394,6 +1394,34 @@ function getGoogleDriveClientStatus() {
   }
 }
 
+/**
+ * Returns the Google desktop OAuth application identity and the connected
+ * Drive account email for main-process integrations. The client secret must
+ * never be forwarded to a renderer, helper process, config payload, or log.
+ */
+async function getGoogleOAuthApplicationContext() {
+  const { configPath } = getPaths();
+  const remoteName = getRawRemoteName();
+  if (!fs.existsSync(configPath)) {
+    return { clientId: '', clientSecret: '', email: '' };
+  }
+
+  try {
+    const configText = fs.readFileSync(configPath, 'utf8');
+    const clientId = getRcloneRemoteConfigValue(configText, remoteName, 'client_id').trim();
+    const clientSecret = getRcloneRemoteConfigValue(configText, remoteName, 'client_secret').trim();
+    if (!clientId || !clientSecret) {
+      return { clientId: '', clientSecret: '', email: '' };
+    }
+
+    const account = await getGDriveInfoForRemote(remoteName);
+    const email = String(account?.accountEmail || '').trim().toLowerCase();
+    return { clientId, clientSecret, email };
+  } catch (_) {
+    return { clientId: '', clientSecret: '', email: '' };
+  }
+}
+
 async function reconnectGoogleDriveClient(clientId, clientSecret) {
   if (activeRcloneProcesses.size > 0) {
     throw new Error('Wait for the current backup or restore transfer to finish, then reconnect Google Drive.');
@@ -2570,6 +2598,7 @@ module.exports = {
   startGoogleAuth,
   startGoogleAuthForRemote,
   getGoogleDriveClientStatus,
+  getGoogleOAuthApplicationContext,
   reconnectGoogleDriveClient,
   createCryptRemote,
   createCryptRemoteFor,

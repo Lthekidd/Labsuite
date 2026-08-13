@@ -124,6 +124,21 @@ export default function LabMedia({ active = true }) {
     setIsBusy(false);
   };
 
+  const youtubeAction = async (action) => {
+    if (action === 'disconnect' && !window.confirm('Disconnect YouTube from LabMedia? This removes the LabMedia grant but does not delete anything from YouTube.')) return;
+    const channels = {
+      connect: 'labmedia:youtubeConnect',
+      reconnect: 'labmedia:youtubeReconnect',
+      disconnect: 'labmedia:youtubeDisconnect',
+      refresh: 'labmedia:youtubeRefresh'
+    };
+    const channel = channels[action];
+    if (!channel) return;
+    setIsBusy(true);
+    await invokeAndSetStatus(channel, undefined, `Failed to ${action} YouTube`);
+    setIsBusy(false);
+  };
+
   const copyTrack = async (item) => {
     await ipcRenderer?.invoke('labmedia:copyTrackInfo', { text: `${item.artist} - ${item.title}` });
     setCopiedId(item.id);
@@ -138,6 +153,7 @@ export default function LabMedia({ active = true }) {
   const controls = settings.controls || {};
   const session = status.session || {};
   const queue = status.queue || {};
+  const youtube = status.youtubeLibrary || {};
   const theme = THEME_STYLES[settings.theme] || THEME_STYLES.spotify;
   const badge = statusBadge(status.state);
 
@@ -301,6 +317,13 @@ export default function LabMedia({ active = true }) {
               Spotify support is capability-gated for public builds. Authentication and refresh tokens remain in LabSuite’s main process; the native panel receives only sanitized, read-only queue items.
             </p>
           </SectionCard>
+
+          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Videos from the flyout, then hand playback to YouTube Music.">
+            <YouTubeConnection state={youtube} busy={isBusy} onAction={youtubeAction} />
+            <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
+              LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. It does not reuse or modify the Drive token, and playlist content is kept only in memory.
+            </p>
+          </SectionCard>
         </>
       )}
 
@@ -363,6 +386,10 @@ function PanelPreview({ session, queue, theme }) {
   const queueReady = queue.status === 'ready' && Array.isArray(queue.items) && queue.items.length > 0;
   return (
     <div style={{ width: 384, maxWidth: '100%', boxSizing: 'border-box', borderRadius: 16, padding: 18, background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: '0 20px 45px rgba(0,0,0,.58)', color: theme.text }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, padding: 3, borderRadius: 8, background: 'rgba(255,255,255,.04)', marginBottom: 12, fontSize: 11, fontWeight: 750, textAlign: 'center' }}>
+        <span style={{ padding: 6, borderRadius: 6, background: `${theme.accent}22`, color: theme.accent }}>Now Playing</span>
+        <span style={{ padding: 6, color: '#8c98a7' }}>Library</span>
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
         <span style={{ padding: '5px 9px', borderRadius: 10, background: `${theme.accent}20`, color: theme.accent, fontSize: 11, fontWeight: 800 }}>{session.sourceApp || 'Media Player'}</span>
         <span style={{ marginLeft: 9, color: '#8c98a7', fontSize: 11, flex: 1 }}>{session.sessionCount > 1 ? `${session.sessionCount} players available` : 'Now playing'}</span>
@@ -400,6 +427,41 @@ function QueueCapability({ state = {} }) {
   return <div style={{ padding: 13, borderRadius: 9, border: `1px solid ${color}40`, background: `${color}10` }}>
     <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[state.status] || 'Unavailable'}{state.attribution ? ` · ${state.attribution}` : ''}</div>
     <div style={{ color: 'var(--text-secondary)', fontSize: 12.5, marginTop: 4 }}>{state.message || 'Up Next is not shared by this player.'}</div>
+  </div>;
+}
+
+function YouTubeConnection({ state = {}, busy, onAction }) {
+  const connection = state.connection || {};
+  const library = state.library || {};
+  const labels = {
+    requiresSetup: 'Setup required', requiresAuth: 'Not connected', connecting: 'Connecting…',
+    connected: 'Connected', reauthRequired: 'Reconnect required', error: 'Connection error'
+  };
+  const connected = connection.status === 'connected';
+  const color = connected ? '#34d399' : connection.status === 'error' || connection.status === 'reauthRequired' ? '#f87171' : '#fbbf24';
+  return <div style={{ padding: 14, borderRadius: 10, border: `1px solid ${color}40`, background: `${color}0c` }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[connection.status] || 'Setup required'}</div>
+        <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {connection.channelTitle || connection.email || connection.message || 'YouTube Data API v3 is not configured.'}
+        </div>
+        {connection.email && connection.channelTitle && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 2 }}>{connection.email}</div>}
+        {connected && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 5 }}>
+          Library: {library.status || 'idle'}{Number.isFinite(library.playlistCount) ? ` · ${library.playlistCount} loaded` : ''}
+        </div>}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7 }}>
+        {connection.status === 'requiresAuth' && <button type="button" disabled={busy} onClick={() => onAction('connect')} style={primaryAction}>Connect</button>}
+        {['reauthRequired', 'error'].includes(connection.status) && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={primaryAction}>Reconnect</button>}
+        {connected && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh</button>}
+        {connected && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={secondaryAction}>Reconnect</button>}
+        {(connected || connection.email) && <button type="button" disabled={busy} onClick={() => onAction('disconnect')} style={secondaryAction}>Disconnect</button>}
+      </div>
+    </div>
+    {connection.status === 'requiresSetup' && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 9 }}>
+      Configure a personal Google Desktop OAuth client for Drive and enable YouTube Data API v3 in that Google Cloud project.
+    </div>}
   </div>;
 }
 

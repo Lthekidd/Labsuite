@@ -68,7 +68,24 @@
         <Border.Effect>
             <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.55" />
         </Border.Effect>
-        <StackPanel>
+        <DockPanel LastChildFill="True">
+            <Border DockPanel.Dock="Top" Background="#0FFFFFFF" CornerRadius="9" Padding="3" Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="BtnNowPlayingTab" Grid.Column="0" Style="{StaticResource TextActionButton}"
+                            Content="Now Playing" Height="32" Click="BtnNowPlayingTab_Click"
+                            automation:AutomationProperties.Name="Show Now Playing" />
+                    <Button x:Name="BtnLibraryTab" Grid.Column="1" Style="{StaticResource TextActionButton}"
+                            Content="Library" Height="32" Margin="4,0,0,0" Click="BtnLibraryTab_Click"
+                            automation:AutomationProperties.Name="Show YouTube Library" />
+                </Grid>
+            </Border>
+            <Grid>
+                <ScrollViewer x:Name="NowPlayingContent" MaxHeight="408" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
             <!-- Source and session selection -->
             <Grid Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
@@ -229,6 +246,134 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-        </StackPanel>
+                </StackPanel>
+                </ScrollViewer>
+
+                <Grid x:Name="LibraryContent" MaxHeight="408" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="BtnLibraryBack" Style="{StaticResource TextActionButton}" Content="Back"
+                                Visibility="Collapsed" Click="BtnLibraryBack_Click"
+                                automation:AutomationProperties.Name="Back to playlists" />
+                        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="TxtLibraryTitle" Text="YouTube Library" Foreground="#F8FAFC"
+                                       FontSize="15" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="TxtLibraryAccount" Foreground="#7C8794" FontSize="10"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <Button x:Name="BtnLibraryRefresh" Grid.Column="2" Style="{StaticResource TextActionButton}"
+                                Content="Refresh" Click="BtnLibraryRefresh_Click"
+                                automation:AutomationProperties.Name="Refresh YouTube Library" />
+                    </Grid>
+
+                    <Border x:Name="LibraryStatusBorder" Grid.Row="1" Background="#0FFFFFFF"
+                            BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock x:Name="TxtLibraryStatus" Foreground="#A7B0BC" FontSize="11" TextWrapping="Wrap" />
+                            <Button x:Name="BtnLibraryConnect" Style="{StaticResource TextActionButton}"
+                                    HorizontalAlignment="Left" Margin="0,9,0,0" Visibility="Collapsed"
+                                    Click="BtnLibraryConnect_Click" automation:AutomationProperties.Name="Connect YouTube account" />
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer x:Name="LibraryScroll" Grid.Row="2" MaxHeight="292"
+                                  VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <Grid>
+                            <ItemsControl x:Name="LibraryPlaylists">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,3">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button Style="{StaticResource TextActionButton}" Padding="7" HorizontalContentAlignment="Stretch"
+                                                    Tag="{Binding Id}" Click="LibraryPlaylist_Click"
+                                                    automation:AutomationProperties.Name="{Binding Title}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="46" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border Width="40" Height="40" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                                        <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11"
+                                                                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding ItemCountLabel}" Foreground="#7C8794" FontSize="10" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Button>
+                                            <Button Grid.Column="1" Style="{StaticResource TextActionButton}" Content="Play" Margin="6,0,0,0"
+                                                    Tag="{Binding Id}" Click="LibraryPlaylistOpen_Click"
+                                                    automation:AutomationProperties.Name="Play playlist in YouTube Music" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <ItemsControl x:Name="LibraryTracks" Visibility="Collapsed">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource TextActionButton}" Padding="7" Margin="0,3"
+                                                HorizontalContentAlignment="Stretch" IsEnabled="{Binding Available}"
+                                                Tag="{Binding VideoId}" Click="LibraryTrack_Click"
+                                                ToolTip="{Binding UnavailableReason}"
+                                                automation:AutomationProperties.Name="{Binding Title}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="40" Height="40" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                                    <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11"
+                                                               FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Artist}" Foreground="#7C8794" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" Text="{Binding DurationLabel}" Foreground="#7C8794"
+                                                           FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            </Grid>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <Grid Grid.Row="3" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="BtnLibraryDisconnect" Style="{StaticResource TextActionButton}"
+                                Content="Disconnect" Visibility="Collapsed" Click="BtnLibraryDisconnect_Click"
+                                automation:AutomationProperties.Name="Disconnect YouTube from LabMedia" />
+                        <Button x:Name="BtnLibraryOpenPlaylist" Grid.Column="1" Style="{StaticResource TextActionButton}"
+                                Content="Play playlist" Margin="8,0" Visibility="Collapsed" HorizontalAlignment="Left"
+                                Click="BtnLibraryOpenPlaylist_Click" automation:AutomationProperties.Name="Play selected playlist in YouTube Music" />
+                        <Button x:Name="BtnLibraryLoadMore" Grid.Column="2" Style="{StaticResource TextActionButton}"
+                                Content="Load more" Visibility="Collapsed" Click="BtnLibraryLoadMore_Click"
+                                automation:AutomationProperties.Name="Load more YouTube Library items" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </DockPanel>
     </Border>
 </Window>
