@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.35 - 2026-08-14
+
+### Enabled Interactive Shuffle & Repeat Controls Across All Sessions
+
+- **Always-Enabled Shuffle & Repeat Buttons (`SmtcManager.cs`, `NowPlayingPanel.xaml.cs`)**:
+  - Fixed issue where `Shuffle` and `Repeat` buttons were disabled/greyed out for YouTube, Edge, Chrome, and browser web sessions.
+  - Enabled interactive Shuffle and Repeat controls whenever an active media session exists (`HasSession`), ensuring clicking **Shuffle** or **Repeat** immediately toggles the active button highlight and sends the SMTC command (`TryChangeShuffleActiveAsync` / `TryChangeAutoRepeatModeAsync`) directly to the player!
+
 ## 2.10.34 - 2026-08-14
 
 ### Native Windows Start-Minimized Handoff (`SW_SHOWMINIMIZED`)

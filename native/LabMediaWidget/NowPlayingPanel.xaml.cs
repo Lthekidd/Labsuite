@@ -80,8 +80,8 @@ namespace LabMediaWidget
             BtnPrevious.IsEnabled = state.CanSkipPrevious;
             BtnPlayPause.IsEnabled = state.CanPlayPause;
             BtnNext.IsEnabled = state.CanSkipNext;
-            BtnShuffle.IsEnabled = state.CanShuffle;
-            BtnRepeat.IsEnabled = state.CanRepeat;
+            BtnShuffle.IsEnabled = state.HasSession;
+            BtnRepeat.IsEnabled = state.HasSession;
             BtnShuffle.Background = state.ShuffleActive ? AccentBrush() : NeutralBrush();
             BtnRepeat.Background = state.RepeatMode != "none" ? AccentBrush() : NeutralBrush();
             TxtRepeat.Text = state.RepeatMode == "track" ? "Repeat 1" : "Repeat";

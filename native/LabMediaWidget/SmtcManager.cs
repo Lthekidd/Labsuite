@@ -282,8 +282,13 @@ namespace LabMediaWidget
                         state.CanPlayPause = controls.IsPlayEnabled || controls.IsPauseEnabled;
                         state.CanSkipNext = controls.IsNextEnabled;
                         state.CanSeek = controls.IsPlaybackPositionEnabled;
-                        state.CanShuffle = controls.IsShuffleEnabled;
-                        state.CanRepeat = controls.IsRepeatEnabled;
+                        state.CanShuffle = true;
+                        state.CanRepeat = true;
+                    }
+                    else
+                    {
+                        state.CanShuffle = true;
+                        state.CanRepeat = true;
                     }
                 }
 
@@ -402,21 +407,32 @@ namespace LabMediaWidget
 
         public async Task ToggleShuffleAsync()
         {
-            if (_currentSession == null || !CurrentSessionState.CanShuffle) return;
-            await _currentSession.TryChangeShuffleActiveAsync(!CurrentSessionState.ShuffleActive);
+            if (_currentSession == null) return;
+            bool nextState = !CurrentSessionState.ShuffleActive;
+            CurrentSessionState.ShuffleActive = nextState;
+            try
+            {
+                await _currentSession.TryChangeShuffleActiveAsync(nextState);
+            }
+            catch { }
             await RefreshAsync(forceWait: true);
         }
 
         public async Task CycleRepeatAsync()
         {
-            if (_currentSession == null || !CurrentSessionState.CanRepeat) return;
+            if (_currentSession == null) return;
             MediaPlaybackAutoRepeatMode next = CurrentSessionState.RepeatMode switch
             {
                 "none" => MediaPlaybackAutoRepeatMode.List,
                 "list" => MediaPlaybackAutoRepeatMode.Track,
                 _ => MediaPlaybackAutoRepeatMode.None
             };
-            await _currentSession.TryChangeAutoRepeatModeAsync(next);
+            CurrentSessionState.RepeatMode = NormalizeRepeatMode(next);
+            try
+            {
+                await _currentSession.TryChangeAutoRepeatModeAsync(next);
+            }
+            catch { }
             await RefreshAsync(forceWait: true);
         }
 
