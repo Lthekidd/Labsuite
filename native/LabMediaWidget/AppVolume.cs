@@ -155,15 +155,15 @@ namespace LabMediaWidget
                     }
                 }
 
-                return adjustedAny ? 1.0f : AdjustSystemVolume(delta);
+                return adjustedAny ? 1.0f : 0.0f;
             }
             catch (COMException)
             {
-                return AdjustSystemVolume(delta);
+                return 0.0f;
             }
             catch (InvalidCastException)
             {
-                return AdjustSystemVolume(delta);
+                return 0.0f;
             }
             finally
             {
@@ -183,20 +183,22 @@ namespace LabMediaWidget
                     || activeAppHint.Contains(processName, StringComparison.OrdinalIgnoreCase)))
                 return true;
 
-            return processName.Contains("spotify", StringComparison.OrdinalIgnoreCase)
-                || processName.Contains("chrome", StringComparison.OrdinalIgnoreCase)
-                || processName.Contains("msedge", StringComparison.OrdinalIgnoreCase)
-                || processName.Contains("firefox", StringComparison.OrdinalIgnoreCase)
-                || processName.Contains("brave", StringComparison.OrdinalIgnoreCase)
-                || processName.Contains("opera", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static float AdjustSystemVolume(float delta)
-        {
-            byte virtualKey = delta > 0 ? (byte)0xAF : (byte)0xAE;
-            keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
-            keybd_event(virtualKey, 0, 2, UIntPtr.Zero);
-            return 0.0f;
+            string name = processName.ToLowerInvariant();
+            return name.Contains("spotify") ||
+                   name.Contains("chrome") ||
+                   name.Contains("msedge") ||
+                   name.Contains("firefox") ||
+                   name.Contains("brave") ||
+                   name.Contains("opera") ||
+                   name.Contains("vivaldi") ||
+                   name.Contains("vlc") ||
+                   name.Contains("wmplayer") ||
+                   name.Contains("musicbee") ||
+                   name.Contains("foobar2000") ||
+                   name.Contains("itunes") ||
+                   name.Contains("applemusic") ||
+                   name.Contains("tidal") ||
+                   name.Contains("deezer");
         }
 
         private static void ReleaseComObject(object? value)

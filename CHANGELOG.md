@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.18 - 2026-08-13
+
+### Per-App Media Volume Isolation Fix
+
+- **Removed Master System Volume Fallback**:
+  - Removed system volume key triggers (`keybd_event 0xAF` / `0xAE`) across both `AppVolume.cs` and `smtcWorker.ps1`.
+  - The taskbar player scroll wheel now strictly adjusts active media application WASAPI audio sessions (`Spotify`, `chrome`, `msedge`, `firefox`, `brave`, `opera`, `vivaldi`, `vlc`, `wmplayer`, `musicbee`, `foobar2000`, `itunes`, `applemusic`, `tidal`, `deezer`) without ever altering the global PC master volume.
+
 ## 2.10.17 - 2026-08-13
 
 ### Native Audio Session COM Refactoring & Code Quality Improvements
