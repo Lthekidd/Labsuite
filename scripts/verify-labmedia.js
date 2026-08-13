@@ -214,6 +214,8 @@ function testNativeSourceIntegrity() {
     'Media controls must not depend on font-specific symbol glyphs');
   assert.ok(panelXaml.includes('Width="384"') && panelXaml.includes('MaxHeight="520"'),
     'Now Playing flyout must use the planned 384 by 520 DIP bounds');
+  assert.ok(panelSource.includes('Color.FromRgb(0x11, 0x13, 0x18)'),
+    'Now Playing flyout must maintain 100% solid opacity background');
   assert.ok(panelXaml.includes('x:Name="SessionPicker"') && panelXaml.includes('x:Name="VolumeSlider"')
     && panelXaml.includes('Up Next'), 'Flyout must include session selection, per-app volume, and Up Next');
   assert.ok(panelSource.includes('Window_Deactivated') && panelSource.includes('Key.Escape'),

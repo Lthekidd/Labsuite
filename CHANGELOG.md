@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.30 - 2026-08-13
+
+### 100% Solid Opacity Guarantee for Expanded Flyout Panel
+
+- **Guaranteed Solid Background (`NowPlayingPanel.xaml.cs`)**:
+  - Enforced 100% solid dark opacity (`Color.FromRgb(0x11, 0x13, 0x18)`) in `ApplyTheme` for the expanded panel window.
+  - Ensures that even when a transparent theme (such as `Transparent Glass`) is selected for the taskbar pill widget, the expanded flyout panel maintains 100% solid opacity so desktop text or underlying windows never bleed through!
+
 ## 2.10.29 - 2026-08-13
 
 ### Instant Panel Tab Switch On Playback Handoff

@@ -212,7 +212,9 @@ namespace LabMediaWidget
                 return;
             }
 
-            PanelBorder.Background = background;
+            // The expanded flyout panel must ALWAYS maintain 100% solid opacity
+            // so underlying desktop text or windows never bleed through, regardless of taskbar theme.
+            PanelBorder.Background = new SolidColorBrush(Color.FromRgb(0x11, 0x13, 0x18));
             PanelBorder.BorderBrush = border;
             BtnPlayPause.Background = accent;
             BtnPlayPause.BorderBrush = accent;
