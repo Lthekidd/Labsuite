@@ -559,7 +559,7 @@ class YouTubeLibraryProvider {
     if (!PLAYLIST_ID_PATTERN.test(id)) return null;
     return {
       id,
-      title: liked ? 'Liked Videos' : safeText(item?.snippet?.title || 'Untitled playlist', 180),
+      title: liked ? 'Liked Music' : safeText(item?.snippet?.title || 'Untitled playlist', 180),
       thumbnailUrl: bestThumbnail(item?.snippet?.thumbnails),
       itemCount: Math.max(0, Number(item?.contentDetails?.itemCount || 0)),
       isLiked: !!liked,

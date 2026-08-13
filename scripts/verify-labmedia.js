@@ -183,6 +183,8 @@ function testNativeSourceIntegrity() {
   assert.ok(smtcSource.includes('SelectSessionAsync'), 'SMTC manager must support explicit player selection');
   assert.ok(smtcSource.includes('SessionId') && smtcSource.includes('Album'),
     'SMTC state must include stable runtime session IDs and album metadata');
+  assert.ok(smtcSource.includes('SourceAppId') && mainWinSource.includes('state.SourceAppId'),
+    'Volume controls must retain the raw SMTC application identity instead of relying on a display label');
   assert.ok(smtcSource.includes('CanSeek') && smtcSource.includes('CanShuffle') && smtcSource.includes('CanRepeat'),
     'SMTC state must expose capability-aware panel controls');
   assert.ok(mainWinSource.includes('await _smtc.RefreshAsync()'), 'MainWindow must poll for browser sessions created after startup');
@@ -196,6 +198,10 @@ function testNativeSourceIntegrity() {
   assert.ok(appVolumeSource.includes('GetMediaVolume') && appVolumeSource.includes('SetMediaVolume')
     && appVolumeSource.includes('GetMediaMute') && appVolumeSource.includes('SetMediaMute'),
     'Native volume interface must expose typed get, set, and mute operations');
+  assert.ok(appVolumeSource.includes('hint.Contains("youtube") && !HasBrowserIdentity(hint) && IsBrowserProcess(name)'),
+    'Generic YouTube sessions must match a browser without overriding a browser-specific session identity');
+  assert.ok(mainWinSource.includes('if (currentVol < 0) return;'),
+    'The wheel toast must not claim success when no matching audio session was changed');
   assert.ok(!fallbackWorkerSource.includes('Marshal.ReadIntPtr') && !fallbackWorkerSource.includes('GetDelegateForFunctionPointer'),
     'PowerShell fallback must not use unmanaged audio vtable calls');
   assert.ok(/x:Name="MainBorder"[^>]*CornerRadius="8"/.test(mainWinXaml),

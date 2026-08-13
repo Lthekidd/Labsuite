@@ -291,7 +291,7 @@ namespace LabMediaWidget
 
         private void RefreshVolume()
         {
-            string source = _state.SourceApp;
+            string source = VolumeProcessHint();
             _ = Task.Run(() =>
             {
                 float level = AppVolume.GetMediaVolume(source);
@@ -341,7 +341,7 @@ namespace LabMediaWidget
         private void VolumeCommitTimer_Tick(object? sender, EventArgs e)
         {
             _volumeCommitTimer.Stop();
-            string source = _state.SourceApp;
+            string source = VolumeProcessHint();
             float level = (float)(VolumeSlider.Value / 100.0);
             _ = Task.Run(() =>
             {
@@ -352,7 +352,7 @@ namespace LabMediaWidget
 
         private void BtnMute_Click(object sender, RoutedEventArgs e)
         {
-            string source = _state.SourceApp;
+            string source = VolumeProcessHint();
             bool mute = TxtMuteIcon.Text != "MUTE";
             _ = Task.Run(() =>
             {
@@ -362,6 +362,10 @@ namespace LabMediaWidget
         }
 
         private void BtnOpenSource_Click(object sender, RoutedEventArgs e) => _smtc.BringAppToFront();
+
+        private string VolumeProcessHint() => string.IsNullOrWhiteSpace(_state.SourceAppId)
+            ? _state.SourceApp
+            : _state.SourceAppId;
 
         private void MenuItem_Copy_Click(object sender, RoutedEventArgs e)
         {

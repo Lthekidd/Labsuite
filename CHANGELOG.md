@@ -1,6 +1,22 @@
 # Changelog
 
+## 2.10.28 - 2026-08-13
+
+### Flyout Solid Background & YouTube Music Naming Refinements
+
+- **Flyout Panel Solid Opacity (`NowPlayingPanel.xaml`)**:
+  - Changed flyout border background from semi-transparent `#FA111318` to 100% solid dark `#FF111318` so desktop text or underlying windows never bleed through the expanded panel.
+- **YouTube Music Naming Alignment (`youtubeLibrary.js`)**:
+  - Renamed default auto-playlist label from `"Liked Videos"` to `"Liked Music"` to accurately match YouTube Music conventions.
+
 ## 2.10.27 - 2026-08-13
+
+### LabMedia Browser Volume Routing Fix
+
+- **Reliable taskbar wheel volume**:
+  - Routes volume changes using the raw SMTC application identity, so YouTube Music sessions hosted by Edge no longer get mistaken for Chrome.
+  - Keeps browser-specific sessions isolated while retaining a safe multi-browser fallback for generic YouTube session IDs.
+  - Shows the volume toast only after an audio session was actually adjusted.
 
 ### Google Canonical OAuth Scope Matching & Clear Scope Diagnosis
 

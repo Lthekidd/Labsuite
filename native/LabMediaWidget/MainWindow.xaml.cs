@@ -66,11 +66,13 @@ namespace LabMediaWidget
         {
             try
             {
+                MediaSessionState state = _smtc?.CurrentSessionState ?? new MediaSessionState();
+                if (!state.HasSession) return;
                 float delta = e.Delta > 0 ? 0.05f : -0.05f;
-                string appHint = _smtc?.CurrentSessionState?.SourceApp ?? "";
-                AppVolume.AdjustMediaVolume(appHint, delta);
+                string appHint = string.IsNullOrWhiteSpace(state.SourceAppId) ? state.SourceApp : state.SourceAppId;
+                float currentVol = AppVolume.AdjustMediaVolume(appHint, delta);
+                if (currentVol < 0) return;
 
-                float currentVol = AppVolume.GetMediaVolume(appHint);
                 int volPercent = Math.Clamp((int)Math.Round(currentVol * 100), 0, 100);
                 TxtVolToast.Text = $"{volPercent}%";
                 VolToastBorder.Visibility = Visibility.Visible;

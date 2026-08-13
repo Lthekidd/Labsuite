@@ -102,13 +102,17 @@ namespace LabMediaWidget
         {
             lock (AudioGate)
             {
+                float adjustedLevel = -1.0f;
                 bool adjusted = VisitMatchingVolumes(activeAppHint, volume =>
                 {
                     if (volume.GetMasterVolume(out float current) < 0) return false;
+                    float next = Math.Clamp(current + delta, 0.0f, 1.0f);
                     Guid context = Guid.Empty;
-                    return volume.SetMasterVolume(Math.Clamp(current + delta, 0.0f, 1.0f), ref context) >= 0;
+                    if (volume.SetMasterVolume(next, ref context) < 0) return false;
+                    adjustedLevel = next;
+                    return true;
                 });
-                return adjusted ? 1.0f : 0.0f;
+                return adjusted ? adjustedLevel : -1.0f;
             }
         }
 
@@ -241,14 +245,28 @@ namespace LabMediaWidget
                 if (hint.Contains("brave") && name.Contains("brave")) return true;
                 if (hint.Contains("opera") && name.Contains("opera")) return true;
                 if (hint.Contains("vlc") && name.Contains("vlc")) return true;
-                if ((hint.Contains("chrome") || hint == "youtube" || hint == "youtube music")
-                    && name.Contains("chrome")) return true;
+                if (hint.Contains("chrome") && name.Contains("chrome")) return true;
+                if (hint.Contains("youtube") && !HasBrowserIdentity(hint) && IsBrowserProcess(name)) return true;
                 return name.Contains(hint) || hint.Contains(name);
             }
 
             return name.Contains("spotify") || name.Contains("chrome") || name.Contains("msedge")
                 || name.Contains("firefox") || name.Contains("brave") || name.Contains("opera")
                 || name.Contains("vlc") || name.Contains("wmplayer");
+        }
+
+        private static bool IsBrowserProcess(string processName)
+        {
+            return processName.Contains("chrome") || processName.Contains("msedge")
+                || processName.Contains("firefox") || processName.Contains("brave")
+                || processName.Contains("opera");
+        }
+
+        private static bool HasBrowserIdentity(string hint)
+        {
+            return hint.Contains("chrome") || hint.Contains("edge")
+                || hint.Contains("firefox") || hint.Contains("brave")
+                || hint.Contains("opera");
         }
 
         private static void ReleaseComObject(object? value)

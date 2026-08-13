@@ -241,12 +241,17 @@ namespace LabMediaWin32 {
                 string name = processName.ToLowerInvariant();
 
                 if (hint.Contains("spotify") && name.Contains("spotify")) return true;
-                if ((hint.Contains("chrome") || hint.Contains("youtube")) && name.Contains("chrome")) return true;
+                if (hint.Contains("chrome") && name.Contains("chrome")) return true;
                 if ((hint.Contains("edge") || hint.Contains("msedge")) && name.Contains("msedge")) return true;
                 if (hint.Contains("firefox") && name.Contains("firefox")) return true;
                 if (hint.Contains("brave") && name.Contains("brave")) return true;
                 if (hint.Contains("opera") && name.Contains("opera")) return true;
                 if (hint.Contains("vlc") && name.Contains("vlc")) return true;
+                if (hint.Contains("youtube") &&
+                    !hint.Contains("chrome") && !hint.Contains("edge") &&
+                    !hint.Contains("firefox") && !hint.Contains("brave") && !hint.Contains("opera") &&
+                    (name.Contains("chrome") || name.Contains("msedge") || name.Contains("firefox") ||
+                     name.Contains("brave") || name.Contains("opera"))) return true;
 
                 if (name.Contains(hint) || hint.Contains(name)) return true;
 

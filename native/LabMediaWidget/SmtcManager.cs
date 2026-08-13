@@ -31,6 +31,7 @@ namespace LabMediaWidget
         public string Artist { get; set; } = string.Empty;
         public string Album { get; set; } = string.Empty;
         public string SourceApp { get; set; } = string.Empty;
+        public string SourceAppId { get; set; } = string.Empty;
         public bool IsPlaying { get; set; }
         public double PositionSeconds { get; set; }
         public double DurationSeconds { get; set; }
@@ -254,7 +255,8 @@ namespace LabMediaWidget
             {
                 state.HasSession = true;
                 state.SessionId = GetSessionId(_currentSession);
-                state.SourceApp = DetermineSourceAppName(_currentSession.SourceAppUserModelId ?? string.Empty);
+                state.SourceAppId = (_currentSession.SourceAppUserModelId ?? string.Empty).Trim();
+                state.SourceApp = DetermineSourceAppName(state.SourceAppId);
 
                 var mediaProps = await _currentSession.TryGetMediaPropertiesAsync();
                 if (mediaProps != null)
@@ -365,13 +367,13 @@ namespace LabMediaWidget
             if (string.IsNullOrWhiteSpace(appId)) return "Media Player";
             string lower = appId.ToLowerInvariant();
             if (lower.Contains("spotify")) return "Spotify";
-            if (lower.Contains("youtubemusic") || lower.Contains("youtube music")) return "YouTube Music";
-            if (lower.Contains("youtube")) return "YouTube";
             if (lower.Contains("chrome")) return "YouTube / Chrome";
             if (lower.Contains("msedge") || lower.Contains("edge")) return "YouTube / Edge";
             if (lower.Contains("firefox")) return "YouTube / Firefox";
             if (lower.Contains("brave")) return "YouTube / Brave";
             if (lower.Contains("opera")) return "YouTube / Opera";
+            if (lower.Contains("youtubemusic") || lower.Contains("youtube music")) return "YouTube Music";
+            if (lower.Contains("youtube")) return "YouTube";
             if (lower.Contains("vlc")) return "VLC";
             return "Media Player";
         }
