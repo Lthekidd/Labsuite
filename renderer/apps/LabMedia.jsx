@@ -334,6 +334,14 @@ export default function LabMedia({ active = true }) {
                   ]}
                 />
               </SettingBlock>
+              <div style={{ marginTop: 12 }}>
+                <ToggleRow
+                  label="Start YouTube Music app window minimized to taskbar"
+                  checked={settings.youtubeAppMinimized !== false}
+                  onChange={(val) => updateSetting('youtubeAppMinimized', val)}
+                  disabled={!settings.enabled}
+                />
+              </div>
             </div>
             <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
               LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. It does not reuse or modify the Drive token, and playlist content is kept only in memory.

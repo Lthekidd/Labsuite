@@ -161,6 +161,8 @@ async function testConnectedLibraryFlow() {
   assert.ok(spawnedArgs.length > 0, 'Must attempt browser app window launching');
   assert.ok(spawnedArgs.at(-1).some(arg => arg.includes('--app=https://music.youtube.com/watch?v=abcdefghijk&list=PL_owned')),
     'App window argument must target allowlisted music.youtube.com URL');
+  assert.ok(spawnedArgs.at(-1).includes('--start-minimized'),
+    'App window must include --start-minimized flag when startMinimized is active');
   await assert.rejects(() => provider.openTrack('PL_owned', 'zzzzzzzzzzz'), /unavailable/i);
 
   offline = true;

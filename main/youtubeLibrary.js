@@ -779,12 +779,14 @@ class YouTubeLibraryProvider {
     return selectedId ? this.selectPlaylist(selectedId, { force: true }) : this.refreshLibrary({ force: true });
   }
 
-  _launchApp(url, preferredApp = 'auto') {
+  _launchApp(url, preferredApp = 'auto', startMinimized = true) {
     const exePath = findBrowserExecutable(preferredApp);
     if (!exePath) {
       throw new YouTubeLibraryError('browserNotFound', 'Neither Microsoft Edge nor Google Chrome could be found to launch YouTube Music app windows.');
     }
-    const child = this._spawn(exePath, [`--app=${url}`], {
+    const args = [`--app=${url}`];
+    if (startMinimized) args.push('--start-minimized');
+    const child = this._spawn(exePath, args, {
       detached: true,
       stdio: 'ignore',
       shell: false
@@ -793,26 +795,26 @@ class YouTubeLibraryProvider {
     return true;
   }
 
-  async openPlaylist(playlistId, preferredApp = 'auto') {
+  async openPlaylist(playlistId, preferredApp = 'auto', startMinimized = true) {
     const id = validatePlaylistId(playlistId);
     if (!this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
     const url = `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
     try {
-      this._launchApp(url, preferredApp);
+      this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {
       await this._openExternal(url);
     }
     return this.getState();
   }
 
-  async openTrack(playlistId, videoId, preferredApp = 'auto') {
+  async openTrack(playlistId, videoId, preferredApp = 'auto', startMinimized = true) {
     const playlist = validatePlaylistId(playlistId);
     const video = validateVideoId(videoId);
     const item = this._state.library.items.find(entry => entry.videoId === video && entry.available);
     if (this._state.library.selectedPlaylist?.id !== playlist || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
     const url = `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
     try {
-      this._launchApp(url, preferredApp);
+      this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {
       await this._openExternal(url);
     }
@@ -830,8 +832,8 @@ class YouTubeLibraryProvider {
         case 'loadMore': return this.loadMore();
         case 'selectPlaylist': return this.selectPlaylist(payload.playlistId);
         case 'backToPlaylists': return this.backToPlaylists();
-        case 'openPlaylist': return this.openPlaylist(payload.playlistId, payload.preferredApp);
-        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId, payload.preferredApp);
+        case 'openPlaylist': return this.openPlaylist(payload.playlistId, payload.preferredApp, payload.startMinimized);
+        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId, payload.preferredApp, payload.startMinimized);
         default: throw new YouTubeLibraryError('invalidAction', 'Unsupported YouTube Library action.');
       }
     };

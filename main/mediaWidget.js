@@ -26,6 +26,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   primaryClickAction: 'panel',
   taskbarControlMode: 'adaptive',
   youtubePlaybackApp: 'auto',
+  youtubeAppMinimized: true,
   controls: {
     previous: true,
     playPause: true,
@@ -133,6 +134,9 @@ function validateSettings(raw = {}) {
     && VALID_YOUTUBE_PLAYBACK_APPS.has(raw.youtubePlaybackApp)
     ? raw.youtubePlaybackApp
     : DEFAULT_LABMEDIA_SETTINGS.youtubePlaybackApp;
+  result.youtubeAppMinimized = typeof raw.youtubeAppMinimized === 'boolean'
+    ? raw.youtubeAppMinimized
+    : DEFAULT_LABMEDIA_SETTINGS.youtubeAppMinimized;
 
   const rawControls = raw.controls && typeof raw.controls === 'object' ? raw.controls : {};
   result.controls = {
@@ -417,7 +421,8 @@ function handleStdoutLine(line) {
       youtubeLibraryProvider.handleAction(String(data.action || ''), {
         playlistId: String(data.playlistId || ''),
         videoId: String(data.videoId || ''),
-        preferredApp: settings.youtubePlaybackApp || 'auto'
+        preferredApp: settings.youtubePlaybackApp || 'auto',
+        startMinimized: settings.youtubeAppMinimized !== false
       }).then(() => {
         updateLibraryRuntime();
       }).catch(() => {

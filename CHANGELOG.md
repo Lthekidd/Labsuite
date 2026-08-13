@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.32 - 2026-08-13
+
+### Quiet Background Launching (Start App Minimized to Taskbar)
+
+- **Default Minimized Launching (`youtubeLibrary.js`)**:
+  - Added `--start-minimized` flag when spawning the standalone YouTube Music app window.
+  - The app window starts quietly minimized directly on the taskbar without popping up on screen or interrupting your workflow.
+- **Configurable Setting (`youtubeAppMinimized`)**:
+  - Added **Start YouTube Music app window minimized to taskbar** toggle setting under Expanded Panel → YouTube Library in `LabMedia.jsx`.
+
 ## 2.10.31 - 2026-08-13
 
 ### Standalone YouTube Music App Window Launcher
