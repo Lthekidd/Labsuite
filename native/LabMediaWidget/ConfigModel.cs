@@ -37,6 +37,9 @@ namespace LabMediaWidget
         [JsonPropertyName("showProgress")]
         public bool ShowProgress { get; set; } = true;
 
+        [JsonPropertyName("autoHideWhenIdle")]
+        public bool AutoHideWhenIdle { get; set; } = false;
+
         [JsonPropertyName("hideWhenFullscreen")]
         public bool HideWhenFullscreen { get; set; } = true;
 

@@ -12,6 +12,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   size: 'normal',
   theme: 'spotify',
   opacity: 1.0,
+  autoHideWhenIdle: false,
   autoHideGraceSec: 0,
   showToastNotifications: false,
   scrobbleLastFm: false,
@@ -88,6 +89,8 @@ function validateSettings(raw = {}) {
   } else {
     result.opacity = DEFAULT_LABMEDIA_SETTINGS.opacity;
   }
+
+  result.autoHideWhenIdle = typeof raw.autoHideWhenIdle === 'boolean' ? raw.autoHideWhenIdle : DEFAULT_LABMEDIA_SETTINGS.autoHideWhenIdle;
 
   if (typeof raw.autoHideGraceSec === 'number' && Number.isFinite(raw.autoHideGraceSec)) {
     result.autoHideGraceSec = Math.max(0, Math.min(60, Math.round(raw.autoHideGraceSec)));

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.22 - 2026-08-13
+
+### Permanent Taskbar Docking & Optional Auto-Hide Toggle
+
+- **Permanent Taskbar Visibility Default (`autoHideWhenIdle: false`)**:
+  - Removed mandatory auto-hiding when playback stops or no session is active.
+  - The widget now stays **permanently docked on your Windows taskbar** as long as LabMedia is enabled in settings, displaying fallback media controls ready for action!
+- **User-Controlled Auto-Hide Toggle**:
+  - Added `autoHideWhenIdle` toggle in LabMedia settings so users can explicitly choose whether to keep the widget permanently docked or auto-hide when idle.
+
 ## 2.10.21 - 2026-08-13
 
 ### Active Media Session Volume Isolation & Transparent Glass Theme

@@ -12,6 +12,7 @@ function testSettingsValidation() {
   assert.strictEqual(defaults.size, 'normal');
   assert.strictEqual(defaults.theme, 'spotify');
   assert.strictEqual(defaults.opacity, 1.0);
+  assert.strictEqual(defaults.autoHideWhenIdle, false);
   assert.strictEqual(defaults.showAlbumArt, true);
   assert.strictEqual(defaults.showProgress, true);
   assert.strictEqual(defaults.hideWhenFullscreen, true);

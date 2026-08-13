@@ -342,7 +342,13 @@ namespace LabMediaWidget
 
         private void UpdatePositionAndVisibility()
         {
-            if (!_config.Enabled || !_hasSession)
+            if (!_config.Enabled)
+            {
+                Hide();
+                return;
+            }
+
+            if (_config.AutoHideWhenIdle && !_hasSession)
             {
                 Hide();
                 return;

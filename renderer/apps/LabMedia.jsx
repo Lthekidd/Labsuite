@@ -453,40 +453,72 @@ export default function LabMedia({ active = true }) {
               </div>
             </div>
 
-            {/* Auto-Hide Grace Period (#22) */}
+            {/* Auto-Hide Settings */}
             <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
               <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={16} /> Auto-Hide Grace Period
+                <Clock size={16} /> Auto-Hide Behavior
               </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                Delay before hiding widget when playback stops.
+              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
+                Controls whether the taskbar widget auto-hides when media playback stops.
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {[0, 5, 15, 30].map(sec => {
-                  const active = (settings.autoHideGraceSec ?? 0) === sec;
-                  return (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => handleUpdateSetting('autoHideGraceSec', sec)}
-                      disabled={!settings.enabled}
-                      style={{
-                        height: '34px',
-                        padding: '0 16px',
-                        borderRadius: '6px',
-                        border: active ? '1.5px solid #1db954' : '1px solid var(--border-color)',
-                        background: active ? 'rgba(29, 185, 84, 0.2)' : 'rgba(0, 0, 0, 0.2)',
-                        color: active ? '#4ade80' : 'var(--text-secondary)',
-                        fontWeight: 700,
-                        fontSize: '12.5px',
-                        cursor: settings.enabled ? 'pointer' : 'default'
-                      }}
-                    >
-                      {sec === 0 ? 'Instant (0s)' : `${sec} seconds`}
-                    </button>
-                  );
-                })}
+
+              <div style={{ marginBottom: '16px' }}>
+                <ToggleRow
+                  label="Auto-Hide Widget When Idle"
+                  checked={!!settings.autoHideWhenIdle}
+                  onChange={(val) => handleUpdateSetting('autoHideWhenIdle', val)}
+                  disabled={!settings.enabled}
+                />
               </div>
+
+              {settings.autoHideWhenIdle ? (
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    Grace Period Before Hiding:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[0, 5, 15, 30].map(sec => {
+                      const active = (settings.autoHideGraceSec ?? 0) === sec;
+                      return (
+                        <button
+                          key={sec}
+                          type="button"
+                          onClick={() => handleUpdateSetting('autoHideGraceSec', sec)}
+                          disabled={!settings.enabled}
+                          style={{
+                            height: '34px',
+                            padding: '0 16px',
+                            borderRadius: '6px',
+                            border: active ? '1.5px solid #1db954' : '1px solid var(--border-color)',
+                            background: active ? 'rgba(29, 185, 84, 0.2)' : 'rgba(0, 0, 0, 0.2)',
+                            color: active ? '#4ade80' : 'var(--text-secondary)',
+                            fontWeight: 700,
+                            fontSize: '12.5px',
+                            cursor: settings.enabled ? 'pointer' : 'default'
+                          }}
+                        >
+                          {sec === 0 ? 'Instant (0s)' : `${sec} seconds`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  fontSize: '12.5px',
+                  color: '#34d399',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <Check size={16} /> Widget is Always Visible on Taskbar (Does not auto-hide when idle).
+                </div>
+              )}
             </div>
 
             {/* Opacity Slider */}
