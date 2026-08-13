@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.34 - 2026-08-14
+
+### Native Windows Start-Minimized Handoff (`SW_SHOWMINIMIZED`)
+
+- **Windows Native Process Minimized Launching (`youtubeLibrary.js`)**:
+  - Enhanced browser process spawning on Windows to use `cmd.exe /c start /min` alongside `--start-minimized`.
+  - Forces Windows OS to pass `SW_SHOWMINIMIZED` (`SW_SHOWMINNOACTIVE`) during process creation, ensuring the YouTube Music app window opens 100% minimized to the taskbar without flashing or stealing focus!
+
 ## 2.10.33 - 2026-08-13
 
 ### 24/7 Lo-Fi & Ambient Internet Radio Stations Integration

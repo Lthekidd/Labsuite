@@ -810,6 +810,17 @@ class YouTubeLibraryProvider {
     if (!exePath) {
       throw new YouTubeLibraryError('browserNotFound', 'Neither Microsoft Edge nor Google Chrome could be found to launch YouTube Music app windows.');
     }
+    if (process.platform === 'win32' && startMinimized) {
+      const child = this._spawn('cmd.exe', ['/c', 'start', '/min', '""', exePath, `--app=${url}`, '--start-minimized'], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+        shell: false
+      });
+      if (child && typeof child.unref === 'function') child.unref();
+      return true;
+    }
+
     const args = [`--app=${url}`];
     if (startMinimized) args.push('--start-minimized');
     const child = this._spawn(exePath, args, {
