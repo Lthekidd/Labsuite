@@ -154,9 +154,13 @@ async function testConnectedLibraryFlow() {
   assert.strictEqual(state.library.items[1].available, false);
   assert.strictEqual(state.library.items[1].title, 'Private or unavailable video');
 
+  const spawnedArgs = [];
+  provider._spawn = (exe, args) => { spawnedArgs.push([exe, ...args]); return { unref: () => {} }; };
   provider._openExternal = async url => { openedUrls.push(url); };
   await provider.openTrack('PL_owned', 'abcdefghijk');
-  assert.strictEqual(openedUrls.at(-1), 'https://music.youtube.com/watch?v=abcdefghijk&list=PL_owned');
+  assert.ok(spawnedArgs.length > 0, 'Must attempt browser app window launching');
+  assert.ok(spawnedArgs.at(-1).some(arg => arg.includes('--app=https://music.youtube.com/watch?v=abcdefghijk&list=PL_owned')),
+    'App window argument must target allowlisted music.youtube.com URL');
   await assert.rejects(() => provider.openTrack('PL_owned', 'zzzzzzzzzzz'), /unavailable/i);
 
   offline = true;

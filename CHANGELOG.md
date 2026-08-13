@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.31 - 2026-08-13
+
+### Standalone YouTube Music App Window Launcher
+
+- **Dedicated App Window Launching (`youtubeLibrary.js`)**:
+  - Replaced standard browser-tab launching with a standalone, borderless YouTube Music app window using Chromium's `--app=https://music.youtube.com/...` launcher.
+  - Reuses your browser's existing user profile so YouTube Premium sign-in, ad-free playback, and background listening apply.
+- **Configurable Playback App Preference (`youtubePlaybackApp`)**:
+  - Added `youtubePlaybackApp` setting (`"auto"` | `"edge"` | `"chrome"`) with UI controls under Expanded Panel → YouTube Library in `LabMedia.jsx`.
+
 ## 2.10.30 - 2026-08-13
 
 ### 100% Solid Opacity Guarantee for Expanded Flyout Panel

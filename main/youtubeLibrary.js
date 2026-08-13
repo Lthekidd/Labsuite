@@ -1,6 +1,9 @@
 const crypto = require('crypto');
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
+const path = require('path');
+const { spawn } = require('child_process');
 const { URL, URLSearchParams } = require('url');
 
 const keychain = require('./keychain');
@@ -134,6 +137,31 @@ function missingRequiredScopes(scopeValue) {
   return missing;
 }
 
+function findBrowserExecutable(appChoice = 'auto') {
+  const edgeCandidates = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null,
+    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null,
+    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null
+  ].filter(Boolean);
+
+  const chromeCandidates = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe') : null,
+    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe') : null,
+    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe') : null
+  ].filter(Boolean);
+
+  const findFirst = candidates => candidates.find(candidate => fs.existsSync(candidate));
+
+  if (appChoice === 'edge') return findFirst(edgeCandidates) || null;
+  if (appChoice === 'chrome') return findFirst(chromeCandidates) || null;
+
+  return findFirst(edgeCandidates) || findFirst(chromeCandidates) || null;
+}
+
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -223,6 +251,7 @@ class YouTubeLibraryProvider {
     this._setCredential = dependencies.setCredential || (secret => keychain.setCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT, secret));
     this._deleteCredential = dependencies.deleteCredential || (() => keychain.deleteCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT));
     this._openExternal = dependencies.openExternal || (url => require('electron').shell.openExternal(url));
+    this._spawn = dependencies.spawn || spawn;
     this._onChange = dependencies.onChange || (() => {});
     this._state = initialState();
     this._credential = null;
@@ -750,19 +779,43 @@ class YouTubeLibraryProvider {
     return selectedId ? this.selectPlaylist(selectedId, { force: true }) : this.refreshLibrary({ force: true });
   }
 
-  async openPlaylist(playlistId) {
+  _launchApp(url, preferredApp = 'auto') {
+    const exePath = findBrowserExecutable(preferredApp);
+    if (!exePath) {
+      throw new YouTubeLibraryError('browserNotFound', 'Neither Microsoft Edge nor Google Chrome could be found to launch YouTube Music app windows.');
+    }
+    const child = this._spawn(exePath, [`--app=${url}`], {
+      detached: true,
+      stdio: 'ignore',
+      shell: false
+    });
+    if (child && typeof child.unref === 'function') child.unref();
+    return true;
+  }
+
+  async openPlaylist(playlistId, preferredApp = 'auto') {
     const id = validatePlaylistId(playlistId);
     if (!this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
-    await this._openExternal(`https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`);
+    const url = `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
+    try {
+      this._launchApp(url, preferredApp);
+    } catch (_) {
+      await this._openExternal(url);
+    }
     return this.getState();
   }
 
-  async openTrack(playlistId, videoId) {
+  async openTrack(playlistId, videoId, preferredApp = 'auto') {
     const playlist = validatePlaylistId(playlistId);
     const video = validateVideoId(videoId);
     const item = this._state.library.items.find(entry => entry.videoId === video && entry.available);
     if (this._state.library.selectedPlaylist?.id !== playlist || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
-    await this._openExternal(`https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`);
+    const url = `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
+    try {
+      this._launchApp(url, preferredApp);
+    } catch (_) {
+      await this._openExternal(url);
+    }
     return this.getState();
   }
 
@@ -777,8 +830,8 @@ class YouTubeLibraryProvider {
         case 'loadMore': return this.loadMore();
         case 'selectPlaylist': return this.selectPlaylist(payload.playlistId);
         case 'backToPlaylists': return this.backToPlaylists();
-        case 'openPlaylist': return this.openPlaylist(payload.playlistId);
-        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId);
+        case 'openPlaylist': return this.openPlaylist(payload.playlistId, payload.preferredApp);
+        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId, payload.preferredApp);
         default: throw new YouTubeLibraryError('invalidAction', 'Unsupported YouTube Library action.');
       }
     };

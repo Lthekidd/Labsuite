@@ -319,8 +319,22 @@ export default function LabMedia({ active = true }) {
             </p>
           </SectionCard>
 
-          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Videos from the flyout, then hand playback to YouTube Music.">
+          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Music from the flyout, then hand playback to YouTube Music.">
             <YouTubeConnection state={youtube} busy={isBusy} onAction={youtubeAction} />
+            <div style={{ marginTop: 16 }}>
+              <SettingBlock title="Playback App Window Mode" description="Choose which browser app window to launch when playing playlists or tracks.">
+                <ChoiceGrid
+                  value={settings.youtubePlaybackApp || 'auto'}
+                  disabled={!settings.enabled}
+                  onChange={(val) => updateSetting('youtubePlaybackApp', val)}
+                  options={[
+                    { id: 'auto', label: 'Automatic', description: 'Prefer Edge, then Chrome, using your saved profile.' },
+                    { id: 'edge', label: 'Microsoft Edge', description: 'Launch standalone YouTube Music app in Edge.' },
+                    { id: 'chrome', label: 'Google Chrome', description: 'Launch standalone YouTube Music app in Chrome.' }
+                  ]}
+                />
+              </SettingBlock>
+            </div>
             <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
               LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. It does not reuse or modify the Drive token, and playlist content is kept only in memory.
             </p>
