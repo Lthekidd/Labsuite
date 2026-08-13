@@ -25,6 +25,9 @@ namespace LabMediaWidget
         [JsonPropertyName("size")]
         public string Size { get; set; } = "normal"; // "compact", "normal", "large"
 
+        [JsonPropertyName("theme")]
+        public string Theme { get; set; } = "spotify"; // "spotify", "oled", "neon", "glass", "minimal"
+
         [JsonPropertyName("opacity")]
         public double Opacity { get; set; } = 1.0;
 

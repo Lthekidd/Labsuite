@@ -195,6 +195,60 @@ namespace LabMediaWidget
             Width = width;
             MainBorder.Width = width;
 
+            // Theme presets
+            string bgHex = "#CC18181B";
+            string borderHex = "#3027272A";
+            string accentHex = "#1DB954";
+
+            switch ((_config.Theme ?? "spotify").ToLower())
+            {
+                case "oled":
+                    bgHex = "#CC000000";
+                    borderHex = "#3018181B";
+                    accentHex = "#10B981";
+                    break;
+                case "neon":
+                    bgHex = "#CC0D0221";
+                    borderHex = "#7209B7";
+                    accentHex = "#00F5D4";
+                    break;
+                case "glass":
+                    bgHex = "#CC1A1A2E";
+                    borderHex = "#38BDF8";
+                    accentHex = "#38BDF8";
+                    break;
+                case "minimal":
+                    bgHex = "#CC111827";
+                    borderHex = "#1F2937";
+                    accentHex = "#9CA3AF";
+                    break;
+                default: // spotify
+                    bgHex = "#CC18181B";
+                    borderHex = "#3027272A";
+                    accentHex = "#1DB954";
+                    break;
+            }
+
+            try
+            {
+                var bgBrush = (Brush)new BrushConverter().ConvertFromString(bgHex)!;
+                var borderBrush = (Brush)new BrushConverter().ConvertFromString(borderHex)!;
+                var accentBrush = (Brush)new BrushConverter().ConvertFromString(accentHex)!;
+                Color accentColor = (Color)ColorConverter.ConvertFromString(accentHex)!;
+
+                MainBorder.Background = bgBrush;
+                MainBorder.BorderBrush = borderBrush;
+                ProgressTrack.Foreground = accentBrush;
+                if (ProgressGlow != null) ProgressGlow.Color = accentColor;
+                if (TxtFallbackArt != null) TxtFallbackArt.Fill = accentBrush;
+                if (BtnPlayPause != null)
+                {
+                    BtnPlayPause.Background = accentBrush;
+                    BtnPlayPause.BorderBrush = accentBrush;
+                }
+            }
+            catch { }
+
             // Element toggles
             ArtContainer.Visibility = _config.ShowAlbumArt ? Visibility.Visible : Visibility.Collapsed;
             ProgressTrack.Visibility = _config.ShowProgress ? Visibility.Visible : Visibility.Collapsed;

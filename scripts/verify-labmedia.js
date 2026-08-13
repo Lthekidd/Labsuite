@@ -124,7 +124,10 @@ function testNativeSourceIntegrity() {
   const nativeMethodsSource = fs.readFileSync(path.join(nativeDir, 'NativeMethods.cs'), 'utf8');
   const appVolumeSource = fs.readFileSync(path.join(nativeDir, 'AppVolume.cs'), 'utf8');
   const fallbackWorkerSource = fs.readFileSync(path.join(ROOT, 'main', 'smtcWorker.ps1'), 'utf8');
+  const configModelSource = fs.readFileSync(path.join(nativeDir, 'ConfigModel.cs'), 'utf8');
   const mainWinXaml = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml'), 'utf8');
+  assert.ok(configModelSource.includes('Theme'), 'ConfigModel must include Theme property');
+  assert.ok(mainWinSource.includes('_config.Theme'), 'MainWindow must apply theme visual styling in ApplyConfig');
   assert.ok(mainWinSource.includes('WS_EX_TOOLWINDOW'), 'MainWindow must set WS_EX_TOOLWINDOW style');
   assert.ok(mainWinSource.includes('WS_EX_NOACTIVATE'), 'MainWindow must set WS_EX_NOACTIVATE style');
   assert.ok(mainWinSource.includes('!_hasSession'), 'MainWindow must hide when Spotify has no session');

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.19 - 2026-08-13
+
+### Native C# Taskbar Widget Theme Support Fix
+
+- **Added `Theme` Property to `ConfigModel.cs`**:
+  - Added `[JsonPropertyName("theme")] public string Theme { get; set; }` to `LabMediaConfig` class so theme selection deserializes properly from JSON config files.
+- **Dynamic Surface & Accent Styling in Native `MainWindow`**:
+  - `ApplyConfig()` now dynamically updates the widget pill background (`MainBorder.Background`), border stroke (`MainBorder.BorderBrush`), progress track (`ProgressTrack.Foreground`), glow drop shadow (`ProgressGlow.Color`), and play/pause button (`BtnPlayPause`) for all 5 themes (**Spotify Green**, **OLED Black**, **Cyberpunk Neon**, **Glassmorphism**, **Minimalist**).
+
 ## 2.10.18 - 2026-08-13
 
 ### Per-App Media Volume Isolation Fix
