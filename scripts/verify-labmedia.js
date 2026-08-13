@@ -134,7 +134,8 @@ function testNativeSourceIntegrity() {
   assert.ok(mainWinSource.includes('_config.Theme'), 'MainWindow must apply theme visual styling in ApplyConfig');
   assert.ok(mainWinSource.includes('WS_EX_TOOLWINDOW'), 'MainWindow must set WS_EX_TOOLWINDOW style');
   assert.ok(mainWinSource.includes('WS_EX_NOACTIVATE'), 'MainWindow must set WS_EX_NOACTIVATE style');
-  assert.ok(mainWinSource.includes('!_hasSession'), 'MainWindow must hide when Spotify has no session');
+  assert.ok(mainWinSource.includes('AutoHideWhenIdle'), 'MainWindow must respect AutoHideWhenIdle setting');
+  assert.ok(smtcSource.includes('CycleNextSessionAsync'), 'SMTC manager must support cycling between open player sessions');
   assert.ok(mainWinSource.includes('await _smtc.RefreshAsync()'), 'MainWindow must poll for browser sessions created after startup');
   assert.ok(!mainWinSource.includes('GWLP_HWNDPARENT') && !nativeMethodsSource.includes('GWLP_HWNDPARENT'),
     'LabMedia must never attach its native owner to Explorer');
@@ -146,7 +147,8 @@ function testNativeSourceIntegrity() {
   assert.ok(/x:Name="MainBorder"[^>]*CornerRadius="8"/.test(mainWinXaml),
     'Widget surface must use frosted pill style with CornerRadius="8"');
   assert.ok(mainWinXaml.includes('x:Key="MediaIconButton"'), 'Media controls must use the circular vector icon style');
-  assert.ok(mainWinXaml.includes('StrokeLineJoin="Round"'), 'Previous and next controls must use rounded vector chevrons');
+  assert.ok(mainWinXaml.includes('BtnSwitchSession'), 'MainWindow XAML must include multi-session switch button');
+  assert.ok(mainWinXaml.includes('VolToastBorder'), 'MainWindow XAML must include live volume toast badge');
   assert.ok(!mainWinXaml.includes('Content="⏮"') && !mainWinXaml.includes('Content="⏭"'),
     'Media controls must not depend on font-specific symbol glyphs');
 

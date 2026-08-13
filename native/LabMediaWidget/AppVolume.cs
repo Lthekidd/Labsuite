@@ -174,6 +174,68 @@ namespace LabMediaWidget
             }
         }
 
+        public static float GetMediaVolume(string activeAppHint)
+        {
+            IMMDeviceEnumerator? deviceEnumerator = null;
+            IMMDevice? device = null;
+            object? sessionManagerObject = null;
+            IAudioSessionEnumerator? sessionEnumerator = null;
+
+            try
+            {
+                deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+                if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
+                    return 1.0f;
+
+                Guid managerId = typeof(IAudioSessionManager2).GUID;
+                if (device.Activate(ref managerId, 1, IntPtr.Zero, out sessionManagerObject) < 0
+                    || sessionManagerObject is not IAudioSessionManager2 manager)
+                    return 1.0f;
+
+                if (manager.GetSessionEnumerator(out sessionEnumerator) < 0 || sessionEnumerator == null
+                    || sessionEnumerator.GetCount(out int sessionCount) < 0)
+                    return 1.0f;
+
+                for (int i = 0; i < sessionCount; i++)
+                {
+                    IAudioSessionControl? session = null;
+                    try
+                    {
+                        if (sessionEnumerator.GetSession(i, out session) < 0 || session == null
+                            || session is not IAudioSessionControl2 session2
+                            || session is not ISimpleAudioVolume volume
+                            || session2.GetProcessId(out uint processId) < 0)
+                            continue;
+
+                        string processName = "";
+                        try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
+                        if (!IsMediaProcess(processName, activeAppHint))
+                            continue;
+
+                        if (volume.GetMasterVolume(out float level) >= 0)
+                            return level;
+                    }
+                    finally
+                    {
+                        ReleaseComObject(session);
+                    }
+                }
+
+                return 1.0f;
+            }
+            catch
+            {
+                return 1.0f;
+            }
+            finally
+            {
+                ReleaseComObject(sessionEnumerator);
+                ReleaseComObject(sessionManagerObject);
+                ReleaseComObject(device);
+                ReleaseComObject(deviceEnumerator);
+            }
+        }
+
         private static bool IsMediaProcess(string processName, string activeAppHint)
         {
             if (string.IsNullOrWhiteSpace(processName)) return false;

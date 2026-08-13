@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.23 - 2026-08-13
+
+### Multi-Player Session Switcher & Real-Time Volume Level Toast Badge
+
+- **Multi-Player Session Switcher Button**:
+  - Added `BtnSwitchSession` button to the widget surface. When multiple media sessions are open (e.g. Spotify + YouTube / Chrome / Edge), clicking the button cycles to the next active player instantly.
+  - Button automatically appears with tooltips (e.g. `Switch Active Player (2 Open)`) whenever 2 or more players are active.
+- **Real-Time Volume Level Toast Badge**:
+  - Added `VolToastBorder` overlay badge. When scrolling the mouse wheel over the widget, a live volume percentage indicator (`🔊 75%`) pops up on the widget for 1.5 seconds, providing instant visual feedback.
+
 ## 2.10.22 - 2026-08-13
 
 ### Permanent Taskbar Docking & Optional Auto-Hide Toggle

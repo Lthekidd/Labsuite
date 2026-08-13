@@ -23,6 +23,7 @@ namespace LabMediaWidget
         public bool CanSkipPrevious { get; set; } = true;
         public bool CanPlayPause { get; set; } = true;
         public bool CanSkipNext { get; set; } = true;
+        public int SessionCount { get; set; } = 1;
     }
 
     public class SmtcManager
@@ -32,6 +33,7 @@ namespace LabMediaWidget
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
         private string _albumArtKey = string.Empty;
         private BitmapImage? _cachedAlbumArt;
+        private int _forcedSessionIndex = -1;
 
         public MediaSessionState CurrentSessionState { get; private set; } = new MediaSessionState();
         public event EventHandler<MediaSessionState>? SessionStateChanged;
@@ -53,6 +55,36 @@ namespace LabMediaWidget
             }
         }
 
+        public async Task CycleNextSessionAsync()
+        {
+            if (_manager == null) return;
+            var sessions = _manager.GetSessions();
+            if (sessions == null || sessions.Count <= 1) return;
+
+            if (_forcedSessionIndex < 0) _forcedSessionIndex = 0;
+            _forcedSessionIndex = (_forcedSessionIndex + 1) % sessions.Count;
+
+            var nextSession = sessions[_forcedSessionIndex];
+
+            if (_currentSession != null)
+            {
+                _currentSession.MediaPropertiesChanged -= CurrentSession_MediaPropertiesChanged;
+                _currentSession.PlaybackInfoChanged -= CurrentSession_PlaybackInfoChanged;
+                _currentSession.TimelinePropertiesChanged -= CurrentSession_TimelinePropertiesChanged;
+            }
+
+            _currentSession = nextSession;
+
+            if (_currentSession != null)
+            {
+                _currentSession.MediaPropertiesChanged += CurrentSession_MediaPropertiesChanged;
+                _currentSession.PlaybackInfoChanged += CurrentSession_PlaybackInfoChanged;
+                _currentSession.TimelinePropertiesChanged += CurrentSession_TimelinePropertiesChanged;
+            }
+
+            await RefreshStateAsync();
+        }
+
         private void Manager_SessionsChanged(GlobalSystemMediaTransportControlsSessionManager sender, SessionsChangedEventArgs args)
         {
             _ = RefreshAsync();
@@ -63,26 +95,32 @@ namespace LabMediaWidget
             if (_manager == null) return;
 
             var sessions = _manager.GetSessions();
-            GlobalSystemMediaTransportControlsSession? nextSession = null;
-            foreach (var session in sessions)
+            if (_forcedSessionIndex >= 0 && sessions != null && _forcedSessionIndex < sessions.Count)
             {
-                try
-                {
-                    if (session.GetPlaybackInfo()?.PlaybackStatus
-                        == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
-                    {
-                        nextSession = session;
-                        break;
-                    }
-                }
-                catch
-                {
-                    // Ignore a stale session removed while the list is read.
-                }
+                _currentSession = sessions[_forcedSessionIndex];
+                return;
             }
 
-            nextSession ??= _manager.GetCurrentSession();
-            nextSession ??= sessions.FirstOrDefault();
+            GlobalSystemMediaTransportControlsSession? nextSession = null;
+            if (sessions != null)
+            {
+                foreach (var session in sessions)
+                {
+                    try
+                    {
+                        if (session.GetPlaybackInfo()?.PlaybackStatus
+                            == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+                        {
+                            nextSession = session;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                nextSession ??= _manager.GetCurrentSession();
+                nextSession ??= sessions.FirstOrDefault();
+            }
 
             if (ReferenceEquals(_currentSession, nextSession)) return;
 
@@ -101,7 +139,6 @@ namespace LabMediaWidget
                 _currentSession.PlaybackInfoChanged += CurrentSession_PlaybackInfoChanged;
                 _currentSession.TimelinePropertiesChanged += CurrentSession_TimelinePropertiesChanged;
             }
-
         }
 
         private void CurrentSession_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
@@ -157,6 +194,7 @@ namespace LabMediaWidget
             try
             {
                 state.HasSession = true;
+                try { state.SessionCount = _manager?.GetSessions()?.Count ?? 1; } catch { state.SessionCount = 1; }
                 string appId = _currentSession.SourceAppUserModelId ?? "";
                 state.SourceApp = DetermineSourceAppName(appId);
 

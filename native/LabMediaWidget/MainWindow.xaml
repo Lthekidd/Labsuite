@@ -100,13 +100,26 @@
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           Width="11" Height="12" Stretch="Uniform" />
                 </Button>
-                <Button x:Name="BtnNext" Style="{StaticResource MediaIconButton}" Click="BtnNext_Click" Cursor="Hand" ToolTip="Next">
+                <Button x:Name="BtnNext" Style="{StaticResource MediaIconButton}" Click="BtnNext_Click" Cursor="Hand" ToolTip="Next" Margin="0,0,3,0">
                     <Path Data="M 9,5 L 16,12 L 9,19"
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                           Width="8" Height="13" Stretch="Uniform" />
                 </Button>
+                <Button x:Name="BtnSwitchSession" Style="{StaticResource MediaIconButton}" Click="BtnSwitchSession_Click" Cursor="Hand" ToolTip="Switch Active Player" Visibility="Collapsed">
+                    <Path Data="M 6,4 L 10,8 H 7 V 13 H 10 L 6,17 L 2,13 H 5 V 8 H 2 L 6,4 Z M 18,20 L 14,16 H 17 V 11 H 14 L 18,7 L 22,11 H 19 V 16 H 22 L 18,20 Z"
+                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Width="9" Height="11" Stretch="Uniform" />
+                </Button>
             </StackPanel>
+
+            <!-- Volume Level Overlay Toast -->
+            <Border x:Name="VolToastBorder" Grid.Column="0" Grid.ColumnSpan="3" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,1,0,0" Background="#EE111318" BorderBrush="#38bdf8" BorderThickness="1" CornerRadius="9" Padding="8,2" Panel.ZIndex="10" Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path x:Name="PathVolToastIcon" Data="M 3,9 V 15 H 7 L 12,20 V 4 L 7,9 H 3 Z M 16.5,12 C 16.5,10.23 15.48,8.71 14,7.97 V 16.02 C 15.48,15.29 16.5,13.77 16.5,12 Z M 14,3.23 V 5.29 C 16.89,6.15 19,8.83 19,12 C 19,15.17 16.89,17.85 14,18.71 V 20.77 C 18.01,19.86 21,16.28 21,12 C 21,7.72 18.01,4.14 14,3.23 Z" Fill="#38bdf8" Width="10" Height="10" Stretch="Uniform" Margin="0,0,5,0"/>
+                    <TextBlock x:Name="TxtVolToast" Text="75%" FontSize="9.5" FontWeight="Bold" Foreground="#ffffff" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
 
             <!-- Progress Bar with Accent Glow -->
             <ProgressBar Grid.Column="0" Grid.ColumnSpan="3" Panel.ZIndex="5" x:Name="ProgressTrack" Height="3" VerticalAlignment="Bottom" Background="#20ffffff" Foreground="#1db954" BorderThickness="0" Minimum="0" Maximum="100" Value="0" Cursor="Hand" MouseLeftButtonDown="ProgressTrack_MouseLeftButtonDown">

@@ -19,6 +19,7 @@ namespace LabMediaWidget
         private LabMediaConfig _config = new LabMediaConfig();
         private FileSystemWatcher? _configWatcher;
         private DispatcherTimer _pollTimer;
+        private DispatcherTimer _volToastTimer;
         private SmtcManager _smtc;
         private uint _taskbarCreatedMsg;
         private double _currentDurationSeconds = 0;
@@ -30,6 +31,10 @@ namespace LabMediaWidget
             _smtc = new SmtcManager();
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _pollTimer.Tick += PollTimer_Tick;
+
+            _volToastTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
+            _volToastTimer.Tick += (s, e) => { VolToastBorder.Visibility = Visibility.Collapsed; _volToastTimer.Stop(); };
+
             PreviewMouseWheel += Window_PreviewMouseWheel;
         }
 
@@ -40,6 +45,14 @@ namespace LabMediaWidget
                 float delta = e.Delta > 0 ? 0.05f : -0.05f;
                 string appHint = _smtc?.CurrentSessionState?.SourceApp ?? "";
                 AppVolume.AdjustMediaVolume(appHint, delta);
+
+                float currentVol = AppVolume.GetMediaVolume(appHint);
+                int volPercent = Math.Clamp((int)Math.Round(currentVol * 100), 0, 100);
+                TxtVolToast.Text = $"{volPercent}%";
+                VolToastBorder.Visibility = Visibility.Visible;
+                _volToastTimer.Stop();
+                _volToastTimer.Start();
+
                 e.Handled = true;
             }
             catch { }
@@ -318,6 +331,12 @@ namespace LabMediaWidget
                     ProgressTrack.Value = 0;
                 }
 
+                if (BtnSwitchSession != null)
+                {
+                    BtnSwitchSession.Visibility = e.SessionCount > 1 ? Visibility.Visible : Visibility.Collapsed;
+                    BtnSwitchSession.ToolTip = e.SessionCount > 1 ? $"Switch Active Player ({e.SessionCount} Open)" : "Switch Active Player";
+                }
+
                 EmitEvent("session", new
                 {
                     hasSession = true,
@@ -325,7 +344,8 @@ namespace LabMediaWidget
                     artist = e.Artist,
                     isPlaying = e.IsPlaying,
                     position = e.PositionSeconds,
-                    duration = e.DurationSeconds
+                    duration = e.DurationSeconds,
+                    sessionCount = e.SessionCount
                 });
 
                 UpdatePositionAndVisibility();
@@ -398,6 +418,11 @@ namespace LabMediaWidget
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
             await _smtc.SkipNextAsync();
+        }
+
+        private async void BtnSwitchSession_Click(object sender, RoutedEventArgs e)
+        {
+            await _smtc.CycleNextSessionAsync();
         }
 
         private async void ProgressTrack_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
