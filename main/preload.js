@@ -251,6 +251,7 @@ const INVOKE_CHANNELS = new Set([
   'labmedia:youtubeReconnect',
   'labmedia:youtubeDisconnect',
   'labmedia:youtubeRefresh',
+  'labmedia:openYouTubeOAuthSettings',
   'labmedia:mediaAction',
   'labmedia:copyTrackInfo'
 ]);
@@ -258,6 +259,7 @@ const INVOKE_CHANNELS = new Set([
 const LISTEN_CHANNELS = new Set([
   'winfsp:install-progress',
   'status:change',
+  'auth:gdriveInfoChanged',
   'syncQueue:start',
   'syncQueue:item-start',
   'syncQueue:item-complete',

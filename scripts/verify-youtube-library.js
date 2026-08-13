@@ -254,6 +254,7 @@ async function test401RetryAndRetryAfter() {
 
 function testStaticSecurityContract() {
   const providerSource = fs.readFileSync(path.join(ROOT, 'main', 'youtubeLibrary.js'), 'utf8');
+  const rcloneSource = fs.readFileSync(path.join(ROOT, 'main', 'rclone.js'), 'utf8');
   const supervisorSource = fs.readFileSync(path.join(ROOT, 'main', 'mediaWidget.js'), 'utf8');
   const preloadSource = fs.readFileSync(path.join(ROOT, 'main', 'preload.js'), 'utf8');
   const ipcSource = fs.readFileSync(path.join(ROOT, 'main', 'ipc.js'), 'utf8');
@@ -266,14 +267,25 @@ function testStaticSecurityContract() {
   assert.ok(providerSource.includes('NoCache') || providerSource.includes('no-store'));
   assert.ok(supervisorSource.includes("type: 'library:update'"));
   assert.ok(supervisorSource.includes("data.event === 'libraryAction'"));
+  assert.ok(supervisorSource.includes('refreshYouTubeSetupState'),
+    'YouTube setup state must refresh after Drive OAuth client migration');
   assert.ok(nativeSource.includes('SanitizeLibraryState'));
   assert.ok(!nativeSource.includes('pageToken'), 'Native helper must never receive Google page cursors');
-  for (const action of ['youtubeConnect', 'youtubeReconnect', 'youtubeDisconnect', 'youtubeRefresh']) {
+  for (const action of ['youtubeConnect', 'youtubeReconnect', 'youtubeDisconnect', 'youtubeRefresh', 'openYouTubeOAuthSettings']) {
     assert.ok(preloadSource.includes(`labmedia:${action}`), `${action} must be allowlisted by preload`);
     assert.ok(ipcSource.includes(`labmedia:${action}`), `${action} must be handled in the main process`);
   }
   assert.ok(!providerSource.includes('console.log') && !providerSource.includes('console.error'),
     'YouTube provider must not log OAuth or API material');
+  assert.ok(rcloneSource.includes('Re-pin the personal client identity')
+    && rcloneSource.includes("throw new Error('Google Drive reconnected, but the personal OAuth client could not be saved.')"),
+  'Drive reconnect must verify that personal OAuth credentials persisted after rclone updates its token');
+  assert.ok(rcloneSource.includes('No personal Google OAuth client is saved. Enter the Desktop client ID and secret first.'),
+    'Drive reauthorization must not silently fall back to the shared rclone OAuth client');
+  assert.ok(providerSource.includes('This page confirms only the browser approval, not that setup finished.'),
+    'OAuth callback page must not claim connection before token and account verification');
+  assert.ok(!providerSource.includes('<h1>YouTube connected to LabMedia</h1>'),
+    'OAuth callback page must not show a premature success message');
   assert.strictEqual(__private.parseRetryAfter('2'), 2000);
   assert.strictEqual(__private.parseIsoDuration('PT1H2M3S'), 3723000);
   assert.strictEqual(__private.classifyApiError(response(403, {

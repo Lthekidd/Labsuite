@@ -165,7 +165,13 @@ namespace LabMediaWidget
             TxtLibraryStatus.Text = message;
 
             BtnLibraryConnect.Visibility = Visibility.Collapsed;
-            if (connection.Status == LibraryConnectionStatuses.RequiresAuth)
+            if (connection.Status == LibraryConnectionStatuses.RequiresSetup)
+            {
+                BtnLibraryConnect.Content = "Open OAuth setup";
+                BtnLibraryConnect.Tag = "openOAuthSettings";
+                BtnLibraryConnect.Visibility = Visibility.Visible;
+            }
+            else if (connection.Status == LibraryConnectionStatuses.RequiresAuth)
             {
                 BtnLibraryConnect.Content = "Connect YouTube";
                 BtnLibraryConnect.Tag = "connect";

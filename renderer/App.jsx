@@ -278,6 +278,15 @@ export default function App() {
     };
     ipcRenderer.on('app:navigate', handleAppNavigate);
 
+    const handleGDriveInfoChanged = (_event, info) => {
+      if (!info) return;
+      setGlobalGDriveInfo(info);
+      setHealthStatus(info.email === 'Disconnected' ? 'Disconnected' : 'Connected');
+      invalidateResource('auth:getGDriveInfo');
+      invalidateResource('health:get');
+    };
+    ipcRenderer.on('auth:gdriveInfoChanged', handleGDriveInfoChanged);
+
     invokeResource('auth:getGDriveInfo', [], { ttl: 60000 }).then(info => {
       if (info) setGlobalGDriveInfo(info);
     });
@@ -294,6 +303,7 @@ export default function App() {
     return () => {
       ipcRenderer.removeListener('notepad:open-file', handleOpenNotepadFile);
       ipcRenderer.removeListener('app:navigate', handleAppNavigate);
+      ipcRenderer.removeListener('auth:gdriveInfoChanged', handleGDriveInfoChanged);
       clearInterval(intervalId);
     };
   }, []);

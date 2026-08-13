@@ -1439,6 +1439,9 @@ async function reconnectGoogleDriveClient(clientId, clientSecret) {
   if (!clientId && !clientSecret) {
     finalClientId = getRcloneRemoteConfigValue(previousConfig, remoteName, 'client_id');
     finalClientSecret = getRcloneRemoteConfigValue(previousConfig, remoteName, 'client_secret');
+    if (!finalClientId || !finalClientSecret) {
+      throw new Error('No personal Google OAuth client is saved. Enter the Desktop client ID and secret first.');
+    }
   }
 
   let credentials = null;
@@ -1455,19 +1458,34 @@ async function reconnectGoogleDriveClient(clientId, clientSecret) {
   }
 
   try {
-    fs.writeFileSync(configPath, updatedConfig, 'utf8');
-    hardenConfigFilePermissions(configPath);
+    writeRcloneConfigAtomically(configPath, updatedConfig);
     await runRclone([
       'config',
       'reconnect',
       `${remoteName}:`,
       '--auto-confirm'
     ], { timeoutMs: 10 * 60 * 1000, applyTransferControls: false });
-    return getGoogleDriveClientStatus();
+
+    // Some rclone reconnect flows rewrite the remote section while updating
+    // its token. Re-pin the personal client identity to that refreshed config
+    // so Drive and LabMedia cannot silently fall back to rclone's shared app.
+    if (credentials) {
+      const refreshedConfig = fs.readFileSync(configPath, 'utf8');
+      const persistedConfig = updateRcloneRemoteConfig(refreshedConfig, remoteName, {
+        client_id: credentials.clientId,
+        client_secret: credentials.clientSecret
+      });
+      writeRcloneConfigAtomically(configPath, persistedConfig);
+    }
+
+    const status = getGoogleDriveClientStatus();
+    if (credentials && !status.usesOwnClientId) {
+      throw new Error('Google Drive reconnected, but the personal OAuth client could not be saved.');
+    }
+    return status;
   } catch (error) {
     try {
-      fs.writeFileSync(configPath, previousConfig, 'utf8');
-      hardenConfigFilePermissions(configPath);
+      writeRcloneConfigAtomically(configPath, previousConfig);
     } catch (restoreError) {
       console.warn('rclone: Failed to restore Google Drive configuration after reconnect error:', restoreError.message);
     }

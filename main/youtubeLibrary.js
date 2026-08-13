@@ -52,7 +52,7 @@ function initialState() {
       status: 'requiresSetup',
       email: '',
       channelTitle: '',
-      message: 'Connect Google Drive with a personal OAuth client first.'
+      message: 'Add a personal Google Desktop OAuth client in Suite Settings, then reconnect Drive.'
     },
     library: emptyLibrary()
   };
@@ -239,7 +239,7 @@ class YouTubeLibraryProvider {
     if (!context?.clientId || !context?.clientSecret) {
       this._state.connection = {
         status: 'requiresSetup', email: '', channelTitle: '',
-        message: 'Connect Google Drive with a personal OAuth client first.'
+        message: 'Add a personal Google Desktop OAuth client in Suite Settings, then reconnect Drive.'
       };
       this._publish();
       return this.getState();
@@ -396,7 +396,7 @@ class YouTubeLibraryProvider {
             'Cache-Control': 'no-store',
             'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'"
           });
-          response.end('<!doctype html><meta charset="utf-8"><title>LabMedia connected</title><style>body{font:16px system-ui;background:#111318;color:#eef2f7;padding:48px}h1{font-size:24px}</style><h1>YouTube connected to LabMedia</h1><p>You can close this tab and return to LabSuite.</p>');
+          response.end('<!doctype html><meta charset="utf-8"><title>Google approval received</title><style>body{font:16px system-ui;background:#111318;color:#eef2f7;padding:48px;max-width:760px}h1{font-size:24px}</style><h1>Google approval received</h1><p>Return to LabSuite while it verifies the account and loads YouTube Library.</p><p>This page confirms only the browser approval, not that setup finished.</p>');
           finish(null, { code, verifier, redirectUri: `http://127.0.0.1:${server.address().port}/oauth2/callback` });
         } catch (_) {
           finish(new YouTubeLibraryError('oauthCallback', 'Google authorization callback was malformed.'));
@@ -441,7 +441,7 @@ class YouTubeLibraryProvider {
       try {
         const context = await this._getOAuthContext();
         if (!context?.clientId || !context?.clientSecret || !context?.email) {
-          throw new YouTubeLibraryError('requiresSetup', 'Connect Google Drive with a personal OAuth client before connecting YouTube.');
+          throw new YouTubeLibraryError('requiresSetup', 'Add a personal Google Desktop OAuth client in Suite Settings, then reconnect Drive.');
         }
         const grant = await this._startAuthorization(context);
         const token = await this._tokenRequest({

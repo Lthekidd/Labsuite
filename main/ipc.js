@@ -1550,6 +1550,14 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       const result = await rclone.reconnectGoogleDriveClient(clientId, clientSecret);
       gDriveInfoRefresh = null;
       db.deleteCache('gdrive_info');
+      const driveInfo = await getCachedOrFreshGDriveInfo({ force: true });
+      sendToRenderer('auth:gdriveInfoChanged', driveInfo);
+      if (!driveInfo || driveInfo.email === 'Disconnected') {
+        const detail = String(driveInfo?.error || 'Google Drive could not be reached with the refreshed authorization.');
+        throw new Error(`Google authorization completed, but Drive verification failed: ${detail}`);
+      }
+      await mediaWidget.refreshYouTubeSetupState();
+      tray.refreshTrayHealth?.({ sampleRemote: false });
       return result;
     } finally {
       if (shouldResume) {
@@ -2113,6 +2121,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   ipcMain.handle('labmedia:youtubeReconnect', async () => mediaWidget.reconnectYouTube());
   ipcMain.handle('labmedia:youtubeDisconnect', async () => mediaWidget.disconnectYouTube());
   ipcMain.handle('labmedia:youtubeRefresh', async () => mediaWidget.refreshYouTubeLibrary());
+  ipcMain.handle('labmedia:openYouTubeOAuthSettings', async () => mediaWidget.openYouTubeOAuthSettings());
   ipcMain.handle('labmedia:mediaAction', async (_event, { action, positionSeconds } = {}) => mediaWidget.sendMediaAction(action, { positionSeconds }));
   ipcMain.handle('labmedia:copyTrackInfo', async (_event, { text } = {}) => {
     if (typeof text === 'string' && text.trim()) {

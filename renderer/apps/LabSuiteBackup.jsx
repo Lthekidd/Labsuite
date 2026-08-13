@@ -736,6 +736,18 @@ export default function LabSuiteBackup({ active = true }) {
       }
     });
 
+    listen('auth:gdriveInfoChanged', (_event, info) => {
+      if (!info) return;
+      setGDriveInfo(info);
+      setHealthInfo(previous => ({
+        ...previous,
+        gdriveStatus: info.email === 'Disconnected' ? 'Disconnected' : 'Connected',
+        gdriveError: info.error || null
+      }));
+      invalidateResource('auth:getGDriveInfo');
+      invalidateResource('health:get');
+    });
+
     listen('syncQueue:start', (event, data) => {
       setSyncStatus('syncing');
       setSyncDetails(`Preparing to back up ${data.filesTotal} files`);

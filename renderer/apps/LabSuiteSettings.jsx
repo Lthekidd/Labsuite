@@ -133,8 +133,9 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
       setGoogleClientStatus(status || {});
       setGoogleClientId('');
       setGoogleClientSecret('');
-      setGoogleClientMessage('Google Drive was reauthorized with your personal OAuth client. Backups have resumed.');
+      setGoogleClientMessage('Google Drive was reauthorized and verified with your personal OAuth client. Backups have resumed.');
     } catch (error) {
+      await loadGoogleClientStatus();
       setGoogleClientError(error.message || 'Google Drive could not be reauthorized.');
     } finally {
       setIsReconnectingGoogle(false);
@@ -788,7 +789,7 @@ export default function LabSuiteSettings({ onSidebarFeaturesChange }) {
               >
                 {isReconnectingGoogle && googleClientId.trim() ? 'Approve in Browser...' : 'Save Credentials & Reconnect'}
               </button>
-              {googleClientStatus.hasRemote && (
+              {googleClientStatus.hasRemote && googleClientStatus.usesOwnClientId && (
                 <button
                   className="btn btn-secondary"
                   type="button"

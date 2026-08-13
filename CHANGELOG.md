@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.10.26 - 2026-08-13
+
+### Google OAuth Credentials Persistence & Drive Auth Improvements
+
+- **Personal Google OAuth Client Persistence (`rclone.js`)**:
+  - Re-pins personal Google Desktop client credentials after rclone token updates, ensuring client ID & secret persist reliably across reauthorization.
+- **Drive Auth Event Dispatch**:
+  - Added `auth:gdriveInfoChanged` IPC event listener across renderer views (`App.jsx`, `LabSuiteBackup.jsx`) to update Google Drive connection status reactively without manual page refreshes.
+- **YouTube OAuth Setup Flow**:
+  - Added "Open OAuth setup" action button in LabMedia settings to directly navigate to Google OAuth configuration in Suite Settings when credentials are needed.
+  - Updated OAuth callback HTML response page to avoid premature success messages before token exchange and account validation finish.
+
 ## 2.10.25 - 2026-08-13
 
 ### YouTube & YouTube Music OAuth Library Integration
@@ -12,6 +24,11 @@
   - Registered IPC handlers: `labmedia:youtubeConnect`, `labmedia:youtubeReconnect`, `labmedia:youtubeDisconnect`, `labmedia:youtubeRefresh`.
 - **Expanded Now Playing Flyout**:
   - Added native YouTube Library view in `NowPlayingPanel.xaml` / `NowPlayingPanel.xaml.cs`.
+- **OAuth Setup-State Fix**:
+  - The browser callback now reports only that Google approval was received instead of claiming the Library is connected before token and account verification finish.
+  - LabMedia now links setup-required users directly to Suite Settings → Cloud Account & Security → Google OAuth Client.
+  - Drive reauthorization now performs a live verification, refreshes sidebar/Backup Engine status immediately, and unlocks YouTube connection without restarting LabSuite.
+  - Personal client credentials are re-pinned after rclone refreshes the Drive token, preventing silent fallback to rclone's shared OAuth client.
 
 ## 2.10.24 - 2026-08-13
 

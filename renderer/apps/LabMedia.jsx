@@ -130,7 +130,8 @@ export default function LabMedia({ active = true }) {
       connect: 'labmedia:youtubeConnect',
       reconnect: 'labmedia:youtubeReconnect',
       disconnect: 'labmedia:youtubeDisconnect',
-      refresh: 'labmedia:youtubeRefresh'
+      refresh: 'labmedia:youtubeRefresh',
+      setup: 'labmedia:openYouTubeOAuthSettings'
     };
     const channel = channels[action];
     if (!channel) return;
@@ -453,6 +454,7 @@ function YouTubeConnection({ state = {}, busy, onAction }) {
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7 }}>
         {connection.status === 'requiresAuth' && <button type="button" disabled={busy} onClick={() => onAction('connect')} style={primaryAction}>Connect</button>}
+        {connection.status === 'requiresSetup' && <button type="button" disabled={busy} onClick={() => onAction('setup')} style={primaryAction}>Open OAuth setup</button>}
         {['reauthRequired', 'error'].includes(connection.status) && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={primaryAction}>Reconnect</button>}
         {connected && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh</button>}
         {connected && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={secondaryAction}>Reconnect</button>}
@@ -460,7 +462,7 @@ function YouTubeConnection({ state = {}, busy, onAction }) {
       </div>
     </div>
     {connection.status === 'requiresSetup' && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 9 }}>
-      Configure a personal Google Desktop OAuth client for Drive and enable YouTube Data API v3 in that Google Cloud project.
+      In Suite Settings → Cloud Account &amp; Security → Google OAuth Client, enter a Desktop client ID and secret, save and reconnect Drive, then enable YouTube Data API v3 in that project.
     </div>}
   </div>;
 }

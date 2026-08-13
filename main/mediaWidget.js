@@ -219,6 +219,16 @@ function getMainWindow() {
   return windows.find(w => !w.isDestroyed());
 }
 
+function navigateMainWindow(appId) {
+  const win = getMainWindow();
+  if (!win) return false;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send('app:navigate', appId);
+  return true;
+}
+
 function notifyStatusChanged() {
   const status = getStatus();
   for (const win of BrowserWindow.getAllWindows()) {
@@ -371,13 +381,7 @@ function handleStdoutLine(line) {
       notifyStatusChanged();
     } else if (data.event === 'action') {
       if (data.type === 'openSettings') {
-        const win = getMainWindow();
-        if (win) {
-          if (win.isMinimized()) win.restore();
-          win.show();
-          win.focus();
-          win.webContents.send('app:navigate', 'labmedia');
-        }
+        navigateMainWindow('labmedia');
       } else if (data.type === 'hide') {
         setEnabled(false).catch(error => {
           console.error('mediaWidget: failed to process native hide action:', error.message);
@@ -399,6 +403,10 @@ function handleStdoutLine(line) {
           sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
         });
     } else if (data.event === 'libraryAction') {
+      if (String(data.action || '') === 'openOAuthSettings') {
+        navigateMainWindow('settings');
+        return;
+      }
       youtubeLibraryProvider.handleAction(String(data.action || ''), {
         playlistId: String(data.playlistId || ''),
         videoId: String(data.videoId || '')
@@ -700,6 +708,16 @@ async function refreshYouTubeLibrary() {
   return getStatus();
 }
 
+async function refreshYouTubeSetupState() {
+  await youtubeLibraryProvider.initialize();
+  updateLibraryRuntime();
+  return getStatus();
+}
+
+function openYouTubeOAuthSettings() {
+  return navigateMainWindow('settings');
+}
+
 function sendMediaAction(action = 'playPause', params = {}) {
   if (process.platform !== 'win32') return false;
   const scriptPath = path.join(__dirname, 'controlSmtc.ps1');
@@ -733,6 +751,8 @@ module.exports = {
   reconnectYouTube,
   disconnectYouTube,
   refreshYouTubeLibrary,
+  refreshYouTubeSetupState,
+  openYouTubeOAuthSettings,
   isInstalled,
   handleInstalledAppsChanged,
   setEnabled,
