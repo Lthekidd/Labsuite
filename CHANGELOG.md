@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.10.15 - 2026-08-13
+
+### LabMedia Complete 22-Upgrade Suite & UI Overhaul
+
+- **Taskbar Widget Visual & Design**:
+  - **Frosted Glass Pill Surface**: Translucent rounded pill border (`CornerRadius="8"`) elevating widget appearance on taskbar.
+  - **Segoe UI Variable Typography**: Crisp native Windows 11 variable font rendering for title (11px Bold) and artist (9.5px `#8899aa`).
+  - **Progress Accent Glow**: Dynamic drop shadow glow matching active theme accent color.
+  - **Micro Lozenge Mode**: Added 4th widget width preset (`micro`, 140px lozenge mode showing album art & controls).
+- **Interactive Functionality & Context Menu**:
+  - **Richer Right-Click Context Menu**: Added "📋 Copy Track Title" and "🎵 Copy Artist – Title" clipboard actions.
+  - **Auto-Hide Grace Period**: Configurable grace period timer (`0s`, `5s`, `15s`, `30s`) when media stops.
+- **Settings Interface & Desktop Integration**:
+  - **Live Taskbar Widget Preview**: Real-time visual HTML widget preview updating with theme, size, and layout settings.
+  - **Custom Pill Switch Toggles**: Smooth animated CSS pill toggles replacing raw checkboxes.
+  - **Theme Card Swatches**: Interactive thumbnail cards for Spotify, OLED, Cyberpunk Neon, Glassmorphism, and Minimalist themes.
+  - **Phosphor Section Icons**: Modern iconography across all settings sections.
+  - **Recently Played History Tab**: Rolling 50-track session log with source app badges and one-click clipboard copying.
+  - **Now Playing Toast Notifications**: Optional native Windows desktop notifications on track change.
+
 ## 2.10.14 - 2026-08-13
 
 ### Bug Fixes & Taskbar Player Scroll-Wheel Enhancements

@@ -163,20 +163,33 @@ namespace LabMediaWidget
             double width = 280;
             switch ((_config.Size ?? "normal").ToLower())
             {
+                case "micro":
+                    width = 140;
+                    TxtTitle.MaxWidth = 0;
+                    TxtArtist.MaxWidth = 0;
+                    TxtTitle.Visibility = Visibility.Collapsed;
+                    TxtArtist.Visibility = Visibility.Collapsed;
+                    break;
                 case "compact":
                     width = 200;
                     TxtTitle.MaxWidth = 90;
                     TxtArtist.MaxWidth = 90;
+                    TxtTitle.Visibility = Visibility.Visible;
+                    TxtArtist.Visibility = Visibility.Visible;
                     break;
                 case "large":
                     width = 360;
                     TxtTitle.MaxWidth = 200;
                     TxtArtist.MaxWidth = 200;
+                    TxtTitle.Visibility = Visibility.Visible;
+                    TxtArtist.Visibility = Visibility.Visible;
                     break;
                 default: // normal
                     width = 280;
                     TxtTitle.MaxWidth = 140;
                     TxtArtist.MaxWidth = 140;
+                    TxtTitle.Visibility = Visibility.Visible;
+                    TxtArtist.Visibility = Visibility.Visible;
                     break;
             }
 
@@ -349,6 +362,16 @@ namespace LabMediaWidget
         private void TrackInfo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _smtc.BringAppToFront();
+        }
+
+        private void MenuItem_CopyTitle_Click(object sender, RoutedEventArgs e)
+        {
+            try { Clipboard.SetText(TxtTitle.Text); } catch { }
+        }
+
+        private void MenuItem_CopyArtistTitle_Click(object sender, RoutedEventArgs e)
+        {
+            try { Clipboard.SetText($"{TxtArtist.Text} - {TxtTitle.Text}"); } catch { }
         }
 
         private void MenuItem_Hide_Click(object sender, RoutedEventArgs e)

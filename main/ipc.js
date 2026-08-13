@@ -2104,11 +2104,20 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   // LabMedia API
   ipcMain.handle('labmedia:getStatus', async () => mediaWidget.getStatus());
+  ipcMain.handle('labmedia:getHistory', async () => mediaWidget.getHistory());
   ipcMain.handle('labmedia:setEnabled', async (_event, { enabled } = {}) => mediaWidget.setEnabled(enabled));
   ipcMain.handle('labmedia:updateSettings', async (_event, { updates } = {}) => mediaWidget.updateSettings(updates));
   ipcMain.handle('labmedia:resetSettings', async () => mediaWidget.resetSettings());
   ipcMain.handle('labmedia:restart', async () => mediaWidget.restartWidget());
   ipcMain.handle('labmedia:mediaAction', async (_event, { action, positionSeconds } = {}) => mediaWidget.sendMediaAction(action, { positionSeconds }));
+  ipcMain.handle('labmedia:copyTrackInfo', async (_event, { text } = {}) => {
+    if (typeof text === 'string' && text.trim()) {
+      const { clipboard } = require('electron');
+      clipboard.writeText(text.trim());
+      return true;
+    }
+    return false;
+  });
 
   // Wire up backup engine events to Electron main window webContents
   backupWorker.on('backup:start', () => {

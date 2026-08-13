@@ -242,7 +242,8 @@ $borderHex = "#27272a"
 if ($config -and (Test-Path $config)) {
     try {
         $json = Get-Content $config -Raw | ConvertFrom-Json
-        if ($json.size -eq 'compact') { $targetWidth = 240 }
+        if ($json.size -eq 'micro') { $targetWidth = 140 }
+        elseif ($json.size -eq 'compact') { $targetWidth = 240 }
         elseif ($json.size -eq 'large') { $targetWidth = 380 }
         if ($json.opacity) { $targetOpacity = [double]$json.opacity }
 

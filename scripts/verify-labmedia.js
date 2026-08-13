@@ -19,15 +19,17 @@ function testSettingsValidation() {
 
   // Custom valid settings
   const custom = mediaWidget.validateSettings({
-    size: 'compact',
+    size: 'micro',
     theme: 'neon',
     opacity: 0.75,
+    autoHideGraceSec: 15,
     showAlbumArt: false,
     controls: { previous: false, playPause: true, next: true }
   });
-  assert.strictEqual(custom.size, 'compact');
+  assert.strictEqual(custom.size, 'micro');
   assert.strictEqual(custom.theme, 'neon');
   assert.strictEqual(custom.opacity, 0.75);
+  assert.strictEqual(custom.autoHideGraceSec, 15);
   assert.strictEqual(custom.showAlbumArt, false);
   assert.strictEqual(custom.controls.previous, false);
 
@@ -130,8 +132,8 @@ function testNativeSourceIntegrity() {
   assert.ok(mainWinSource.includes('WS_EX_NOACTIVATE'), 'MainWindow must set WS_EX_NOACTIVATE style');
   assert.ok(mainWinSource.includes('!_hasSession'), 'MainWindow must hide when Spotify has no session');
   assert.ok(mainWinSource.includes('await _smtc.RefreshAsync()'), 'MainWindow must poll for browser sessions created after startup');
-  assert.ok(/x:Name="MainBorder"[^>]*Background="Transparent"[^>]*BorderBrush="Transparent"[^>]*BorderThickness="0"/.test(mainWinXaml),
-    'Widget surface must remain transparent so the native taskbar shows through');
+  assert.ok(/x:Name="MainBorder"[^>]*CornerRadius="8"/.test(mainWinXaml),
+    'Widget surface must use frosted pill style with CornerRadius="8"');
   assert.ok(mainWinXaml.includes('x:Key="MediaIconButton"'), 'Media controls must use the circular vector icon style');
   assert.ok(mainWinXaml.includes('StrokeLineJoin="Round"'), 'Previous and next controls must use rounded vector chevrons');
   assert.ok(!mainWinXaml.includes('Content="⏮"') && !mainWinXaml.includes('Content="⏭"'),

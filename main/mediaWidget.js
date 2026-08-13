@@ -12,6 +12,11 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   size: 'normal',
   theme: 'spotify',
   opacity: 1.0,
+  autoHideGraceSec: 0,
+  showToastNotifications: false,
+  scrobbleLastFm: false,
+  lastFmApiKey: '',
+  lastFmSessionKey: '',
   showAlbumArt: true,
   showProgress: true,
   hideWhenFullscreen: true,
@@ -22,7 +27,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   }
 });
 
-const VALID_SIZES = new Set(['compact', 'normal', 'large']);
+const VALID_SIZES = new Set(['micro', 'compact', 'normal', 'large']);
 const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal']);
 const CRASH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CRASHES_PER_WINDOW = 3;
@@ -31,7 +36,8 @@ const BACKOFF_DELAYS_MS = [1000, 5000, 30000];
 let childProcess = null;
 let currentState = 'stopped'; // 'unsupported' | 'stopped' | 'starting' | 'running' | 'no_session' | 'error'
 let currentError = null;
-let lastSessionInfo = { hasSession: false, title: '', artist: '', isPlaying: false };
+let lastSessionInfo = { hasSession: false, title: '', artist: '', sourceApp: '', isPlaying: false };
+let historyLog = [];
 let crashHistory = [];
 let restartTimer = null;
 let restartPromise = null;
@@ -82,6 +88,17 @@ function validateSettings(raw = {}) {
   } else {
     result.opacity = DEFAULT_LABMEDIA_SETTINGS.opacity;
   }
+
+  if (typeof raw.autoHideGraceSec === 'number' && Number.isFinite(raw.autoHideGraceSec)) {
+    result.autoHideGraceSec = Math.max(0, Math.min(60, Math.round(raw.autoHideGraceSec)));
+  } else {
+    result.autoHideGraceSec = DEFAULT_LABMEDIA_SETTINGS.autoHideGraceSec;
+  }
+
+  result.showToastNotifications = typeof raw.showToastNotifications === 'boolean' ? raw.showToastNotifications : DEFAULT_LABMEDIA_SETTINGS.showToastNotifications;
+  result.scrobbleLastFm = typeof raw.scrobbleLastFm === 'boolean' ? raw.scrobbleLastFm : DEFAULT_LABMEDIA_SETTINGS.scrobbleLastFm;
+  result.lastFmApiKey = typeof raw.lastFmApiKey === 'string' ? raw.lastFmApiKey : DEFAULT_LABMEDIA_SETTINGS.lastFmApiKey;
+  result.lastFmSessionKey = typeof raw.lastFmSessionKey === 'string' ? raw.lastFmSessionKey : DEFAULT_LABMEDIA_SETTINGS.lastFmSessionKey;
 
   result.showAlbumArt = typeof raw.showAlbumArt === 'boolean' ? raw.showAlbumArt : DEFAULT_LABMEDIA_SETTINGS.showAlbumArt;
   result.showProgress = typeof raw.showProgress === 'boolean' ? raw.showProgress : DEFAULT_LABMEDIA_SETTINGS.showProgress;
@@ -224,13 +241,48 @@ function handleStdoutLine(line) {
         notifyStatusChanged();
       }
     } else if (data.event === 'session') {
+      const prevTitle = lastSessionInfo.title;
+      const prevArtist = lastSessionInfo.artist;
+      const newTitle = String(data.title || '');
+      const newArtist = String(data.artist || '');
+      const sourceApp = String(data.sourceApp || 'SMTC');
+
       lastSessionInfo = {
         hasSession: !!data.hasSession,
-        title: String(data.title || ''),
-        artist: String(data.artist || ''),
+        title: newTitle,
+        artist: newArtist,
+        sourceApp,
         isPlaying: !!data.isPlaying
       };
       currentState = data.hasSession ? 'running' : 'no_session';
+
+      // Log to rolling history if track changed
+      if (data.hasSession && newTitle && (newTitle !== prevTitle || newArtist !== prevArtist)) {
+        historyLog.unshift({
+          id: Date.now(),
+          title: newTitle,
+          artist: newArtist || 'Unknown Artist',
+          sourceApp,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          date: new Date().toLocaleDateString()
+        });
+        if (historyLog.length > 50) historyLog.pop();
+
+        // Toast notification if enabled
+        const settings = getSettings();
+        if (settings.showToastNotifications && data.isPlaying) {
+          try {
+            const { Notification } = require('electron');
+            if (Notification.isSupported()) {
+              new Notification({
+                title: `🎵 Now Playing: ${newTitle}`,
+                body: newArtist ? `${newArtist} (${sourceApp})` : sourceApp,
+                silent: true
+              }).show();
+            }
+          } catch (_) {}
+        }
+      }
       notifyStatusChanged();
     } else if (data.event === 'action') {
       if (data.type === 'openSettings') {
@@ -535,12 +587,17 @@ function sendMediaAction(action = 'playPause', params = {}) {
   return false;
 }
 
+function getHistory() {
+  return [...historyLog];
+}
+
 module.exports = {
   isSupported,
   getSettings,
   validateSettings,
   writeConfigFile,
   getStatus,
+  getHistory,
   isInstalled,
   handleInstalledAppsChanged,
   setEnabled,
