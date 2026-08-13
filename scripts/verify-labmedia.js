@@ -136,6 +136,7 @@ function testNativeSourceIntegrity() {
     'LabMedia must never attach its native owner to Explorer');
   assert.ok(!appVolumeSource.includes('Marshal.ReadIntPtr') && !appVolumeSource.includes('GetDelegateForFunctionPointer'),
     'Native volume control must use typed COM interop instead of raw vtable calls');
+  assert.ok(!appVolumeSource.includes('AdjustSystemVolume'), 'AppVolume must not call AdjustSystemVolume');
   assert.ok(!fallbackWorkerSource.includes('Marshal.ReadIntPtr') && !fallbackWorkerSource.includes('GetDelegateForFunctionPointer'),
     'PowerShell fallback must not use unmanaged audio vtable calls');
   assert.ok(/x:Name="MainBorder"[^>]*CornerRadius="8"/.test(mainWinXaml),

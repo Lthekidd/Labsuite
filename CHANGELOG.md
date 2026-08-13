@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.20 - 2026-08-13
+
+### Native C# Compilation Fix
+
+- **Cleaned Up `AdjustSystemVolume` References**:
+  - Removed lingering `AdjustSystemVolume` function calls in `AppVolume.cs` that caused `dotnet publish` to fail on the GitHub Actions Windows release runner during `v2.10.18` and `v2.10.19`.
+  - Native executable compilation now builds cleanly.
+
 ## 2.10.19 - 2026-08-13
 
 ### Native C# Taskbar Widget Theme Support Fix

@@ -113,16 +113,16 @@ namespace LabMediaWidget
             {
                 deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
                 if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
-                    return AdjustSystemVolume(delta);
+                    return 0.0f;
 
                 Guid managerId = typeof(IAudioSessionManager2).GUID;
                 if (device.Activate(ref managerId, 1, IntPtr.Zero, out sessionManagerObject) < 0
                     || sessionManagerObject is not IAudioSessionManager2 manager)
-                    return AdjustSystemVolume(delta);
+                    return 0.0f;
 
                 if (manager.GetSessionEnumerator(out sessionEnumerator) < 0 || sessionEnumerator == null
                     || sessionEnumerator.GetCount(out int sessionCount) < 0)
-                    return AdjustSystemVolume(delta);
+                    return 0.0f;
 
                 bool adjustedAny = false;
                 for (int i = 0; i < sessionCount; i++)
