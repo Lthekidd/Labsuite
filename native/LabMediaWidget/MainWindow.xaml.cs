@@ -551,6 +551,9 @@ namespace LabMediaWidget
             ControlsRail.Width = showSecondary || reserveSecondary ? 88 : 34;
             SetSecondaryControlState(BtnPrev, _config.Controls.Previous, showSecondary, reserveSecondary);
             SetSecondaryControlState(BtnNext, _config.Controls.Next, showSecondary, reserveSecondary);
+            SetSecondaryControlState(BtnRewind, showSecondary, showSecondary, reserveSecondary);
+            SetSecondaryControlState(BtnForward, showSecondary, showSecondary, reserveSecondary);
+            SetSecondaryControlState(BtnLike, showSecondary, showSecondary, reserveSecondary);
             BtnPlayPause.Visibility = _config.Controls.PlayPause ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -749,6 +752,24 @@ namespace LabMediaWidget
         {
             e.Handled = true;
             await _smtc.SkipNextAsync();
+        }
+
+        private async void BtnRewind_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            await _smtc.SeekBackwardAsync(10);
+        }
+
+        private async void BtnForward_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            await _smtc.SeekForwardAsync(10);
+        }
+
+        private void BtnLike_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            _smtc.LikeCurrentTrack();
         }
 
         private async void ProgressTrack_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

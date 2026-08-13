@@ -82,8 +82,14 @@ namespace LabMediaWidget
             BtnNext.IsEnabled = state.CanSkipNext;
             BtnShuffle.IsEnabled = state.HasSession;
             BtnRepeat.IsEnabled = state.HasSession;
+            BtnRewind.IsEnabled = state.HasSession;
+            BtnForward.IsEnabled = state.HasSession;
+            BtnLike.IsEnabled = state.HasSession;
+            BtnDislike.IsEnabled = state.HasSession;
             BtnShuffle.Background = state.ShuffleActive ? AccentBrush() : NeutralBrush();
             BtnRepeat.Background = state.RepeatMode != "none" ? AccentBrush() : NeutralBrush();
+            BtnLike.Background = state.LikeState == "liked" ? AccentBrush() : NeutralBrush();
+            BtnDislike.Background = state.LikeState == "disliked" ? WithOpacity(AccentBrush(), 0.35) : NeutralBrush();
             TxtRepeat.Text = state.RepeatMode == "track" ? "Repeat 1" : "Repeat";
 
             _updatingSession = true;
@@ -331,6 +337,10 @@ namespace LabMediaWidget
         private async void BtnNext_Click(object sender, RoutedEventArgs e) => await _smtc.SkipNextAsync();
         private async void BtnShuffle_Click(object sender, RoutedEventArgs e) => await _smtc.ToggleShuffleAsync();
         private async void BtnRepeat_Click(object sender, RoutedEventArgs e) => await _smtc.CycleRepeatAsync();
+        private async void BtnRewind_Click(object sender, RoutedEventArgs e) => await _smtc.SeekBackwardAsync(10);
+        private async void BtnForward_Click(object sender, RoutedEventArgs e) => await _smtc.SeekForwardAsync(10);
+        private void BtnLike_Click(object sender, RoutedEventArgs e) => _smtc.LikeCurrentTrack();
+        private void BtnDislike_Click(object sender, RoutedEventArgs e) => _smtc.DislikeCurrentTrack();
 
         private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {

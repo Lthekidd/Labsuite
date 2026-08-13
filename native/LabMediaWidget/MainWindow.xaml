@@ -94,8 +94,16 @@
             </StackPanel>
 
             <!-- Media Control Buttons -->
-            <StackPanel x:Name="ControlsRail" Grid.Column="2" Width="88" Orientation="Horizontal"
+            <StackPanel x:Name="ControlsRail" Grid.Column="2" Orientation="Horizontal"
                         HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,2,0">
+                <Button x:Name="BtnLike" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnLike_Click" Cursor="Hand" ToolTip="Like track"
+                        automation:AutomationProperties.Name="Like track">
+                    <TextBlock Text="♥" FontSize="9" FontWeight="Bold" />
+                </Button>
+                <Button x:Name="BtnRewind" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnRewind_Click" Cursor="Hand" ToolTip="Rewind 10s"
+                        automation:AutomationProperties.Name="Rewind 10 seconds">
+                    <TextBlock Text="-10s" FontSize="7.5" FontWeight="Bold" />
+                </Button>
                 <Button x:Name="BtnPrev" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnPrev_Click" Cursor="Hand" ToolTip="Previous"
                         automation:AutomationProperties.Name="Previous track">
                     <Path Data="M 15,5 L 8,12 L 15,19"
@@ -115,6 +123,10 @@
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                           Width="8" Height="13" Stretch="Uniform" />
+                </Button>
+                <Button x:Name="BtnForward" Style="{StaticResource MediaIconButton}" Click="BtnForward_Click" Cursor="Hand" ToolTip="Fast forward 10s" Margin="0,0,3,0"
+                        automation:AutomationProperties.Name="Fast forward 10 seconds">
+                    <TextBlock Text="+10s" FontSize="7.5" FontWeight="Bold" />
                 </Button>
             </StackPanel>
 

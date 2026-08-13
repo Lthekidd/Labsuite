@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.36 - 2026-08-14
+
+### Integrated Like, Dislike, -10s Rewind, and +10s Fast-Forward Controls
+
+- **Taskbar Pill Controls (`MainWindow.xaml`, `MainWindow.xaml.cs`)**:
+  - Added Like (♥), **-10s** Rewind, and **+10s** Fast-Forward controls to the taskbar widget strip.
+- **Expanded Flyout Controls (`NowPlayingPanel.xaml`, `NowPlayingPanel.xaml.cs`, `SmtcManager.cs`)**:
+  - Added 1-click **♥ Like** and **👎 Dislike** buttons with visual state highlights next to track details.
+  - Expanded transport controls to a 7-column grid with dedicated **-10s** Rewind (`BtnRewind`) and **+10s** Fast-Forward (`BtnForward`) buttons for instant 10-second playback seeking!
+
 ## 2.10.35 - 2026-08-14
 
 ### Enabled Interactive Shuffle & Repeat Controls Across All Sessions

@@ -44,6 +44,7 @@ namespace LabMediaWidget
         public bool CanRepeat { get; set; }
         public bool ShuffleActive { get; set; }
         public string RepeatMode { get; set; } = "none";
+        public string LikeState { get; set; } = "none";
         public IReadOnlyList<MediaSessionSummary> Sessions { get; set; } = Array.Empty<MediaSessionSummary>();
         public int SessionCount => Sessions.Count;
     }
@@ -403,6 +404,35 @@ namespace LabMediaWidget
             if (_currentSession == null || !CurrentSessionState.CanSeek) return;
             long ticks = (long)(Math.Max(0, seconds) * TimeSpan.TicksPerSecond);
             await _currentSession.TryChangePlaybackPositionAsync(ticks);
+        }
+
+        public async Task SeekBackwardAsync(double seconds = 10)
+        {
+            if (_currentSession == null) return;
+            double target = Math.Max(0, CurrentSessionState.PositionSeconds - seconds);
+            await SeekToAsync(target);
+        }
+
+        public async Task SeekForwardAsync(double seconds = 10)
+        {
+            if (_currentSession == null) return;
+            double maxDuration = CurrentSessionState.DurationSeconds > 0 ? CurrentSessionState.DurationSeconds : 86400;
+            double target = Math.Min(maxDuration, CurrentSessionState.PositionSeconds + seconds);
+            await SeekToAsync(target);
+        }
+
+        public void LikeCurrentTrack()
+        {
+            if (_currentSession == null) return;
+            CurrentSessionState.LikeState = CurrentSessionState.LikeState == "liked" ? "none" : "liked";
+            SessionStateChanged?.Invoke(this, CurrentSessionState);
+        }
+
+        public void DislikeCurrentTrack()
+        {
+            if (_currentSession == null) return;
+            CurrentSessionState.LikeState = CurrentSessionState.LikeState == "disliked" ? "none" : "disliked";
+            SessionStateChanged?.Invoke(this, CurrentSessionState);
         }
 
         public async Task ToggleShuffleAsync()

@@ -134,9 +134,13 @@
                     <TextBlock x:Name="TxtAlbum" Foreground="#707B88" FontSize="11" Margin="0,2,0,0"
                                TextTrimming="CharacterEllipsis" />
                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="BtnLike" Style="{StaticResource TextActionButton}" Content="♥ Like" Margin="0,0,5,0" Click="BtnLike_Click"
+                                ToolTip="Like track" automation:AutomationProperties.Name="Like track" />
+                        <Button x:Name="BtnDislike" Style="{StaticResource TextActionButton}" Content="👎" Margin="0,0,5,0" Click="BtnDislike_Click"
+                                ToolTip="Dislike track" automation:AutomationProperties.Name="Dislike track" />
                         <Button Style="{StaticResource TextActionButton}" Content="Open source ↗" Click="BtnOpenSource_Click"
                                 automation:AutomationProperties.Name="Open source application" />
-                        <Button Style="{StaticResource TextActionButton}" Content="Copy" Margin="7,0,0,0" Click="MenuItem_Copy_Click"
+                        <Button Style="{StaticResource TextActionButton}" Content="Copy" Margin="5,0,0,0" Click="MenuItem_Copy_Click"
                                 automation:AutomationProperties.Name="Copy artist and title" />
                     </StackPanel>
                 </StackPanel>
@@ -158,8 +162,10 @@
             </Grid>
 
             <!-- Transport controls -->
-            <Grid Margin="18,0,18,14">
+            <Grid Margin="10,0,10,14">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
@@ -170,21 +176,29 @@
                         ToolTip="Shuffle" automation:AutomationProperties.Name="Toggle shuffle">
                     <TextBlock Text="Shuffle" FontSize="8" FontWeight="SemiBold" />
                 </Button>
-                <Button x:Name="BtnPrevious" Grid.Column="1" Style="{StaticResource PanelIconButton}" Click="BtnPrevious_Click"
+                <Button x:Name="BtnRewind" Grid.Column="1" Style="{StaticResource PanelIconButton}" Click="BtnRewind_Click"
+                        ToolTip="Rewind 10s" automation:AutomationProperties.Name="Rewind 10 seconds">
+                    <TextBlock Text="-10s" FontSize="8.5" FontWeight="Bold" />
+                </Button>
+                <Button x:Name="BtnPrevious" Grid.Column="2" Style="{StaticResource PanelIconButton}" Click="BtnPrevious_Click"
                         ToolTip="Previous" automation:AutomationProperties.Name="Previous track">
                     <Path Data="M 15,5 L 8,12 L 15,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="9" Height="15" Stretch="Uniform" />
+                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="8" Height="13" Stretch="Uniform" />
                 </Button>
-                <Button x:Name="BtnPlayPause" Grid.Column="2" Style="{StaticResource PanelPrimaryButton}" Click="BtnPlayPause_Click"
+                <Button x:Name="BtnPlayPause" Grid.Column="3" Style="{StaticResource PanelPrimaryButton}" Click="BtnPlayPause_Click"
                         ToolTip="Play or pause" automation:AutomationProperties.Name="Play or pause">
-                    <Path x:Name="PathPlayPause" Data="M 7,5 L 18,12 L 7,19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="16" Stretch="Uniform" />
+                    <Path x:Name="PathPlayPause" Data="M 7,5 L 18,12 L 7,19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="13" Height="14" Stretch="Uniform" />
                 </Button>
-                <Button x:Name="BtnNext" Grid.Column="3" Style="{StaticResource PanelIconButton}" Click="BtnNext_Click"
+                <Button x:Name="BtnNext" Grid.Column="4" Style="{StaticResource PanelIconButton}" Click="BtnNext_Click"
                         ToolTip="Next" automation:AutomationProperties.Name="Next track">
                     <Path Data="M 9,5 L 16,12 L 9,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="9" Height="15" Stretch="Uniform" />
+                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="8" Height="13" Stretch="Uniform" />
                 </Button>
-                <Button x:Name="BtnRepeat" Grid.Column="4" Style="{StaticResource PanelIconButton}" Click="BtnRepeat_Click"
+                <Button x:Name="BtnForward" Grid.Column="5" Style="{StaticResource PanelIconButton}" Click="BtnForward_Click"
+                        ToolTip="Fast forward 10s" automation:AutomationProperties.Name="Fast forward 10 seconds">
+                    <TextBlock Text="+10s" FontSize="8.5" FontWeight="Bold" />
+                </Button>
+                <Button x:Name="BtnRepeat" Grid.Column="6" Style="{StaticResource PanelIconButton}" Click="BtnRepeat_Click"
                         ToolTip="Repeat" automation:AutomationProperties.Name="Change repeat mode">
                     <TextBlock x:Name="TxtRepeat" Text="Repeat" FontSize="8" FontWeight="SemiBold" />
                 </Button>
