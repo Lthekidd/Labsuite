@@ -410,6 +410,8 @@ function handleStdoutLine(line) {
       youtubeLibraryProvider.handleAction(String(data.action || ''), {
         playlistId: String(data.playlistId || ''),
         videoId: String(data.videoId || '')
+      }).then(() => {
+        updateLibraryRuntime();
       }).catch(() => {
         updateLibraryRuntime();
         notifyStatusChanged();

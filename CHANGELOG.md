@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.10.29 - 2026-08-13
+
+### Instant Panel Tab Switch On Playback Handoff
+
+- **Seamless Panel Transition (`NowPlayingPanel.xaml.cs`)**:
+  - When clicking any track or playlist from the YouTube Library view, the panel automatically transitions back to the **Now Playing** tab so the active track, live artwork, progress scrubber, and volume controls are displayed right inside the panel.
+
 ## 2.10.28 - 2026-08-13
 
 ### Flyout Solid Background & YouTube Music Naming Refinements

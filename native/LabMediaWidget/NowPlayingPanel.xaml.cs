@@ -426,7 +426,11 @@ namespace LabMediaWidget
         private void BtnLibraryOpenPlaylist_Click(object sender, RoutedEventArgs e)
         {
             string? playlistId = _libraryState.Library.SelectedPlaylist?.Id;
-            if (!string.IsNullOrWhiteSpace(playlistId)) LibraryActionRequested?.Invoke("openPlaylist", playlistId, null);
+            if (!string.IsNullOrWhiteSpace(playlistId))
+            {
+                LibraryActionRequested?.Invoke("openPlaylist", playlistId, null);
+                SelectNowPlayingTab(false);
+            }
         }
 
         private void LibraryPlaylist_Click(object sender, RoutedEventArgs e)
@@ -438,14 +442,21 @@ namespace LabMediaWidget
         private void LibraryPlaylistOpen_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is string playlistId)
+            {
                 LibraryActionRequested?.Invoke("openPlaylist", playlistId, null);
+                SelectNowPlayingTab(false);
+            }
         }
 
         private void LibraryTrack_Click(object sender, RoutedEventArgs e)
         {
             if (sender is not Button button || button.Tag is not string videoId) return;
             string? playlistId = _libraryState.Library.SelectedPlaylist?.Id;
-            if (!string.IsNullOrWhiteSpace(playlistId)) LibraryActionRequested?.Invoke("openTrack", playlistId, videoId);
+            if (!string.IsNullOrWhiteSpace(playlistId))
+            {
+                LibraryActionRequested?.Invoke("openTrack", playlistId, videoId);
+                SelectNowPlayingTab(false);
+            }
         }
 
         private void Window_Deactivated(object? sender, EventArgs e)
