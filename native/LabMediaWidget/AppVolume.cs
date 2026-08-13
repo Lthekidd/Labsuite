@@ -6,164 +6,203 @@ namespace LabMediaWidget
 {
     [ComImport]
     [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    public class MMDeviceEnumeratorComObject {}
+    internal class MMDeviceEnumeratorComObject { }
 
     [ComImport]
     [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IMMDeviceEnumerator
+    internal interface IMMDeviceEnumerator
     {
-        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr ppDevices);
-        [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+        [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice device);
     }
 
     [ComImport]
     [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IMMDevice
+    internal interface IMMDevice
     {
-        [PreserveSig] int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+        [PreserveSig]
+        int Activate(
+            ref Guid iid,
+            int classContext,
+            IntPtr activationParameters,
+            [MarshalAs(UnmanagedType.IUnknown)] out object activatedInterface);
     }
 
     [ComImport]
     [Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    public interface IAudioSessionManager2
+    internal interface IAudioSessionManager2
     {
-        [PreserveSig] int M0();
-        [PreserveSig] int M1();
-        [PreserveSig] int GetSessionEnumerator(out IntPtr SessionEnum);
+        [PreserveSig] int GetAudioSessionControl(IntPtr sessionGuid, uint streamFlags, out IntPtr sessionControl);
+        [PreserveSig] int GetSimpleAudioVolume(IntPtr sessionGuid, uint streamFlags, out IntPtr audioVolume);
+        [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator sessionEnumerator);
     }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate int GetCountDelegate(IntPtr instance, out int count);
+    [ComImport]
+    [Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioSessionEnumerator
+    {
+        [PreserveSig] int GetCount(out int sessionCount);
+        [PreserveSig] int GetSession(int sessionIndex, out IAudioSessionControl sessionControl);
+    }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate int GetSessionDelegate(IntPtr instance, int index, out IntPtr sessionControl);
+    [ComImport]
+    [Guid("F4B1A599-7266-4319-A8CA-E70ACB11E8CD")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioSessionControl
+    {
+        [PreserveSig] int GetState(out int state);
+        [PreserveSig] int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string displayName);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string displayName, IntPtr eventContext);
+        [PreserveSig] int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string iconPath);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string iconPath, IntPtr eventContext);
+        [PreserveSig] int GetGroupingParam(out Guid groupingId);
+        [PreserveSig] int SetGroupingParam(ref Guid groupingId, IntPtr eventContext);
+        [PreserveSig] int RegisterAudioSessionNotification(IntPtr client);
+        [PreserveSig] int UnregisterAudioSessionNotification(IntPtr client);
+    }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate int GetMasterVolumeDelegate(IntPtr instance, out float level);
+    // COM interface inheritance is deliberately flattened. This preserves the
+    // native vtable order without reading or invoking function pointers by hand.
+    [ComImport]
+    [Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioSessionControl2
+    {
+        [PreserveSig] int GetState(out int state);
+        [PreserveSig] int GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string displayName);
+        [PreserveSig] int SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string displayName, IntPtr eventContext);
+        [PreserveSig] int GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string iconPath);
+        [PreserveSig] int SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string iconPath, IntPtr eventContext);
+        [PreserveSig] int GetGroupingParam(out Guid groupingId);
+        [PreserveSig] int SetGroupingParam(ref Guid groupingId, IntPtr eventContext);
+        [PreserveSig] int RegisterAudioSessionNotification(IntPtr client);
+        [PreserveSig] int UnregisterAudioSessionNotification(IntPtr client);
+        [PreserveSig] int GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string sessionIdentifier);
+        [PreserveSig] int GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string sessionInstanceIdentifier);
+        [PreserveSig] int GetProcessId(out uint processId);
+    }
 
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate int SetMasterVolumeDelegate(IntPtr instance, float level, ref Guid eventContext);
-
-    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    public delegate int GetProcessIdDelegate(IntPtr instance, out uint pid);
+    [ComImport]
+    [Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface ISimpleAudioVolume
+    {
+        [PreserveSig] int SetMasterVolume(float level, ref Guid eventContext);
+        [PreserveSig] int GetMasterVolume(out float level);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool muted, ref Guid eventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool muted);
+    }
 
     public static class AppVolume
     {
         [DllImport("user32.dll")]
-        public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+        private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
 
         public static float AdjustMediaVolume(string activeAppHint, float delta)
         {
+            IMMDeviceEnumerator? deviceEnumerator = null;
+            IMMDevice? device = null;
+            object? sessionManagerObject = null;
+            IAudioSessionEnumerator? sessionEnumerator = null;
+
             try
             {
-                IMMDeviceEnumerator enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-                IMMDevice? device;
-                if (enumerator.GetDefaultAudioEndpoint(0, 0, out device) == 0 && device != null)
+                deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+                if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
+                    return AdjustSystemVolume(delta);
+
+                Guid managerId = typeof(IAudioSessionManager2).GUID;
+                if (device.Activate(ref managerId, 1, IntPtr.Zero, out sessionManagerObject) < 0
+                    || sessionManagerObject is not IAudioSessionManager2 manager)
+                    return AdjustSystemVolume(delta);
+
+                if (manager.GetSessionEnumerator(out sessionEnumerator) < 0 || sessionEnumerator == null
+                    || sessionEnumerator.GetCount(out int sessionCount) < 0)
+                    return AdjustSystemVolume(delta);
+
+                bool adjustedAny = false;
+                for (int i = 0; i < sessionCount; i++)
                 {
-                    Guid IID_IAudioSessionManager2 = typeof(IAudioSessionManager2).GUID;
-                    object sessionManagerObj;
-                    if (device.Activate(ref IID_IAudioSessionManager2, 1, IntPtr.Zero, out sessionManagerObj) == 0 && sessionManagerObj != null)
+                    IAudioSessionControl? session = null;
+                    try
                     {
-                        IAudioSessionManager2 mgr = (IAudioSessionManager2)sessionManagerObj;
-                        IntPtr enumPtr;
-                        if (mgr.GetSessionEnumerator(out enumPtr) == 0 && enumPtr != IntPtr.Zero)
-                        {
-                            IntPtr enumVtbl = Marshal.ReadIntPtr(enumPtr);
-                            IntPtr getCountPtr = Marshal.ReadIntPtr(enumVtbl, 3 * IntPtr.Size);
-                            IntPtr getSessionPtr = Marshal.ReadIntPtr(enumVtbl, 4 * IntPtr.Size);
+                        if (sessionEnumerator.GetSession(i, out session) < 0 || session == null
+                            || session is not IAudioSessionControl2 session2
+                            || session is not ISimpleAudioVolume volume
+                            || session2.GetProcessId(out uint processId) < 0)
+                            continue;
 
-                            GetCountDelegate getCount = (GetCountDelegate)Marshal.GetDelegateForFunctionPointer(getCountPtr, typeof(GetCountDelegate));
-                            GetSessionDelegate getSession = (GetSessionDelegate)Marshal.GetDelegateForFunctionPointer(getSessionPtr, typeof(GetSessionDelegate));
+                        string processName = "";
+                        try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
+                        if (!IsMediaProcess(processName, activeAppHint))
+                            continue;
 
-                            int count = 0;
-                            getCount(enumPtr, out count);
+                        if (volume.GetMasterVolume(out float currentVolume) < 0)
+                            continue;
 
-                            bool adjustedAny = false;
-                            for (int i = 0; i < count; i++)
-                            {
-                                IntPtr ctrlPtr;
-                                if (getSession(enumPtr, i, out ctrlPtr) == 0 && ctrlPtr != IntPtr.Zero)
-                                {
-                                    Guid iidCtrl2 = new Guid("bfb962ee-9719-4635-972d-11a248e55e6a");
-                                    IntPtr ctrl2Ptr;
-                                    int hrQ2 = Marshal.QueryInterface(ctrlPtr, ref iidCtrl2, out ctrl2Ptr);
-
-                                    Guid iidVol = new Guid("87017A66-5343-4165-894E-577265F76C2A");
-                                    IntPtr volPtr;
-                                    int hrQVol = Marshal.QueryInterface(ctrlPtr, ref iidVol, out volPtr);
-
-                                    if (hrQVol == 0 && volPtr != IntPtr.Zero)
-                                    {
-                                        string pName = "";
-                                        if (hrQ2 == 0 && ctrl2Ptr != IntPtr.Zero)
-                                        {
-                                            IntPtr ctrl2Vtbl = Marshal.ReadIntPtr(ctrl2Ptr);
-                                            IntPtr getPidPtr = Marshal.ReadIntPtr(ctrl2Vtbl, 14 * IntPtr.Size);
-                                            GetProcessIdDelegate getPid = (GetProcessIdDelegate)Marshal.GetDelegateForFunctionPointer(getPidPtr, typeof(GetProcessIdDelegate));
-                                            uint pid = 0;
-                                            getPid(ctrl2Ptr, out pid);
-                                            try { pName = Process.GetProcessById((int)pid).ProcessName; } catch { }
-                                        }
-
-                                        bool isMatch = false;
-                                        if (!string.IsNullOrEmpty(activeAppHint) && pName.Length > 0)
-                                        {
-                                            if (pName.IndexOf(activeAppHint, StringComparison.OrdinalIgnoreCase) >= 0 || activeAppHint.IndexOf(pName, StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                isMatch = true;
-                                            }
-                                        }
-                                        if (!isMatch && pName.Length > 0)
-                                        {
-                                            if (pName.IndexOf("spotify", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                pName.IndexOf("chrome", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                pName.IndexOf("msedge", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                pName.IndexOf("firefox", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                pName.IndexOf("brave", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                pName.IndexOf("opera", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            {
-                                                isMatch = true;
-                                            }
-                                        }
-
-                                        if (isMatch)
-                                        {
-                                            IntPtr volVtbl = Marshal.ReadIntPtr(volPtr);
-                                            IntPtr setVolPtr = Marshal.ReadIntPtr(volVtbl, 3 * IntPtr.Size);
-                                            IntPtr getVolPtr = Marshal.ReadIntPtr(volVtbl, 4 * IntPtr.Size);
-
-                                            SetMasterVolumeDelegate setVol = (SetMasterVolumeDelegate)Marshal.GetDelegateForFunctionPointer(setVolPtr, typeof(SetMasterVolumeDelegate));
-                                            GetMasterVolumeDelegate getVol = (GetMasterVolumeDelegate)Marshal.GetDelegateForFunctionPointer(getVolPtr, typeof(GetMasterVolumeDelegate));
-
-                                            float currentVol = 0;
-                                            getVol(volPtr, out currentVol);
-                                            float newVol = Math.Clamp(currentVol + delta, 0.0f, 1.0f);
-                                            Guid empty = Guid.Empty;
-                                            setVol(volPtr, newVol, ref empty);
-                                            adjustedAny = true;
-                                        }
-
-                                        Marshal.Release(volPtr);
-                                        if (ctrl2Ptr != IntPtr.Zero) Marshal.Release(ctrl2Ptr);
-                                    }
-                                    Marshal.Release(ctrlPtr);
-                                }
-                            }
-                            Marshal.Release(enumPtr);
-                            if (adjustedAny) return 1.0f;
-                        }
+                        float newVolume = Math.Clamp(currentVolume + delta, 0.0f, 1.0f);
+                        Guid eventContext = Guid.Empty;
+                        if (volume.SetMasterVolume(newVolume, ref eventContext) >= 0)
+                            adjustedAny = true;
+                    }
+                    finally
+                    {
+                        ReleaseComObject(session);
                     }
                 }
-            }
-            catch { }
 
-            byte vk = (delta > 0) ? (byte)0xAF : (byte)0xAE;
-            keybd_event(vk, 0, 0, UIntPtr.Zero);
-            keybd_event(vk, 0, 2, UIntPtr.Zero);
+                return adjustedAny ? 1.0f : AdjustSystemVolume(delta);
+            }
+            catch (COMException)
+            {
+                return AdjustSystemVolume(delta);
+            }
+            catch (InvalidCastException)
+            {
+                return AdjustSystemVolume(delta);
+            }
+            finally
+            {
+                ReleaseComObject(sessionEnumerator);
+                ReleaseComObject(sessionManagerObject);
+                ReleaseComObject(device);
+                ReleaseComObject(deviceEnumerator);
+            }
+        }
+
+        private static bool IsMediaProcess(string processName, string activeAppHint)
+        {
+            if (string.IsNullOrWhiteSpace(processName)) return false;
+
+            if (!string.IsNullOrWhiteSpace(activeAppHint)
+                && (processName.Contains(activeAppHint, StringComparison.OrdinalIgnoreCase)
+                    || activeAppHint.Contains(processName, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            return processName.Contains("spotify", StringComparison.OrdinalIgnoreCase)
+                || processName.Contains("chrome", StringComparison.OrdinalIgnoreCase)
+                || processName.Contains("msedge", StringComparison.OrdinalIgnoreCase)
+                || processName.Contains("firefox", StringComparison.OrdinalIgnoreCase)
+                || processName.Contains("brave", StringComparison.OrdinalIgnoreCase)
+                || processName.Contains("opera", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static float AdjustSystemVolume(float delta)
+        {
+            byte virtualKey = delta > 0 ? (byte)0xAF : (byte)0xAE;
+            keybd_event(virtualKey, 0, 0, UIntPtr.Zero);
+            keybd_event(virtualKey, 0, 2, UIntPtr.Zero);
             return 0.0f;
+        }
+
+        private static void ReleaseComObject(object? value)
+        {
+            if (value == null || !Marshal.IsComObject(value)) return;
+            try { Marshal.FinalReleaseComObject(value); } catch { }
         }
     }
 }

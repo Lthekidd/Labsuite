@@ -1,7 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Windows.Automation;
-using Microsoft.Win32;
 
 namespace LabMediaWidget
 {
@@ -79,90 +77,6 @@ namespace LabMediaWidget
             }
 
             return info;
-        }
-
-        private static bool IsTaskbarLeftAligned()
-        {
-            // Windows 10 has no TaskbarAl value and always uses the classic
-            // left-aligned taskbar. A missing value only means centered on 11.
-            if (Environment.OSVersion.Version.Build < 22000) return true;
-
-            try
-            {
-                using var key = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
-                return key?.GetValue("TaskbarAl") is int value && value == 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static (bool Ok, double? WidgetsRight, double? StartLeft, double? StartRight,
-            double? TaskButtonsRight) ReadTaskbarAnchors(IntPtr taskbar)
-        {
-            double? startLeft = null;
-            double? startRight = null;
-            double? taskButtonsRight = NativeMethods.GetLegacyTaskButtonsRight(taskbar);
-
-            var nativeStart = NativeMethods.GetStartButtonBounds(taskbar);
-            if (nativeStart.HasValue)
-            {
-                startLeft = nativeStart.Value.Left;
-                startRight = nativeStart.Value.Right;
-            }
-
-            try
-            {
-                var root = AutomationElement.FromHandle(taskbar);
-                var widgets = root.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, "WidgetsButton"));
-                var start = root.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.AutomationIdProperty, "StartButton"));
-
-                double? widgetsRight = null;
-
-                if (widgets != null)
-                {
-                    var bounds = widgets.Current.BoundingRectangle;
-                    if (!bounds.IsEmpty) widgetsRight = bounds.Right;
-                }
-
-                if (start != null)
-                {
-                    var bounds = start.Current.BoundingRectangle;
-                    if (!bounds.IsEmpty)
-                    {
-                        startLeft = bounds.Left;
-                        startRight = bounds.Right;
-                    }
-                }
-
-                var buttons = root.FindAll(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
-                foreach (AutomationElement button in buttons)
-                {
-                    try
-                    {
-                        string className = button.Current.ClassName ?? string.Empty;
-                        if (!className.StartsWith("Taskbar.TaskListButton", StringComparison.Ordinal))
-                            continue;
-                        var bounds = button.Current.BoundingRectangle;
-                        if (!bounds.IsEmpty && (!taskButtonsRight.HasValue || bounds.Right > taskButtonsRight.Value))
-                            taskButtonsRight = bounds.Right;
-                    }
-                    catch { }
-                }
-
-                return (true, widgetsRight, startLeft, startRight, taskButtonsRight);
-            }
-            catch
-            {
-                // Windows 10's classic taskbar does not expose its buttons via
-                // UI Automation. Native Start/MSAA bounds remain authoritative.
-                return (startLeft.HasValue, null, startLeft, startRight, taskButtonsRight);
-            }
         }
 
         public static bool IsForegroundFullscreen(IntPtr self, IntPtr taskbar)

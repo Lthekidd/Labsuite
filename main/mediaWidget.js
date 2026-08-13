@@ -173,10 +173,7 @@ function writeConfigFile(settings) {
 function resolveExecutablePath() {
   const candidates = [
     app.isPackaged && process.resourcesPath ? path.join(process.resourcesPath, 'bin', 'LabMediaWidget.exe') : null,
-    path.join(__dirname, '../bin', 'LabMediaWidget.exe'),
-    path.join(__dirname, '../native/LabMediaWidget/bin/Release/net8.0-windows10.0.22000.0/win-x64/publish/LabMediaWidget.exe'),
-    path.join(__dirname, '../native/LabMediaWidget/bin/Release/net8.0-windows10.0.22000.0/win-x64/LabMediaWidget.exe'),
-    path.join(__dirname, '../native/LabMediaWidget/bin/Debug/net8.0-windows10.0.22000.0/win-x64/LabMediaWidget.exe')
+    path.join(__dirname, '../bin', 'LabMediaWidget.exe')
   ].filter(Boolean);
 
   for (const candidate of candidates) {

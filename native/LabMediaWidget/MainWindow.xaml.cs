@@ -23,7 +23,6 @@ namespace LabMediaWidget
         private uint _taskbarCreatedMsg;
         private double _currentDurationSeconds = 0;
         private bool _hasSession;
-        private IntPtr _ownerTaskbar;
 
         public MainWindow()
         {
@@ -315,7 +314,6 @@ namespace LabMediaWidget
         {
             if (msg == _taskbarCreatedMsg)
             {
-                _ownerTaskbar = IntPtr.Zero;
                 UpdatePositionAndVisibility();
                 handled = true;
             }

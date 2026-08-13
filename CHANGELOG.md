@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.17 - 2026-08-13
+
+### Native Audio Session COM Refactoring & Code Quality Improvements
+
+- **Typed WASAPI Audio COM Interop**:
+  - Replaced manual vtable `Marshal.ReadIntPtr` offsets in `AppVolume.cs` with strongly-typed COM interfaces (`IMMDeviceEnumerator`, `IMMDevice`, `IAudioSessionManager2`, `IAudioSessionEnumerator`, `IAudioSessionControl2`, `ISimpleAudioVolume`).
+  - Improved process matching for active media sessions (Spotify, Chrome, Edge, Firefox, Brave, Opera) with deterministic COM reference cleanup (`FinalReleaseComObject`).
+- **PowerShell Worker Cleanups**:
+  - Simplified native media volume delegation in `smtcWorker.ps1` to prevent unmanaged vtable delegate allocations.
+
 ## 2.10.16 - 2026-08-13
 
 ### Critical Stability Fix: Eliminate Windows Taskbar & Explorer Crashes
@@ -9,6 +19,9 @@
 - **Eliminated UI Automation Polling**:
   - Switched from querying COM `AutomationElement.FromHandle` on every 1-second timer tick to a zero-overhead pure native Win32 calculation (`FindWindowEx("TrayNotifyWnd")` + `GetWindowRect`).
   - Completely prevents thread contention and COM flooding on Explorer's `taskbar.dll` thread.
+- **Hardened Volume Control & Native Deployment**:
+  - Replaced raw COM vtable pointer calls in per-app volume control with typed COM interfaces; the PowerShell fallback now uses safe media-key events.
+  - The launcher now accepts only the explicitly published `bin/LabMediaWidget.exe`, preventing stale native build outputs from bypassing taskbar safety fixes.
 
 ## 2.10.15 - 2026-08-13
 

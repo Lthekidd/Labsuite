@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
-using Accessibility;
 
 namespace LabMediaWidget
 {
@@ -10,7 +9,6 @@ namespace LabMediaWidget
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
         public const int WS_EX_NOACTIVATE = 0x08000000;
-        public const int GWLP_HWNDPARENT = -8;
         public const uint MONITOR_DEFAULTTONEAREST = 2;
 
         public const uint SWP_NOSIZE = 0x0001;
@@ -66,18 +64,11 @@ namespace LabMediaWidget
 
         public const uint ABM_GETSTATE = 0x00000004;
         public const uint ABS_AUTOHIDE = 0x00000001;
-        private const uint OBJID_CLIENT = 0xFFFFFFFC;
-
-        private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
-
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr FindWindow(string? lpClassName, string? lpWindowName);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string? lpszClass, string? lpszWindow);
-
-        [DllImport("user32.dll")]
-        private static extern bool EnumChildWindows(IntPtr hwndParent, EnumWindowsProc callback, IntPtr lParam);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
@@ -142,13 +133,6 @@ namespace LabMediaWidget
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
-        [DllImport("oleacc.dll")]
-        private static extern int AccessibleObjectFromWindow(
-            IntPtr hwnd,
-            uint objectId,
-            ref Guid interfaceId,
-            [In, Out, MarshalAs(UnmanagedType.Interface)] ref IAccessible? accessible);
-
         public static string GetWindowClassName(IntPtr hwnd)
         {
             var buffer = new StringBuilder(256);
@@ -162,69 +146,6 @@ namespace LabMediaWidget
             return notify != IntPtr.Zero && GetWindowRect(notify, out RECT bounds)
                 ? bounds.Left
                 : null;
-        }
-
-        public static RECT? GetStartButtonBounds(IntPtr taskbar)
-        {
-            IntPtr start = FindDescendantByClass(taskbar, "Start");
-            return start != IntPtr.Zero && GetWindowRect(start, out RECT bounds)
-                ? bounds
-                : null;
-        }
-
-        public static int? GetLegacyTaskButtonsRight(IntPtr taskbar)
-        {
-            IntPtr taskList = FindDescendantByClass(taskbar, "MSTaskListWClass");
-            if (taskList == IntPtr.Zero) return null;
-
-            IAccessible? accessible = null;
-            try
-            {
-                Guid iid = new Guid("618736e0-3c3d-11cf-810c-00aa00389b71");
-                if (AccessibleObjectFromWindow(taskList, OBJID_CLIENT, ref iid, ref accessible) != 0
-                    || accessible == null)
-                    return null;
-
-                int? right = null;
-                for (int childId = 1; childId <= accessible.accChildCount; childId++)
-                {
-                    try
-                    {
-                        accessible.accLocation(out int left, out _, out int width, out int height, childId);
-                        if (width <= 0 || height <= 0) continue;
-                        int candidate = left + width;
-                        if (!right.HasValue || candidate > right.Value) right = candidate;
-                    }
-                    catch { }
-                }
-                return right;
-            }
-            catch
-            {
-                return null;
-            }
-            finally
-            {
-                if (accessible != null && Marshal.IsComObject(accessible))
-                {
-                    try { Marshal.ReleaseComObject(accessible); } catch { }
-                }
-            }
-        }
-
-        private static IntPtr FindDescendantByClass(IntPtr parent, string className)
-        {
-            IntPtr result = IntPtr.Zero;
-            EnumChildWindows(parent, (hwnd, _) =>
-            {
-                if (string.Equals(GetWindowClassName(hwnd), className, StringComparison.Ordinal))
-                {
-                    result = hwnd;
-                    return false;
-                }
-                return true;
-            }, IntPtr.Zero);
-            return result;
         }
 
         public static bool IsAutoHideEnabled()

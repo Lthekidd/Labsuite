@@ -99,6 +99,8 @@ function testIpcChannelsAllowlist() {
   assert.ok(supervisorSource.includes('intentionalStops'), 'Supervisor must track intentional stops per child process');
   assert.ok(supervisorSource.includes("spawnedProcess.once('error'"), 'Supervisor must handle child spawn errors');
   assert.ok(supervisorSource.includes('if (!isInstalled() || !settings.enabled)'), 'Supervisor must require installation before launch');
+  assert.ok(!supervisorSource.includes("../native/LabMediaWidget/bin/"),
+    'Supervisor must not launch stale native build outputs when the published helper is missing');
   console.log('labmedia-test: IPC channel allowlist tests passed.');
 }
 
@@ -116,13 +118,23 @@ function testNativeSourceIntegrity() {
   const anchorSource = fs.readFileSync(path.join(nativeDir, 'TaskbarAnchor.cs'), 'utf8');
   assert.ok(anchorSource.includes('Shell_TrayWnd'), 'Taskbar anchor must find Shell_TrayWnd handle');
   assert.ok(anchorSource.includes('IsAutoHideEnabled'), 'Taskbar anchor must follow taskbar auto-hide state');
+  assert.ok(!anchorSource.includes('AutomationElement'), 'Taskbar polling must not query Explorer through UI Automation');
 
   const mainWinSource = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml.cs'), 'utf8');
+  const nativeMethodsSource = fs.readFileSync(path.join(nativeDir, 'NativeMethods.cs'), 'utf8');
+  const appVolumeSource = fs.readFileSync(path.join(nativeDir, 'AppVolume.cs'), 'utf8');
+  const fallbackWorkerSource = fs.readFileSync(path.join(ROOT, 'main', 'smtcWorker.ps1'), 'utf8');
   const mainWinXaml = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml'), 'utf8');
   assert.ok(mainWinSource.includes('WS_EX_TOOLWINDOW'), 'MainWindow must set WS_EX_TOOLWINDOW style');
   assert.ok(mainWinSource.includes('WS_EX_NOACTIVATE'), 'MainWindow must set WS_EX_NOACTIVATE style');
   assert.ok(mainWinSource.includes('!_hasSession'), 'MainWindow must hide when Spotify has no session');
   assert.ok(mainWinSource.includes('await _smtc.RefreshAsync()'), 'MainWindow must poll for browser sessions created after startup');
+  assert.ok(!mainWinSource.includes('GWLP_HWNDPARENT') && !nativeMethodsSource.includes('GWLP_HWNDPARENT'),
+    'LabMedia must never attach its native owner to Explorer');
+  assert.ok(!appVolumeSource.includes('Marshal.ReadIntPtr') && !appVolumeSource.includes('GetDelegateForFunctionPointer'),
+    'Native volume control must use typed COM interop instead of raw vtable calls');
+  assert.ok(!fallbackWorkerSource.includes('Marshal.ReadIntPtr') && !fallbackWorkerSource.includes('GetDelegateForFunctionPointer'),
+    'PowerShell fallback must not use unmanaged audio vtable calls');
   assert.ok(/x:Name="MainBorder"[^>]*CornerRadius="8"/.test(mainWinXaml),
     'Widget surface must use frosted pill style with CornerRadius="8"');
   assert.ok(mainWinXaml.includes('x:Key="MediaIconButton"'), 'Media controls must use the circular vector icon style');
