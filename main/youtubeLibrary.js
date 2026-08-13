@@ -16,6 +16,8 @@ const SCOPES = Object.freeze([
   'email',
   'https://www.googleapis.com/auth/youtube.readonly'
 ]);
+const CANONICAL_EMAIL_SCOPE = 'https://www.googleapis.com/auth/userinfo.email';
+const YOUTUBE_READONLY_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
 const CONNECTION_STATES = Object.freeze([
   'requiresSetup', 'requiresAuth', 'connecting', 'connected', 'reauthRequired', 'error'
 ]);
@@ -115,6 +117,21 @@ function parseRetryAfter(value, now = Date.now()) {
   if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000));
   const date = Date.parse(value);
   return Number.isFinite(date) ? Math.max(0, date - now) : 0;
+}
+
+function hasRequiredScopes(scopeValue) {
+  const granted = new Set(String(scopeValue || '').split(/\s+/).filter(Boolean));
+  const hasEmailIdentity = granted.has('email') || granted.has(CANONICAL_EMAIL_SCOPE);
+  return granted.has('openid') && hasEmailIdentity && granted.has(YOUTUBE_READONLY_SCOPE);
+}
+
+function missingRequiredScopes(scopeValue) {
+  const granted = new Set(String(scopeValue || '').split(/\s+/).filter(Boolean));
+  const missing = [];
+  if (!granted.has('openid')) missing.push('openid');
+  if (!granted.has('email') && !granted.has(CANONICAL_EMAIL_SCOPE)) missing.push('email');
+  if (!granted.has(YOUTUBE_READONLY_SCOPE)) missing.push('youtube.readonly');
+  return missing;
 }
 
 function delay(ms) {
@@ -455,10 +472,17 @@ class YouTubeLibraryProvider {
         const accessToken = String(token.access_token || '');
         const refreshToken = String(token.refresh_token || '');
         if (!accessToken || !refreshToken) throw new YouTubeLibraryError('oauthError', 'Google did not return a durable YouTube grant. Try Reconnect.');
-        const grantedScopes = new Set(String(token.scope || '').split(/\s+/).filter(Boolean));
-        if (!SCOPES.every(scope => grantedScopes.has(scope))) {
+        // Google may canonicalize the requested `email` scope to
+        // `https://www.googleapis.com/auth/userinfo.email` in the token
+        // response. Treat those spellings as equivalent while still requiring
+        // the exact read-only YouTube permission and OpenID identity scope.
+        if (!hasRequiredScopes(token.scope)) {
+          const missingScopes = missingRequiredScopes(token.scope);
           await this._revokeToken(refreshToken);
-          throw new YouTubeLibraryError('missingScope', 'Google did not grant all required read-only YouTube scopes.');
+          const message = missingScopes.includes('youtube.readonly')
+            ? 'Google did not grant YouTube read-only access. Add the YouTube read-only scope under Google Auth Platform → Data Access, then reconnect.'
+            : 'Google did not grant the identity scopes needed to verify this is the same Gmail account as Drive.';
+          throw new YouTubeLibraryError('missingScope', message);
         }
         const profileResponse = await this._request('https://openidconnect.googleapis.com/v1/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }, timeoutMs: 15000
@@ -787,6 +811,8 @@ module.exports = {
     validatePlaylistId,
     validateVideoId,
     safeHttpsUrl,
+    hasRequiredScopes,
+    missingRequiredScopes,
     classifyApiError
   }
 };

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.27 - 2026-08-13
+
+### Google Canonical OAuth Scope Matching & Clear Scope Diagnosis
+
+- **Google Canonical Scope Matching (`youtubeLibrary.js`)**:
+  - Accepts Google's canonical `userinfo.email` scope (`https://www.googleapis.com/auth/userinfo.email`) as equivalent to the requested `email` identity scope in token responses.
+  - Prevents false `missingScope` rejections when Google returns the full URI version of identity scopes.
+- **Actionable Scope Error Diagnosis**:
+  - Provides clear diagnostic guidance if the read-only YouTube permission (`youtube.readonly`) or identity scopes were omitted during OAuth consent.
+
 ## 2.10.26 - 2026-08-13
 
 ### Google OAuth Credentials Persistence & Drive Auth Improvements
@@ -11,6 +21,7 @@
 - **YouTube OAuth Setup Flow**:
   - Added "Open OAuth setup" action button in LabMedia settings to directly navigate to Google OAuth configuration in Suite Settings when credentials are needed.
   - Updated OAuth callback HTML response page to avoid premature success messages before token exchange and account validation finish.
+  - Accepts Google's canonical `userinfo.email` spelling for the requested `email` scope while continuing to require the exact read-only YouTube scope.
 
 ## 2.10.25 - 2026-08-13
 

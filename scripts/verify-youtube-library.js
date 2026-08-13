@@ -14,6 +14,12 @@ function response(status, body = {}, headers = {}) {
   return { status, body, headers, text: JSON.stringify(body) };
 }
 
+const GOOGLE_CANONICAL_SCOPES = [
+  'openid',
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/youtube.readonly'
+].join(' ');
+
 function completeBrowserCallback(authUrl, openedUrls) {
   openedUrls.push(authUrl);
   const authorization = new URL(authUrl);
@@ -48,7 +54,7 @@ async function testConnectedLibraryFlow() {
         access_token: 'memory-only-access-token',
         refresh_token: 'secure-refresh-token',
         expires_in: 3600,
-        scope: SCOPES.join(' ')
+        scope: GOOGLE_CANONICAL_SCOPES
       });
     }
     if (url.hostname === 'oauth2.googleapis.com' && url.pathname === '/revoke') return response(200, {});
@@ -288,6 +294,17 @@ function testStaticSecurityContract() {
     'OAuth callback page must not show a premature success message');
   assert.strictEqual(__private.parseRetryAfter('2'), 2000);
   assert.strictEqual(__private.parseIsoDuration('PT1H2M3S'), 3723000);
+  assert.strictEqual(__private.hasRequiredScopes(GOOGLE_CANONICAL_SCOPES), true,
+    'Google canonical userinfo.email scope must satisfy the requested email identity scope');
+  assert.strictEqual(__private.hasRequiredScopes(SCOPES.join(' ')), true,
+    'Literal requested scopes must remain valid');
+  assert.strictEqual(__private.hasRequiredScopes('openid https://www.googleapis.com/auth/userinfo.email'), false,
+    'YouTube read-only scope must remain mandatory');
+  assert.deepStrictEqual(
+    __private.missingRequiredScopes('openid https://www.googleapis.com/auth/userinfo.email'),
+    ['youtube.readonly'],
+    'Missing YouTube permission must produce a precise setup diagnosis'
+  );
   assert.strictEqual(__private.classifyApiError(response(403, {
     error: { errors: [{ reason: 'quotaExceeded' }] }
   })).code, 'quotaExceeded');
