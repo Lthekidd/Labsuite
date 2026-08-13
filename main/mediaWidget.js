@@ -5,9 +5,10 @@ const os = require('os');
 const { spawn } = require('child_process');
 const readline = require('readline');
 const db = require('./database');
+const queueProvider = require('./labmediaQueue');
 
 const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
   enabled: true,
   size: 'normal',
   theme: 'spotify',
@@ -21,6 +22,8 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   showAlbumArt: true,
   showProgress: true,
   hideWhenFullscreen: true,
+  primaryClickAction: 'panel',
+  taskbarControlMode: 'adaptive',
   controls: {
     previous: true,
     playPause: true,
@@ -30,6 +33,8 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
 
 const VALID_SIZES = new Set(['micro', 'compact', 'normal', 'large']);
 const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal', 'transparent']);
+const VALID_PRIMARY_CLICK_ACTIONS = new Set(['panel', 'openSource']);
+const VALID_TASKBAR_CONTROL_MODES = new Set(['adaptive', 'always', 'minimal']);
 const CRASH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CRASHES_PER_WINDOW = 3;
 const BACKOFF_DELAYS_MS = [1000, 5000, 30000];
@@ -38,6 +43,7 @@ let childProcess = null;
 let currentState = 'stopped'; // 'unsupported' | 'stopped' | 'starting' | 'running' | 'no_session' | 'error'
 let currentError = null;
 let lastSessionInfo = { hasSession: false, title: '', artist: '', sourceApp: '', isPlaying: false };
+let currentQueueState = queueProvider.unavailableQueue();
 let historyLog = [];
 let crashHistory = [];
 let restartTimer = null;
@@ -69,7 +75,7 @@ function validateSettings(raw = {}) {
   };
   if (!raw || typeof raw !== 'object') return result;
 
-  result.schemaVersion = 1;
+  result.schemaVersion = 2;
   result.enabled = typeof raw.enabled === 'boolean' ? raw.enabled : DEFAULT_LABMEDIA_SETTINGS.enabled;
 
   if (typeof raw.size === 'string' && VALID_SIZES.has(raw.size.toLowerCase())) {
@@ -106,6 +112,14 @@ function validateSettings(raw = {}) {
   result.showAlbumArt = typeof raw.showAlbumArt === 'boolean' ? raw.showAlbumArt : DEFAULT_LABMEDIA_SETTINGS.showAlbumArt;
   result.showProgress = typeof raw.showProgress === 'boolean' ? raw.showProgress : DEFAULT_LABMEDIA_SETTINGS.showProgress;
   result.hideWhenFullscreen = typeof raw.hideWhenFullscreen === 'boolean' ? raw.hideWhenFullscreen : DEFAULT_LABMEDIA_SETTINGS.hideWhenFullscreen;
+  result.primaryClickAction = typeof raw.primaryClickAction === 'string'
+    && VALID_PRIMARY_CLICK_ACTIONS.has(raw.primaryClickAction)
+    ? raw.primaryClickAction
+    : DEFAULT_LABMEDIA_SETTINGS.primaryClickAction;
+  result.taskbarControlMode = typeof raw.taskbarControlMode === 'string'
+    && VALID_TASKBAR_CONTROL_MODES.has(raw.taskbarControlMode)
+    ? raw.taskbarControlMode
+    : DEFAULT_LABMEDIA_SETTINGS.taskbarControlMode;
 
   const rawControls = raw.controls && typeof raw.controls === 'object' ? raw.controls : {};
   result.controls = {
@@ -122,7 +136,13 @@ function getSettings() {
   if (!storedStr) return validateSettings(DEFAULT_LABMEDIA_SETTINGS);
   try {
     const parsed = JSON.parse(storedStr);
-    return validateSettings(parsed);
+    const validated = validateSettings(parsed);
+    if (parsed?.schemaVersion !== 2
+      || !VALID_PRIMARY_CLICK_ACTIONS.has(parsed?.primaryClickAction)
+      || !VALID_TASKBAR_CONTROL_MODES.has(parsed?.taskbarControlMode)) {
+      db.setSetting('labmedia_settings', JSON.stringify(validated));
+    }
+    return validated;
   } catch (_) {
     return validateSettings(DEFAULT_LABMEDIA_SETTINGS);
   }
@@ -214,7 +234,8 @@ function getStatus() {
       state: 'unsupported',
       settings,
       error: 'LabMedia is supported only on Windows 11.',
-      session: lastSessionInfo
+      session: lastSessionInfo,
+      queue: currentQueueState
     };
   }
 
@@ -225,8 +246,25 @@ function getStatus() {
     state: currentState,
     settings,
     error: currentError,
-    session: lastSessionInfo
+    session: lastSessionInfo,
+    queue: currentQueueState
   };
+}
+
+function sendRuntimeMessage(message, target = childProcess) {
+  if (!target || !target.stdin || target.stdin.destroyed || !target.stdin.writable) return false;
+  try {
+    target.stdin.write(`${JSON.stringify(message)}\n`);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function updateQueueForSession(session = lastSessionInfo, target = childProcess) {
+  currentQueueState = queueProvider.getQueueStateForSession(session);
+  sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState }, target);
+  return currentQueueState;
 }
 
 function handleStdoutLine(line) {
@@ -236,11 +274,13 @@ function handleStdoutLine(line) {
     if (!data || typeof data !== 'object') return;
 
     if (data.event === 'ready') {
+      updateQueueForSession(lastSessionInfo);
       if (currentState === 'starting') {
         currentState = currentError ? 'error' : 'no_session';
         notifyStatusChanged();
       }
     } else if (data.event === 'session') {
+      const previousSession = lastSessionInfo;
       const prevTitle = lastSessionInfo.title;
       const prevArtist = lastSessionInfo.artist;
       const newTitle = String(data.title || '');
@@ -249,12 +289,29 @@ function handleStdoutLine(line) {
 
       lastSessionInfo = {
         hasSession: !!data.hasSession,
+        sessionId: String(data.sessionId || ''),
         title: newTitle,
         artist: newArtist,
+        album: String(data.album || ''),
         sourceApp,
-        isPlaying: !!data.isPlaying
+        isPlaying: !!data.isPlaying,
+        position: Number(data.position || 0),
+        duration: Number(data.duration || 0),
+        sessionCount: Number(data.sessionCount || 0),
+        canSeek: !!data.canSeek,
+        canShuffle: !!data.canShuffle,
+        canRepeat: !!data.canRepeat,
+        shuffleActive: !!data.shuffleActive,
+        repeatMode: String(data.repeatMode || 'none')
       };
       currentState = data.hasSession ? 'running' : 'no_session';
+      if (previousSession.hasSession !== lastSessionInfo.hasSession
+        || previousSession.sessionId !== lastSessionInfo.sessionId
+        || previousSession.sourceApp !== lastSessionInfo.sourceApp
+        || previousSession.title !== lastSessionInfo.title
+        || previousSession.artist !== lastSessionInfo.artist) {
+        updateQueueForSession(lastSessionInfo);
+      }
 
       // Log to rolling history if track changed
       if (data.hasSession && newTitle && (newTitle !== prevTitle || newArtist !== prevArtist)) {
@@ -298,6 +355,21 @@ function handleStdoutLine(line) {
           console.error('mediaWidget: failed to process native hide action:', error.message);
         });
       }
+    } else if (data.event === 'providerAction') {
+      queueProvider.handleProviderAction(String(data.action || ''), lastSessionInfo)
+        .then(queue => {
+          currentQueueState = queueProvider.normalizeQueueState(queue);
+          sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
+          notifyStatusChanged();
+        })
+        .catch(error => {
+          currentQueueState = queueProvider.normalizeQueueState({
+            status: 'error',
+            provider: 'spotify',
+            message: error?.message || 'Queue provider action failed.'
+          });
+          sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
+        });
     } else if (data.event === 'error') {
       console.error('mediaWidget native helper error:', data.message);
       currentError = String(data.message || 'Unknown native helper error');
@@ -358,7 +430,7 @@ function startWidget() {
   try {
     const spawnedProcess = spawn(spawnCmd, args, {
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe']
     });
     childProcess = spawnedProcess;
 
@@ -468,7 +540,8 @@ async function stopWidget() {
   if (!childProcess) {
     currentState = isSupported() ? 'stopped' : 'unsupported';
     currentError = null;
-    lastSessionInfo = { hasSession: false, title: '', artist: '', isPlaying: false };
+    lastSessionInfo = { hasSession: false, title: '', artist: '', sourceApp: '', isPlaying: false };
+    currentQueueState = queueProvider.unavailableQueue();
     notifyStatusChanged();
   }
 }

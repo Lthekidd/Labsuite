@@ -3,12 +3,34 @@ using System.Diagnostics;
 
 namespace LabMediaWidget
 {
+    public enum TaskbarEdge
+    {
+        Bottom,
+        Top,
+        Left,
+        Right
+    }
+
     public struct TaskbarInfo
     {
         public bool IsVisible;
         public bool HasSufficientSpace;
         public bool IsAutoHide;
         public IntPtr TaskbarHwnd;
+        public int X;
+        public int Y;
+        public int Width;
+        public int Height;
+        public uint Dpi;
+        public TaskbarEdge Edge;
+        public NativeMethods.RECT TaskbarBounds;
+        public NativeMethods.RECT MonitorBounds;
+        public NativeMethods.RECT WorkArea;
+    }
+
+    public struct FlyoutPosition
+    {
+        public bool IsValid;
         public int X;
         public int Y;
         public int Width;
@@ -32,6 +54,7 @@ namespace LabMediaWidget
 
                 uint dpi = NativeMethods.GetDpiForWindow(taskbar);
                 if (dpi == 0) dpi = 96;
+                info.Dpi = dpi;
                 double scale = dpi / 96.0;
                 int requestedWidthPx = Math.Max(1, (int)Math.Round(requestedWidthDip * scale));
                 int requestedHeightPx = Math.Max(1, (int)Math.Round(requestedHeightDip * scale));
@@ -44,16 +67,23 @@ namespace LabMediaWidget
                 if (monitor == IntPtr.Zero || !NativeMethods.GetMonitorInfo(monitor, ref monitorInfo))
                     return info;
 
+                info.TaskbarBounds = taskbarRect;
+                info.MonitorBounds = monitorInfo.rcMonitor;
+                info.WorkArea = monitorInfo.rcWork;
+                info.Edge = DetermineEdge(taskbarRect, monitorInfo.rcMonitor);
+
+                // The collapsed LabMedia strip is horizontal. Vertical taskbars
+                // cannot safely accommodate it, so the widget waits rather than
+                // covering taskbar controls. The flyout positioner supports all edges.
+                if (info.Edge is TaskbarEdge.Left or TaskbarEdge.Right)
+                    return info;
+
                 int visibleTaskbarPx = Math.Min(taskbarRect.Bottom, monitorInfo.rcMonitor.Bottom)
                     - Math.Max(taskbarRect.Top, monitorInfo.rcMonitor.Top);
                 if (visibleTaskbarPx <= 8)
                     return info; // auto-hidden or outside the primary monitor
 
-                int taskbarHeightPx = taskbarRect.Height;
-                int reservedPx = monitorInfo.rcMonitor.Bottom - monitorInfo.rcWork.Bottom;
-                int taskbarBandPx = reservedPx > 8
-                    ? Math.Min(taskbarHeightPx, reservedPx)
-                    : Math.Min(taskbarHeightPx, (int)Math.Round(48 * scale));
+                int taskbarBandPx = taskbarRect.Height;
                 if (visibleTaskbarPx < taskbarBandPx - 4 || requestedHeightPx > taskbarBandPx)
                     return info; // wait until an auto-hide animation has settled
 
@@ -61,7 +91,7 @@ namespace LabMediaWidget
                 int rightBound = notifyLeft.HasValue ? notifyLeft.Value : taskbarRect.Right - 200;
 
                 int leftPx = rightBound - 12 - requestedWidthPx;
-                int topPx = taskbarRect.Bottom - taskbarBandPx + Math.Max(0, (taskbarBandPx - requestedHeightPx) / 2);
+                int topPx = taskbarRect.Top + Math.Max(0, (taskbarBandPx - requestedHeightPx) / 2);
 
                 info.X = leftPx;
                 info.Y = topPx;
@@ -72,11 +102,72 @@ namespace LabMediaWidget
             }
             catch
             {
-                // UI Automation can fail transiently while Explorer rebuilds the
-                // taskbar. Hiding is safer than placing over unknown controls.
+                // Explorer can rebuild taskbar handles during display changes.
+                // Hiding is safer than placing over unknown controls.
             }
 
             return info;
+        }
+
+        public static FlyoutPosition CalculateFlyoutPosition(
+            TaskbarInfo anchor,
+            double requestedWidthDip,
+            double requestedHeightDip,
+            double gapDip = 8)
+        {
+            var result = new FlyoutPosition();
+            if (anchor.TaskbarHwnd == IntPtr.Zero) return result;
+
+            double scale = (anchor.Dpi == 0 ? 96 : anchor.Dpi) / 96.0;
+            int width = Math.Max(1, (int)Math.Round(requestedWidthDip * scale));
+            int height = Math.Max(1, (int)Math.Round(requestedHeightDip * scale));
+            int gap = Math.Max(0, (int)Math.Round(gapDip * scale));
+            var work = anchor.WorkArea;
+            var taskbar = anchor.TaskbarBounds;
+
+            width = Math.Min(width, Math.Max(1, work.Width));
+            height = Math.Min(height, Math.Max(1, work.Height));
+
+            int x;
+            int y;
+            switch (anchor.Edge)
+            {
+                case TaskbarEdge.Top:
+                    x = anchor.X + anchor.Width - width;
+                    y = taskbar.Bottom + gap;
+                    break;
+                case TaskbarEdge.Left:
+                    x = taskbar.Right + gap;
+                    y = anchor.Y + anchor.Height - height;
+                    break;
+                case TaskbarEdge.Right:
+                    x = taskbar.Left - gap - width;
+                    y = anchor.Y + anchor.Height - height;
+                    break;
+                default:
+                    x = anchor.X + anchor.Width - width;
+                    y = taskbar.Top - gap - height;
+                    break;
+            }
+
+            result.X = Math.Clamp(x, work.Left, Math.Max(work.Left, work.Right - width));
+            result.Y = Math.Clamp(y, work.Top, Math.Max(work.Top, work.Bottom - height));
+            result.Width = width;
+            result.Height = height;
+            result.IsValid = true;
+            return result;
+        }
+
+        private static TaskbarEdge DetermineEdge(NativeMethods.RECT taskbar, NativeMethods.RECT monitor)
+        {
+            if (taskbar.Width >= taskbar.Height)
+            {
+                int center = taskbar.Top + taskbar.Height / 2;
+                return center < monitor.Top + monitor.Height / 2 ? TaskbarEdge.Top : TaskbarEdge.Bottom;
+            }
+
+            int horizontalCenter = taskbar.Left + taskbar.Width / 2;
+            return horizontalCenter < monitor.Left + monitor.Width / 2 ? TaskbarEdge.Left : TaskbarEdge.Right;
         }
 
         public static bool IsForegroundFullscreen(IntPtr self, IntPtr taskbar)

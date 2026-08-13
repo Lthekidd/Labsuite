@@ -154,7 +154,7 @@ const DEFAULT_SETTINGS = {
   vault_destinations: '[]',
   vault_transfer_jobs: '[]',
   installed_apps: '[]',
-  labmedia_settings: '{"schemaVersion":1,"enabled":true,"size":"normal","opacity":1,"showAlbumArt":true,"showProgress":true,"hideWhenFullscreen":true,"controls":{"previous":true,"playPause":true,"next":true}}'
+  labmedia_settings: '{"schemaVersion":2,"enabled":true,"size":"normal","opacity":1,"showAlbumArt":true,"showProgress":true,"hideWhenFullscreen":true,"primaryClickAction":"panel","taskbarControlMode":"adaptive","controls":{"previous":true,"playPause":true,"next":true}}'
 };
 
 // Default database structure matching SQLite schema

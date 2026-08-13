@@ -23,10 +23,7 @@ namespace LabMediaWidget
     internal interface IMMDevice
     {
         [PreserveSig]
-        int Activate(
-            ref Guid iid,
-            int classContext,
-            IntPtr activationParameters,
+        int Activate(ref Guid iid, int classContext, IntPtr activationParameters,
             [MarshalAs(UnmanagedType.IUnknown)] out object activatedInterface);
     }
 
@@ -65,8 +62,8 @@ namespace LabMediaWidget
         [PreserveSig] int UnregisterAudioSessionNotification(IntPtr client);
     }
 
-    // COM interface inheritance is deliberately flattened. This preserves the
-    // native vtable order without reading or invoking function pointers by hand.
+    // Flattening the inherited native interface keeps COM vtable order explicit
+    // without reading or invoking unmanaged function pointers by hand.
     [ComImport]
     [Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -99,102 +96,96 @@ namespace LabMediaWidget
 
     public static class AppVolume
     {
-        [DllImport("user32.dll")]
-        private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+        private static readonly object AudioGate = new object();
 
         public static float AdjustMediaVolume(string activeAppHint, float delta)
         {
-            IMMDeviceEnumerator? deviceEnumerator = null;
-            IMMDevice? device = null;
-            object? sessionManagerObject = null;
-            IAudioSessionEnumerator? sessionEnumerator = null;
-
-            try
+            lock (AudioGate)
             {
-                deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-                if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
-                    return 0.0f;
-
-                Guid managerId = typeof(IAudioSessionManager2).GUID;
-                if (device.Activate(ref managerId, 1, IntPtr.Zero, out sessionManagerObject) < 0
-                    || sessionManagerObject is not IAudioSessionManager2 manager)
-                    return 0.0f;
-
-                if (manager.GetSessionEnumerator(out sessionEnumerator) < 0 || sessionEnumerator == null
-                    || sessionEnumerator.GetCount(out int sessionCount) < 0)
-                    return 0.0f;
-
-                bool adjustedAny = false;
-                for (int i = 0; i < sessionCount; i++)
+                bool adjusted = VisitMatchingVolumes(activeAppHint, volume =>
                 {
-                    IAudioSessionControl? session = null;
-                    try
-                    {
-                        if (sessionEnumerator.GetSession(i, out session) < 0 || session == null
-                            || session is not IAudioSessionControl2 session2
-                            || session is not ISimpleAudioVolume volume
-                            || session2.GetProcessId(out uint processId) < 0)
-                            continue;
-
-                        string processName = "";
-                        try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
-                        if (!IsMediaProcess(processName, activeAppHint))
-                            continue;
-
-                        if (volume.GetMasterVolume(out float currentVolume) < 0)
-                            continue;
-
-                        float newVolume = Math.Clamp(currentVolume + delta, 0.0f, 1.0f);
-                        Guid eventContext = Guid.Empty;
-                        if (volume.SetMasterVolume(newVolume, ref eventContext) >= 0)
-                            adjustedAny = true;
-                    }
-                    finally
-                    {
-                        ReleaseComObject(session);
-                    }
-                }
-
-                return adjustedAny ? 1.0f : 0.0f;
-            }
-            catch (COMException)
-            {
-                return 0.0f;
-            }
-            catch (InvalidCastException)
-            {
-                return 0.0f;
-            }
-            finally
-            {
-                ReleaseComObject(sessionEnumerator);
-                ReleaseComObject(sessionManagerObject);
-                ReleaseComObject(device);
-                ReleaseComObject(deviceEnumerator);
+                    if (volume.GetMasterVolume(out float current) < 0) return false;
+                    Guid context = Guid.Empty;
+                    return volume.SetMasterVolume(Math.Clamp(current + delta, 0.0f, 1.0f), ref context) >= 0;
+                });
+                return adjusted ? 1.0f : 0.0f;
             }
         }
 
         public static float GetMediaVolume(string activeAppHint)
         {
+            lock (AudioGate)
+            {
+                float result = 1.0f;
+                VisitMatchingVolumes(activeAppHint, volume =>
+                {
+                    if (volume.GetMasterVolume(out float level) < 0) return false;
+                    result = level;
+                    return true;
+                }, stopAfterSuccess: true);
+                return result;
+            }
+        }
+
+        public static bool SetMediaVolume(string activeAppHint, float level)
+        {
+            lock (AudioGate)
+            {
+                float clamped = Math.Clamp(level, 0.0f, 1.0f);
+                return VisitMatchingVolumes(activeAppHint, volume =>
+                {
+                    Guid context = Guid.Empty;
+                    return volume.SetMasterVolume(clamped, ref context) >= 0;
+                });
+            }
+        }
+
+        public static bool GetMediaMute(string activeAppHint)
+        {
+            lock (AudioGate)
+            {
+                bool muted = false;
+                VisitMatchingVolumes(activeAppHint, volume => volume.GetMute(out muted) >= 0, stopAfterSuccess: true);
+                return muted;
+            }
+        }
+
+        public static bool SetMediaMute(string activeAppHint, bool muted)
+        {
+            lock (AudioGate)
+            {
+                return VisitMatchingVolumes(activeAppHint, volume =>
+                {
+                    Guid context = Guid.Empty;
+                    return volume.SetMute(muted, ref context) >= 0;
+                });
+            }
+        }
+
+        private static bool VisitMatchingVolumes(
+            string activeAppHint,
+            Func<ISimpleAudioVolume, bool> visitor,
+            bool stopAfterSuccess = false)
+        {
             IMMDeviceEnumerator? deviceEnumerator = null;
             IMMDevice? device = null;
-            object? sessionManagerObject = null;
+            object? managerObject = null;
             IAudioSessionEnumerator? sessionEnumerator = null;
+            bool anySuccess = false;
 
             try
             {
                 deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
                 if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
-                    return 1.0f;
+                    return false;
 
                 Guid managerId = typeof(IAudioSessionManager2).GUID;
-                if (device.Activate(ref managerId, 1, IntPtr.Zero, out sessionManagerObject) < 0
-                    || sessionManagerObject is not IAudioSessionManager2 manager)
-                    return 1.0f;
-
-                if (manager.GetSessionEnumerator(out sessionEnumerator) < 0 || sessionEnumerator == null
+                if (device.Activate(ref managerId, 1, IntPtr.Zero, out managerObject) < 0
+                    || managerObject is not IAudioSessionManager2 manager
+                    || manager.GetSessionEnumerator(out sessionEnumerator) < 0
+                    || sessionEnumerator == null
                     || sessionEnumerator.GetCount(out int sessionCount) < 0)
-                    return 1.0f;
+                    return false;
 
                 for (int i = 0; i < sessionCount; i++)
                 {
@@ -207,68 +198,57 @@ namespace LabMediaWidget
                             || session2.GetProcessId(out uint processId) < 0)
                             continue;
 
-                        string processName = "";
+                        string processName = string.Empty;
                         try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
-                        if (!IsMediaProcess(processName, activeAppHint))
-                            continue;
+                        if (!IsMediaProcess(processName, activeAppHint)) continue;
 
-                        if (volume.GetMasterVolume(out float level) >= 0)
-                            return level;
+                        if (visitor(volume))
+                        {
+                            anySuccess = true;
+                            if (stopAfterSuccess) break;
+                        }
                     }
                     finally
                     {
                         ReleaseComObject(session);
                     }
                 }
-
-                return 1.0f;
             }
-            catch
-            {
-                return 1.0f;
-            }
+            catch (COMException) { }
+            catch (InvalidCastException) { }
             finally
             {
                 ReleaseComObject(sessionEnumerator);
-                ReleaseComObject(sessionManagerObject);
+                ReleaseComObject(managerObject);
                 ReleaseComObject(device);
                 ReleaseComObject(deviceEnumerator);
             }
+
+            return anySuccess;
         }
 
         private static bool IsMediaProcess(string processName, string activeAppHint)
         {
             if (string.IsNullOrWhiteSpace(processName)) return false;
+            string name = processName.ToLowerInvariant();
 
-            // When an active session app hint is provided, strictly target ONLY the process
-            // corresponding to the active session currently displayed on the taskbar widget.
             if (!string.IsNullOrWhiteSpace(activeAppHint))
             {
                 string hint = activeAppHint.Trim().ToLowerInvariant();
-                string name = processName.ToLowerInvariant();
-
                 if (hint.Contains("spotify") && name.Contains("spotify")) return true;
-                if ((hint.Contains("chrome") || hint.Contains("youtube")) && name.Contains("chrome")) return true;
                 if ((hint.Contains("edge") || hint.Contains("msedge")) && name.Contains("msedge")) return true;
                 if (hint.Contains("firefox") && name.Contains("firefox")) return true;
                 if (hint.Contains("brave") && name.Contains("brave")) return true;
                 if (hint.Contains("opera") && name.Contains("opera")) return true;
                 if (hint.Contains("vlc") && name.Contains("vlc")) return true;
-
-                if (name.Contains(hint) || hint.Contains(name)) return true;
-
-                return false;
+                if ((hint.Contains("chrome") || hint == "youtube" || hint == "youtube music")
+                    && name.Contains("chrome")) return true;
+                return name.Contains(hint) || hint.Contains(name);
             }
 
-            string fallbackName = processName.ToLowerInvariant();
-            return fallbackName.Contains("spotify") ||
-                   fallbackName.Contains("chrome") ||
-                   fallbackName.Contains("msedge") ||
-                   fallbackName.Contains("firefox") ||
-                   fallbackName.Contains("brave") ||
-                   fallbackName.Contains("opera") ||
-                   fallbackName.Contains("vlc") ||
-                   fallbackName.Contains("wmplayer");
+            return name.Contains("spotify") || name.Contains("chrome") || name.Contains("msedge")
+                || name.Contains("firefox") || name.Contains("brave") || name.Contains("opera")
+                || name.Contains("vlc") || name.Contains("wmplayer");
         }
 
         private static void ReleaseComObject(object? value)

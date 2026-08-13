@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.10.24 - 2026-08-13
+
+### LabMedia Progressive-Disclosure Redesign
+
+- Replaced taskbar session cycling with a separate native 384-DIP Now Playing flyout, explicit player selection, capability-aware playback controls, seeking, and isolated per-application volume and mute controls.
+- Added fixed-height adaptive Micro, Compact, Normal, and Large taskbar layouts. Artwork and track clicks now open the flyout by default, while transport and seek controls continue to consume their own input.
+- Added schema-v2 LabMedia settings for the primary click action and taskbar control density, with migration that preserves the existing size, theme, visibility, and control choices.
+- Reorganized settings into Taskbar, Expanded Panel, and History tabs with collapsed and expanded interactive previews.
+- Added a provider-neutral, read-only Up Next contract and bidirectional JSON-lines channel. Public builds report unsupported Spotify queue access honestly until eligible API access is available; provider credentials never enter the widget configuration or native helper.
+- Preserved Explorer isolation: neither native LabMedia window is parented to Explorer, and taskbar positioning continues without UI Automation.
+
 ## 2.10.23 - 2026-08-13
 
 ### Multi-Player Session Switcher & Real-Time Volume Level Toast Badge

@@ -1,17 +1,32 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
+using Windows.Media;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 
 namespace LabMediaWidget
 {
+    public sealed class MediaSessionSummary
+    {
+        public string SessionId { get; set; } = string.Empty;
+        public string SourceApp { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Artist { get; set; } = string.Empty;
+        public bool IsPlaying { get; set; }
+        public string DisplayLabel => string.IsNullOrWhiteSpace(Title)
+            ? SourceApp
+            : $"{SourceApp} — {Title}";
+    }
+
     public class MediaSessionState
     {
         public bool HasSession { get; set; }
+        public string SessionId { get; set; } = string.Empty;
         public string Title { get; set; } = string.Empty;
         public string Artist { get; set; } = string.Empty;
         public string Album { get; set; } = string.Empty;
@@ -20,10 +35,16 @@ namespace LabMediaWidget
         public double PositionSeconds { get; set; }
         public double DurationSeconds { get; set; }
         public BitmapImage? AlbumArt { get; set; }
-        public bool CanSkipPrevious { get; set; } = true;
-        public bool CanPlayPause { get; set; } = true;
-        public bool CanSkipNext { get; set; } = true;
-        public int SessionCount { get; set; } = 1;
+        public bool CanSkipPrevious { get; set; }
+        public bool CanPlayPause { get; set; }
+        public bool CanSkipNext { get; set; }
+        public bool CanSeek { get; set; }
+        public bool CanShuffle { get; set; }
+        public bool CanRepeat { get; set; }
+        public bool ShuffleActive { get; set; }
+        public string RepeatMode { get; set; } = "none";
+        public IReadOnlyList<MediaSessionSummary> Sessions { get; set; } = Array.Empty<MediaSessionSummary>();
+        public int SessionCount => Sessions.Count;
     }
 
     public class SmtcManager
@@ -31,9 +52,11 @@ namespace LabMediaWidget
         private GlobalSystemMediaTransportControlsSessionManager? _manager;
         private GlobalSystemMediaTransportControlsSession? _currentSession;
         private readonly SemaphoreSlim _refreshGate = new SemaphoreSlim(1, 1);
+        private readonly Dictionary<string, string> _sessionIds =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private string _albumArtKey = string.Empty;
         private BitmapImage? _cachedAlbumArt;
-        private int _forcedSessionIndex = -1;
+        private string? _forcedSessionId;
 
         public MediaSessionState CurrentSessionState { get; private set; } = new MediaSessionState();
         public event EventHandler<MediaSessionState>? SessionStateChanged;
@@ -51,59 +74,66 @@ namespace LabMediaWidget
             }
             catch (Exception ex)
             {
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { @event = "error", message = $"SMTC init failed: {ex.Message}" }));
+                EmitError($"SMTC init failed: {ex.Message}");
             }
         }
 
-        public async Task CycleNextSessionAsync()
+        public async Task SelectSessionAsync(string sessionId)
         {
-            if (_manager == null) return;
-            var sessions = _manager.GetSessions();
-            if (sessions == null || sessions.Count <= 1) return;
-
-            if (_forcedSessionIndex < 0) _forcedSessionIndex = 0;
-            _forcedSessionIndex = (_forcedSessionIndex + 1) % sessions.Count;
-
-            var nextSession = sessions[_forcedSessionIndex];
-
-            if (_currentSession != null)
-            {
-                _currentSession.MediaPropertiesChanged -= CurrentSession_MediaPropertiesChanged;
-                _currentSession.PlaybackInfoChanged -= CurrentSession_PlaybackInfoChanged;
-                _currentSession.TimelinePropertiesChanged -= CurrentSession_TimelinePropertiesChanged;
-            }
-
-            _currentSession = nextSession;
-
-            if (_currentSession != null)
-            {
-                _currentSession.MediaPropertiesChanged += CurrentSession_MediaPropertiesChanged;
-                _currentSession.PlaybackInfoChanged += CurrentSession_PlaybackInfoChanged;
-                _currentSession.TimelinePropertiesChanged += CurrentSession_TimelinePropertiesChanged;
-            }
-
-            await RefreshStateAsync();
+            if (string.IsNullOrWhiteSpace(sessionId) || _manager == null) return;
+            _forcedSessionId = sessionId;
+            await RefreshAsync(forceWait: true);
         }
 
-        private void Manager_SessionsChanged(GlobalSystemMediaTransportControlsSessionManager sender, SessionsChangedEventArgs args)
+        private void Manager_SessionsChanged(
+            GlobalSystemMediaTransportControlsSessionManager sender,
+            SessionsChangedEventArgs args)
         {
             _ = RefreshAsync();
+        }
+
+        private string GetSessionId(GlobalSystemMediaTransportControlsSession session)
+        {
+            string key = GetRuntimeSessionKey(session);
+            if (!_sessionIds.TryGetValue(key, out string? id))
+            {
+                id = Guid.NewGuid().ToString("N");
+                _sessionIds[key] = id;
+            }
+            return id;
+        }
+
+        private static string GetRuntimeSessionKey(GlobalSystemMediaTransportControlsSession session)
+        {
+            // GSMTC exposes one session per source application. Use the AUMID as
+            // the process-lifetime identity so fresh WinRT wrappers do not make
+            // the dropdown selection jump between refreshes.
+            string appId = (session.SourceAppUserModelId ?? string.Empty).Trim();
+            return string.IsNullOrWhiteSpace(appId)
+                ? $"anonymous:{System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(session)}"
+                : appId;
+        }
+
+        private void ReconcileSessionIds(IReadOnlyList<GlobalSystemMediaTransportControlsSession> sessions)
+        {
+            var live = new HashSet<string>(sessions.Select(GetRuntimeSessionKey), StringComparer.OrdinalIgnoreCase);
+            foreach (var stale in _sessionIds.Keys.Where(key => !live.Contains(key)).ToList())
+                _sessionIds.Remove(stale);
         }
 
         private void SelectCurrentSession()
         {
             if (_manager == null) return;
-
             var sessions = _manager.GetSessions();
-            if (_forcedSessionIndex >= 0 && sessions != null && _forcedSessionIndex < sessions.Count)
-            {
-                _currentSession = sessions[_forcedSessionIndex];
-                return;
-            }
+            ReconcileSessionIds(sessions);
 
-            GlobalSystemMediaTransportControlsSession? nextSession = null;
-            if (sessions != null)
+            GlobalSystemMediaTransportControlsSession? next = null;
+            if (!string.IsNullOrWhiteSpace(_forcedSessionId))
+                next = sessions.FirstOrDefault(session => GetSessionId(session) == _forcedSessionId);
+
+            if (next == null)
             {
+                _forcedSessionId = null;
                 foreach (var session in sessions)
                 {
                     try
@@ -111,18 +141,22 @@ namespace LabMediaWidget
                         if (session.GetPlaybackInfo()?.PlaybackStatus
                             == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
                         {
-                            nextSession = session;
+                            next = session;
                             break;
                         }
                     }
                     catch { }
                 }
-
-                nextSession ??= _manager.GetCurrentSession();
-                nextSession ??= sessions.FirstOrDefault();
+                next ??= _manager.GetCurrentSession();
+                next ??= sessions.FirstOrDefault();
             }
 
-            if (ReferenceEquals(_currentSession, nextSession)) return;
+            SetCurrentSession(next);
+        }
+
+        private void SetCurrentSession(GlobalSystemMediaTransportControlsSession? next)
+        {
+            if (ReferenceEquals(_currentSession, next)) return;
 
             if (_currentSession != null)
             {
@@ -131,8 +165,7 @@ namespace LabMediaWidget
                 _currentSession.TimelinePropertiesChanged -= CurrentSession_TimelinePropertiesChanged;
             }
 
-            _currentSession = nextSession;
-
+            _currentSession = next;
             if (_currentSession != null)
             {
                 _currentSession.MediaPropertiesChanged += CurrentSession_MediaPropertiesChanged;
@@ -141,24 +174,24 @@ namespace LabMediaWidget
             }
         }
 
-        private void CurrentSession_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
-        {
-            _ = RefreshAsync();
-        }
+        private void CurrentSession_MediaPropertiesChanged(
+            GlobalSystemMediaTransportControlsSession sender,
+            MediaPropertiesChangedEventArgs args) => _ = RefreshAsync();
 
-        private void CurrentSession_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
-        {
-            _ = RefreshAsync();
-        }
+        private void CurrentSession_PlaybackInfoChanged(
+            GlobalSystemMediaTransportControlsSession sender,
+            PlaybackInfoChangedEventArgs args) => _ = RefreshAsync();
 
-        private void CurrentSession_TimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args)
-        {
-            _ = RefreshAsync();
-        }
+        private void CurrentSession_TimelinePropertiesChanged(
+            GlobalSystemMediaTransportControlsSession sender,
+            TimelinePropertiesChangedEventArgs args) => _ = RefreshAsync();
 
-        public async Task RefreshAsync()
+        public async Task RefreshAsync(bool forceWait = false)
         {
-            if (!await _refreshGate.WaitAsync(0)) return;
+            bool entered = forceWait
+                ? await _refreshGate.WaitAsync(TimeSpan.FromSeconds(2))
+                : await _refreshGate.WaitAsync(0);
+            if (!entered) return;
 
             try
             {
@@ -167,11 +200,7 @@ namespace LabMediaWidget
             }
             catch (Exception ex)
             {
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
-                {
-                    @event = "error",
-                    message = $"SMTC session refresh failed: {ex.Message}"
-                }));
+                EmitError($"SMTC session refresh failed: {ex.Message}");
             }
             finally
             {
@@ -179,13 +208,43 @@ namespace LabMediaWidget
             }
         }
 
+        private async Task<IReadOnlyList<MediaSessionSummary>> BuildSessionSummariesAsync()
+        {
+            if (_manager == null) return Array.Empty<MediaSessionSummary>();
+            var result = new List<MediaSessionSummary>();
+
+            foreach (var session in _manager.GetSessions())
+            {
+                var summary = new MediaSessionSummary
+                {
+                    SessionId = GetSessionId(session),
+                    SourceApp = DetermineSourceAppName(session.SourceAppUserModelId ?? string.Empty)
+                };
+                try
+                {
+                    var info = session.GetPlaybackInfo();
+                    summary.IsPlaying = info?.PlaybackStatus
+                        == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                    var properties = await session.TryGetMediaPropertiesAsync();
+                    summary.Title = properties?.Title ?? string.Empty;
+                    summary.Artist = properties?.Artist ?? string.Empty;
+                }
+                catch { }
+                result.Add(summary);
+            }
+
+            return result;
+        }
+
         private async Task RefreshStateAsync()
         {
-            var state = new MediaSessionState();
+            var state = new MediaSessionState
+            {
+                Sessions = await BuildSessionSummariesAsync()
+            };
 
             if (_currentSession == null)
             {
-                state.HasSession = false;
                 CurrentSessionState = state;
                 SessionStateChanged?.Invoke(this, state);
                 return;
@@ -194,181 +253,199 @@ namespace LabMediaWidget
             try
             {
                 state.HasSession = true;
-                try { state.SessionCount = _manager?.GetSessions()?.Count ?? 1; } catch { state.SessionCount = 1; }
-                string appId = _currentSession.SourceAppUserModelId ?? "";
-                state.SourceApp = DetermineSourceAppName(appId);
+                state.SessionId = GetSessionId(_currentSession);
+                state.SourceApp = DetermineSourceAppName(_currentSession.SourceAppUserModelId ?? string.Empty);
 
                 var mediaProps = await _currentSession.TryGetMediaPropertiesAsync();
                 if (mediaProps != null)
                 {
-                    state.Title = mediaProps.Title ?? "";
-                    state.Artist = mediaProps.Artist ?? "";
-                    state.Album = mediaProps.AlbumTitle ?? "";
-
-                    // For YouTube / browser sessions where Title contains " - " and Artist is empty or generic
-                    if (string.IsNullOrWhiteSpace(state.Artist) && state.Title.Contains(" - "))
-                    {
-                        var parts = state.Title.Split(new[] { " - " }, 2, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length == 2)
-                        {
-                            state.Title = parts[0].Trim();
-                            state.Artist = parts[1].Trim();
-                        }
-                    }
-
-                    if (string.IsNullOrWhiteSpace(state.Artist))
-                    {
-                        state.Artist = state.SourceApp;
-                    }
-
-                    if (mediaProps.Thumbnail != null)
-                    {
-                        string albumArtKey = $"{state.SourceApp}\n{state.Title}\n{state.Artist}\n{state.Album}";
-                        if (albumArtKey == _albumArtKey)
-                        {
-                            state.AlbumArt = _cachedAlbumArt;
-                        }
-                        else
-                        {
-                            try
-                            {
-                                IRandomAccessStreamWithContentType stream = await mediaProps.Thumbnail.OpenReadAsync();
-                                using Stream netStream = stream.AsStreamForRead();
-                                using MemoryStream memStream = new MemoryStream();
-                                await netStream.CopyToAsync(memStream);
-                                memStream.Position = 0;
-
-                                BitmapImage bitmap = new BitmapImage();
-                                bitmap.BeginInit();
-                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmap.StreamSource = memStream;
-                                bitmap.EndInit();
-                                bitmap.Freeze();
-                                _albumArtKey = albumArtKey;
-                                _cachedAlbumArt = bitmap;
-                                state.AlbumArt = bitmap;
-                            }
-                            catch { }
-                        }
-                    }
-                    else
-                    {
-                        _albumArtKey = string.Empty;
-                        _cachedAlbumArt = null;
-                    }
+                    state.Title = mediaProps.Title ?? string.Empty;
+                    state.Artist = mediaProps.Artist ?? string.Empty;
+                    state.Album = mediaProps.AlbumTitle ?? string.Empty;
+                    NormalizeBrowserMetadata(state);
+                    state.AlbumArt = await ReadAlbumArtAsync(mediaProps.Thumbnail, state);
                 }
 
                 var playbackInfo = _currentSession.GetPlaybackInfo();
                 if (playbackInfo != null)
                 {
-                    state.IsPlaying = playbackInfo.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                    state.IsPlaying = playbackInfo.PlaybackStatus
+                        == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+                    state.ShuffleActive = playbackInfo.IsShuffleActive ?? false;
+                    state.RepeatMode = NormalizeRepeatMode(playbackInfo.AutoRepeatMode);
                     var controls = playbackInfo.Controls;
                     if (controls != null)
                     {
                         state.CanSkipPrevious = controls.IsPreviousEnabled;
                         state.CanPlayPause = controls.IsPlayEnabled || controls.IsPauseEnabled;
                         state.CanSkipNext = controls.IsNextEnabled;
+                        state.CanSeek = controls.IsPlaybackPositionEnabled;
+                        state.CanShuffle = controls.IsShuffleEnabled;
+                        state.CanRepeat = controls.IsRepeatEnabled;
                     }
                 }
 
-                var timelineProps = _currentSession.GetTimelineProperties();
-                if (timelineProps != null)
+                var timeline = _currentSession.GetTimelineProperties();
+                if (timeline != null)
                 {
-                    state.PositionSeconds = timelineProps.Position.TotalSeconds;
-                    state.DurationSeconds = (timelineProps.EndTime - timelineProps.StartTime).TotalSeconds;
-                    if (state.DurationSeconds < 0) state.DurationSeconds = 0;
+                    state.PositionSeconds = timeline.Position.TotalSeconds;
+                    state.DurationSeconds = Math.Max(0, (timeline.EndTime - timeline.StartTime).TotalSeconds);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { @event = "error", message = $"SMTC refresh error: {ex.Message}" }));
+                EmitError($"SMTC refresh error: {ex.Message}");
             }
 
+            CurrentSessionState = state;
             SessionStateChanged?.Invoke(this, state);
         }
 
-        private string DetermineSourceAppName(string appId)
+        private static void NormalizeBrowserMetadata(MediaSessionState state)
+        {
+            if (string.IsNullOrWhiteSpace(state.Artist) && state.Title.Contains(" - "))
+            {
+                var parts = state.Title.Split(new[] { " - " }, 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2)
+                {
+                    state.Title = parts[0].Trim();
+                    state.Artist = parts[1].Trim();
+                }
+            }
+            if (string.IsNullOrWhiteSpace(state.Artist)) state.Artist = state.SourceApp;
+        }
+
+        private async Task<BitmapImage?> ReadAlbumArtAsync(
+            IRandomAccessStreamReference? thumbnail,
+            MediaSessionState state)
+        {
+            if (thumbnail == null)
+            {
+                _albumArtKey = string.Empty;
+                _cachedAlbumArt = null;
+                return null;
+            }
+
+            string key = $"{state.SourceApp}\n{state.Title}\n{state.Artist}\n{state.Album}";
+            if (key == _albumArtKey) return _cachedAlbumArt;
+
+            try
+            {
+                using IRandomAccessStreamWithContentType stream = await thumbnail.OpenReadAsync();
+                using Stream netStream = stream.AsStreamForRead();
+                using MemoryStream memory = new MemoryStream();
+                await netStream.CopyToAsync(memory);
+                memory.Position = 0;
+
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = memory;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                _albumArtKey = key;
+                _cachedAlbumArt = bitmap;
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string NormalizeRepeatMode(MediaPlaybackAutoRepeatMode? mode) => mode switch
+        {
+            MediaPlaybackAutoRepeatMode.List => "list",
+            MediaPlaybackAutoRepeatMode.Track => "track",
+            _ => "none"
+        };
+
+        private static string DetermineSourceAppName(string appId)
         {
             if (string.IsNullOrWhiteSpace(appId)) return "Media Player";
-            string lower = appId.ToLower();
-
+            string lower = appId.ToLowerInvariant();
             if (lower.Contains("spotify")) return "Spotify";
             if (lower.Contains("youtubemusic") || lower.Contains("youtube music")) return "YouTube Music";
             if (lower.Contains("youtube")) return "YouTube";
-            if (lower.Contains("chrome")) return "YouTube / Browser";
+            if (lower.Contains("chrome")) return "YouTube / Chrome";
             if (lower.Contains("msedge") || lower.Contains("edge")) return "YouTube / Edge";
             if (lower.Contains("firefox")) return "YouTube / Firefox";
             if (lower.Contains("brave")) return "YouTube / Brave";
             if (lower.Contains("opera")) return "YouTube / Opera";
-
+            if (lower.Contains("vlc")) return "VLC";
             return "Media Player";
         }
 
         public async Task SkipPreviousAsync()
         {
-            if (_currentSession != null)
-            {
-                await _currentSession.TrySkipPreviousAsync();
-            }
+            if (_currentSession != null) await _currentSession.TrySkipPreviousAsync();
         }
 
         public async Task TogglePlayPauseAsync()
         {
-            if (_currentSession != null)
-            {
-                await _currentSession.TryTogglePlayPauseAsync();
-            }
+            if (_currentSession != null) await _currentSession.TryTogglePlayPauseAsync();
         }
 
         public async Task SkipNextAsync()
         {
-            if (_currentSession != null)
-            {
-                await _currentSession.TrySkipNextAsync();
-            }
+            if (_currentSession != null) await _currentSession.TrySkipNextAsync();
         }
 
         public async Task SeekToAsync(double seconds)
         {
-            if (_currentSession != null)
+            if (_currentSession == null || !CurrentSessionState.CanSeek) return;
+            long ticks = (long)(Math.Max(0, seconds) * TimeSpan.TicksPerSecond);
+            await _currentSession.TryChangePlaybackPositionAsync(ticks);
+        }
+
+        public async Task ToggleShuffleAsync()
+        {
+            if (_currentSession == null || !CurrentSessionState.CanShuffle) return;
+            await _currentSession.TryChangeShuffleActiveAsync(!CurrentSessionState.ShuffleActive);
+            await RefreshAsync(forceWait: true);
+        }
+
+        public async Task CycleRepeatAsync()
+        {
+            if (_currentSession == null || !CurrentSessionState.CanRepeat) return;
+            MediaPlaybackAutoRepeatMode next = CurrentSessionState.RepeatMode switch
             {
-                long ticks = (long)(seconds * TimeSpan.TicksPerSecond);
-                await _currentSession.TryChangePlaybackPositionAsync(ticks);
-            }
+                "none" => MediaPlaybackAutoRepeatMode.List,
+                "list" => MediaPlaybackAutoRepeatMode.Track,
+                _ => MediaPlaybackAutoRepeatMode.None
+            };
+            await _currentSession.TryChangeAutoRepeatModeAsync(next);
+            await RefreshAsync(forceWait: true);
         }
 
         public void BringAppToFront()
         {
             if (_currentSession == null) return;
-            string appId = (_currentSession.SourceAppUserModelId ?? "").ToLower();
-
-            string targetProc = "Spotify";
-            if (appId.Contains("chrome")) targetProc = "chrome";
-            else if (appId.Contains("msedge") || appId.Contains("edge")) targetProc = "msedge";
-            else if (appId.Contains("firefox")) targetProc = "firefox";
-            else if (appId.Contains("brave")) targetProc = "brave";
-            else if (appId.Contains("opera")) targetProc = "opera";
-            else if (appId.Contains("spotify")) targetProc = "Spotify";
+            string appId = (_currentSession.SourceAppUserModelId ?? string.Empty).ToLowerInvariant();
+            string targetProcess = "Spotify";
+            if (appId.Contains("chrome")) targetProcess = "chrome";
+            else if (appId.Contains("msedge") || appId.Contains("edge")) targetProcess = "msedge";
+            else if (appId.Contains("firefox")) targetProcess = "firefox";
+            else if (appId.Contains("brave")) targetProcess = "brave";
+            else if (appId.Contains("opera")) targetProcess = "opera";
+            else if (appId.Contains("vlc")) targetProcess = "vlc";
 
             try
             {
-                var processes = System.Diagnostics.Process.GetProcessesByName(targetProc);
-                foreach (var proc in processes)
+                foreach (var process in System.Diagnostics.Process.GetProcessesByName(targetProcess))
                 {
-                    if (proc.MainWindowHandle != IntPtr.Zero)
-                    {
-                        NativeMethods.ShowWindow(proc.MainWindowHandle, NativeMethods.SW_RESTORE);
-                        NativeMethods.SetForegroundWindow(proc.MainWindowHandle);
-                        break;
-                    }
+                    if (process.MainWindowHandle == IntPtr.Zero) continue;
+                    NativeMethods.ShowWindow(process.MainWindowHandle, NativeMethods.SW_RESTORE);
+                    NativeMethods.SetForegroundWindow(process.MainWindowHandle);
+                    break;
                 }
             }
             catch { }
         }
 
-        public void BringSpotifyToFront()
+        private static void EmitError(string message)
         {
-            BringAppToFront();
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { @event = "error", message }));
         }
     }
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace LabMediaWidget
@@ -21,14 +23,24 @@ namespace LabMediaWidget
         private DispatcherTimer _pollTimer;
         private DispatcherTimer _volToastTimer;
         private SmtcManager _smtc;
+        private NowPlayingPanel _panel;
+        private QueueState _queueState = QueueState.Unavailable();
+        private TaskbarInfo _lastTaskbarInfo;
+        private CancellationTokenSource _runtimeInputCancellation = new CancellationTokenSource();
         private uint _taskbarCreatedMsg;
         private double _currentDurationSeconds = 0;
         private bool _hasSession;
+        private bool _isWidgetHovered;
 
         public MainWindow()
         {
             InitializeComponent();
             _smtc = new SmtcManager();
+            _panel = new NowPlayingPanel(_smtc)
+            {
+                OpenSettingsRequested = () => EmitEvent("action", new { type = "openSettings" }),
+                ProviderActionRequested = action => EmitEvent("providerAction", new { action })
+            };
             _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _pollTimer.Tick += PollTimer_Tick;
 
@@ -36,6 +48,15 @@ namespace LabMediaWidget
             _volToastTimer.Tick += (s, e) => { VolToastBorder.Visibility = Visibility.Collapsed; _volToastTimer.Stop(); };
 
             PreviewMouseWheel += Window_PreviewMouseWheel;
+            SystemParameters.StaticPropertyChanged += SystemParameters_StaticPropertyChanged;
+            Closed += MainWindow_Closed;
+        }
+
+        private void SystemParameters_StaticPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName is nameof(SystemParameters.HighContrast)
+                or nameof(SystemParameters.ClientAreaAnimation))
+                Dispatcher.BeginInvoke(ApplyConfig);
         }
 
         private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -82,6 +103,7 @@ namespace LabMediaWidget
             await _smtc.InitializeAsync();
 
             _pollTimer.Start();
+            StartRuntimeInputReader();
 
             EmitEvent("ready", new { pid = Process.GetCurrentProcess().Id });
         }
@@ -100,6 +122,97 @@ namespace LabMediaWidget
                     int.TryParse(args[++i], out _parentPid);
                 }
             }
+        }
+
+        private void StartRuntimeInputReader()
+        {
+            CancellationToken cancellation = _runtimeInputCancellation.Token;
+            _ = Task.Run(async () =>
+            {
+                while (!cancellation.IsCancellationRequested)
+                {
+                    string? line;
+                    try
+                    {
+                        line = await Console.In.ReadLineAsync(cancellation);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch
+                    {
+                        break;
+                    }
+
+                    if (line == null) break;
+                    try
+                    {
+                        var message = JsonSerializer.Deserialize<RuntimeMessage>(line,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (message?.Type != "queue:update" || message.Queue == null) continue;
+                        QueueState queue = SanitizeQueueState(message.Queue);
+                        Dispatcher.Invoke(() =>
+                        {
+                            _queueState = queue;
+                            _panel.UpdateQueueState(queue);
+                        });
+                    }
+                    catch
+                    {
+                        // Runtime messages are an optional capability channel.
+                        // Malformed provider data must never destabilize playback.
+                    }
+                }
+            }, cancellation);
+        }
+
+        private static QueueState SanitizeQueueState(QueueState value)
+        {
+            string[] allowed =
+            {
+                QueueStatuses.Unavailable,
+                QueueStatuses.RequiresAuth,
+                QueueStatuses.Loading,
+                QueueStatuses.Ready,
+                QueueStatuses.Empty,
+                QueueStatuses.Error
+            };
+            if (!allowed.Contains(value.Status, StringComparer.Ordinal))
+                value.Status = QueueStatuses.Error;
+            value.Items = (value.Items ?? new System.Collections.Generic.List<QueueItem>())
+                .Take(8)
+                .Select((item, index) => SanitizeQueueItem(item, index))
+                .ToList();
+            if (value.Status == QueueStatuses.Ready && value.Items.Count == 0)
+                value.Status = QueueStatuses.Empty;
+            value.Message = LimitText(value.Message, 500);
+            value.Provider = LimitText(value.Provider, 80);
+            value.Attribution = LimitText(value.Attribution, 80);
+            return value;
+        }
+
+        private static QueueItem SanitizeQueueItem(QueueItem? item, int index)
+        {
+            item ??= new QueueItem();
+            item.Id = LimitText(item.Id, 160);
+            if (string.IsNullOrWhiteSpace(item.Id)) item.Id = $"queue-{index}";
+            item.Title = LimitText(item.Title, 300);
+            if (string.IsNullOrWhiteSpace(item.Title)) item.Title = "Unknown title";
+            item.Artist = LimitText(item.Artist, 300);
+            item.Attribution = LimitText(item.Attribution, 80);
+            item.DurationMs = Math.Max(0, item.DurationMs);
+            item.ArtworkUrl = Uri.TryCreate(item.ArtworkUrl, UriKind.Absolute, out Uri? artwork)
+                && artwork.Scheme == Uri.UriSchemeHttps
+                ? LimitText(artwork.AbsoluteUri, 2048)
+                : string.Empty;
+            return item;
+        }
+
+        private static string LimitText(string? value, int maxLength)
+        {
+            string clean = (value ?? string.Empty).Trim();
+            return clean.Length <= maxLength ? clean : clean.Substring(0, maxLength);
         }
 
         private void InitParentMonitoring()
@@ -165,43 +278,29 @@ namespace LabMediaWidget
         {
             if (!_config.Enabled)
             {
+                _panel.HideFlyout();
                 Hide();
                 return;
             }
 
             Opacity = Math.Clamp(_config.Opacity, 0.4, 1.0);
 
-            // Size modes
+            // Fixed 40-DIP adaptive size modes. The outer native window never
+            // animates or changes height while controls reveal on hover.
             double width = 280;
             switch ((_config.Size ?? "normal").ToLower())
             {
                 case "micro":
                     width = 140;
-                    TxtTitle.MaxWidth = 0;
-                    TxtArtist.MaxWidth = 0;
-                    TxtTitle.Visibility = Visibility.Collapsed;
-                    TxtArtist.Visibility = Visibility.Collapsed;
                     break;
                 case "compact":
                     width = 200;
-                    TxtTitle.MaxWidth = 90;
-                    TxtArtist.MaxWidth = 90;
-                    TxtTitle.Visibility = Visibility.Visible;
-                    TxtArtist.Visibility = Visibility.Visible;
                     break;
                 case "large":
                     width = 360;
-                    TxtTitle.MaxWidth = 200;
-                    TxtArtist.MaxWidth = 200;
-                    TxtTitle.Visibility = Visibility.Visible;
-                    TxtArtist.Visibility = Visibility.Visible;
                     break;
                 default: // normal
                     width = 280;
-                    TxtTitle.MaxWidth = 140;
-                    TxtArtist.MaxWidth = 140;
-                    TxtTitle.Visibility = Visibility.Visible;
-                    TxtArtist.Visibility = Visibility.Visible;
                     break;
             }
 
@@ -259,29 +358,133 @@ namespace LabMediaWidget
                 ProgressTrack.Foreground = accentBrush;
                 if (ProgressGlow != null) ProgressGlow.Color = accentColor;
                 if (TxtFallbackArt != null) TxtFallbackArt.Fill = accentBrush;
+                TxtTitle.Foreground = new SolidColorBrush(Color.FromRgb(0xF8, 0xFA, 0xFC));
+                TxtArtist.Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x99, 0xAA));
                 if (BtnPlayPause != null)
                 {
                     BtnPlayPause.Background = accentBrush;
                     BtnPlayPause.BorderBrush = accentBrush;
+                    BtnPlayPause.Foreground = Brushes.White;
+                }
+                _panel.ApplyTheme(bgBrush, borderBrush, accentBrush);
+
+                if (SystemParameters.HighContrast)
+                {
+                    MainBorder.Background = SystemColors.WindowBrush;
+                    MainBorder.BorderBrush = SystemColors.WindowTextBrush;
+                    TxtTitle.Foreground = SystemColors.WindowTextBrush;
+                    TxtArtist.Foreground = SystemColors.WindowTextBrush;
+                    ProgressTrack.Foreground = SystemColors.HighlightBrush;
+                    if (TxtFallbackArt != null) TxtFallbackArt.Fill = SystemColors.HighlightBrush;
+                    if (BtnPlayPause != null)
+                    {
+                        BtnPlayPause.Background = SystemColors.HighlightBrush;
+                        BtnPlayPause.BorderBrush = SystemColors.HighlightBrush;
+                        BtnPlayPause.Foreground = SystemColors.HighlightTextBrush;
+                    }
                 }
             }
             catch { }
 
-            // Element toggles
+            // Element toggles and adaptive control density.
             ArtContainer.Visibility = _config.ShowAlbumArt ? Visibility.Visible : Visibility.Collapsed;
             ProgressTrack.Visibility = _config.ShowProgress ? Visibility.Visible : Visibility.Collapsed;
-
-            BtnPrev.Visibility = _config.Controls.Previous ? Visibility.Visible : Visibility.Collapsed;
-            BtnPlayPause.Visibility = _config.Controls.PlayPause ? Visibility.Visible : Visibility.Collapsed;
-            BtnNext.Visibility = _config.Controls.Next ? Visibility.Visible : Visibility.Collapsed;
+            ApplyAdaptiveLayout();
 
             UpdatePositionAndVisibility();
+        }
+
+        private void ApplyAdaptiveLayout()
+        {
+            string size = (_config.Size ?? "normal").ToLowerInvariant();
+            string mode = (_config.TaskbarControlMode ?? "adaptive").ToLowerInvariant();
+
+            bool micro = size == "micro";
+            bool compact = size == "compact";
+            bool large = size == "large";
+            TrackInfoPanel.Visibility = micro ? Visibility.Collapsed : Visibility.Visible;
+            TxtArtist.Visibility = compact || micro ? Visibility.Collapsed : Visibility.Visible;
+            TxtTitle.MaxWidth = compact ? 90 : large ? 200 : 140;
+            TxtArtist.MaxWidth = large ? 200 : 140;
+            ArtContainer.Width = micro || compact ? 28 : 32;
+            ArtContainer.Height = micro || compact ? 28 : 32;
+
+            bool showSecondary;
+            bool reserveSecondary = false;
+            if (mode == "always")
+            {
+                showSecondary = true;
+            }
+            else if (mode == "minimal")
+            {
+                showSecondary = false;
+            }
+            else if (large)
+            {
+                showSecondary = true;
+            }
+            else if (!micro && !compact)
+            {
+                showSecondary = _isWidgetHovered;
+                reserveSecondary = true;
+            }
+            else
+            {
+                showSecondary = false;
+            }
+
+            ControlsRail.Width = showSecondary || reserveSecondary ? 88 : 34;
+            SetSecondaryControlState(BtnPrev, _config.Controls.Previous, showSecondary, reserveSecondary);
+            SetSecondaryControlState(BtnNext, _config.Controls.Next, showSecondary, reserveSecondary);
+            BtnPlayPause.Visibility = _config.Controls.PlayPause ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static void SetSecondaryControlState(
+            UIElement control,
+            bool configured,
+            bool show,
+            bool reserve)
+        {
+            if (!configured || (!show && !reserve))
+            {
+                control.BeginAnimation(OpacityProperty, null);
+                control.Opacity = 0;
+                control.IsHitTestVisible = false;
+                control.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            control.Visibility = Visibility.Visible;
+            control.IsHitTestVisible = show;
+            double target = show ? 1.0 : 0.0;
+            var fade = new DoubleAnimation(target,
+                SystemParameters.ClientAreaAnimation
+                    ? TimeSpan.FromMilliseconds(120)
+                    : TimeSpan.Zero)
+            {
+                FillBehavior = FillBehavior.Stop
+            };
+            fade.Completed += (_, _) => control.Opacity = target;
+            control.BeginAnimation(OpacityProperty, fade);
+        }
+
+        private void MainBorder_MouseEnter(object sender, MouseEventArgs e)
+        {
+            _isWidgetHovered = true;
+            ApplyAdaptiveLayout();
+        }
+
+        private void MainBorder_MouseLeave(object sender, MouseEventArgs e)
+        {
+            _isWidgetHovered = false;
+            ApplyAdaptiveLayout();
         }
 
         private void Smtc_SessionStateChanged(object? sender, MediaSessionState e)
         {
             Dispatcher.Invoke(() =>
             {
+                _panel.UpdateState(e);
                 if (!e.HasSession)
                 {
                     _hasSession = false;
@@ -295,7 +498,7 @@ namespace LabMediaWidget
                     }
                     ProgressTrack.Value = 0;
                     _currentDurationSeconds = 0;
-                    EmitEvent("session", new { hasSession = false });
+                    EmitEvent("session", new { hasSession = false, sessionCount = e.SessionCount });
                     UpdatePositionAndVisibility();
                     return;
                 }
@@ -331,21 +534,23 @@ namespace LabMediaWidget
                     ProgressTrack.Value = 0;
                 }
 
-                if (BtnSwitchSession != null)
-                {
-                    BtnSwitchSession.Visibility = e.SessionCount > 1 ? Visibility.Visible : Visibility.Collapsed;
-                    BtnSwitchSession.ToolTip = e.SessionCount > 1 ? $"Switch Active Player ({e.SessionCount} Open)" : "Switch Active Player";
-                }
-
                 EmitEvent("session", new
                 {
                     hasSession = true,
+                    sessionId = e.SessionId,
                     title = e.Title,
                     artist = e.Artist,
+                    album = e.Album,
+                    sourceApp = e.SourceApp,
                     isPlaying = e.IsPlaying,
                     position = e.PositionSeconds,
                     duration = e.DurationSeconds,
-                    sessionCount = e.SessionCount
+                    sessionCount = e.SessionCount,
+                    canSeek = e.CanSeek,
+                    canShuffle = e.CanShuffle,
+                    canRepeat = e.CanRepeat,
+                    shuffleActive = e.ShuffleActive,
+                    repeatMode = e.RepeatMode
                 });
 
                 UpdatePositionAndVisibility();
@@ -364,12 +569,14 @@ namespace LabMediaWidget
         {
             if (!_config.Enabled)
             {
+                _panel.HideFlyout();
                 Hide();
                 return;
             }
 
             if (_config.AutoHideWhenIdle && !_hasSession)
             {
+                _panel.HideFlyout();
                 Hide();
                 return;
             }
@@ -377,13 +584,17 @@ namespace LabMediaWidget
             var tbInfo = TaskbarAnchor.CalculatePosition(Width, Height);
             if (!tbInfo.IsVisible || !tbInfo.HasSufficientSpace)
             {
+                _panel.HideFlyout();
                 Hide();
                 return;
             }
 
+            _lastTaskbarInfo = tbInfo;
+
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (_config.HideWhenFullscreen && TaskbarAnchor.IsForegroundFullscreen(hwnd, tbInfo.TaskbarHwnd))
             {
+                _panel.HideFlyout();
                 Hide();
                 return;
             }
@@ -393,12 +604,14 @@ namespace LabMediaWidget
                 NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
 
             if (!IsVisible) Show();
+            _panel.RepositionIfOpen(tbInfo);
         }
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             if (msg == _taskbarCreatedMsg)
             {
+                _panel.HideFlyout();
                 UpdatePositionAndVisibility();
                 handled = true;
             }
@@ -407,22 +620,20 @@ namespace LabMediaWidget
 
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
+            e.Handled = true;
             await _smtc.SkipPreviousAsync();
         }
 
         private async void BtnPlayPause_Click(object sender, RoutedEventArgs e)
         {
+            e.Handled = true;
             await _smtc.TogglePlayPauseAsync();
         }
 
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
+            e.Handled = true;
             await _smtc.SkipNextAsync();
-        }
-
-        private async void BtnSwitchSession_Click(object sender, RoutedEventArgs e)
-        {
-            await _smtc.CycleNextSessionAsync();
         }
 
         private async void ProgressTrack_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -432,16 +643,43 @@ namespace LabMediaWidget
             double ratio = pt.X / ProgressTrack.ActualWidth;
             double targetSeconds = Math.Clamp(ratio * _currentDurationSeconds, 0, _currentDurationSeconds);
             await _smtc.SeekToAsync(targetSeconds);
+            e.Handled = true;
         }
 
         private void Art_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _smtc.BringAppToFront();
+            HandlePrimaryClick();
+            e.Handled = true;
         }
 
         private void TrackInfo_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            _smtc.BringAppToFront();
+            HandlePrimaryClick();
+            e.Handled = true;
+        }
+
+        private void HandlePrimaryClick()
+        {
+            if (string.Equals(_config.PrimaryClickAction, "openSource", StringComparison.OrdinalIgnoreCase))
+            {
+                _smtc.BringAppToFront();
+                return;
+            }
+
+            if (_panel.IsVisible)
+            {
+                _panel.HideFlyout();
+                return;
+            }
+
+            // A click on the widget deactivates the flyout before this window
+            // receives its mouse event. Treat that click as the requested toggle
+            // off instead of immediately reopening the panel.
+            if (DateTime.UtcNow - _panel.LastDeactivatedUtc < TimeSpan.FromMilliseconds(350))
+                return;
+
+            _panel.UpdateQueueState(_queueState);
+            _panel.ShowAnchored(_lastTaskbarInfo);
         }
 
         private void MenuItem_CopyTitle_Click(object sender, RoutedEventArgs e)
@@ -457,12 +695,23 @@ namespace LabMediaWidget
         private void MenuItem_Hide_Click(object sender, RoutedEventArgs e)
         {
             EmitEvent("action", new { type = "hide" });
+            _panel.HideFlyout();
             Hide();
         }
 
         private void MenuItem_OpenSettings_Click(object sender, RoutedEventArgs e)
         {
             EmitEvent("action", new { type = "openSettings" });
+        }
+
+        private void MainWindow_Closed(object? sender, EventArgs e)
+        {
+            _runtimeInputCancellation.Cancel();
+            SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
+            _pollTimer.Stop();
+            _volToastTimer.Stop();
+            _configWatcher?.Dispose();
+            try { _panel.Close(); } catch { }
         }
 
         private void EmitEvent(string eventName, object payload)

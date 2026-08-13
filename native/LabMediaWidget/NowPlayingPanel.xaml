@@ -1,0 +1,234 @@
+<Window x:Class="LabMediaWidget.NowPlayingPanel"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+        Title="LabMedia Now Playing"
+        Width="384" MaxHeight="520" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        FontFamily="Segoe UI Variable, Segoe UI, sans-serif"
+        Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <Style x:Key="PanelIconButton" TargetType="Button">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="Background" Value="#14FFFFFF" />
+            <Setter Property="BorderBrush" Value="#24FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="20">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PanelPrimaryButton" TargetType="Button" BasedOn="{StaticResource PanelIconButton}">
+            <Setter Property="Width" Value="48" />
+            <Setter Property="Height" Value="48" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#1DB954" />
+            <Setter Property="BorderBrush" Value="#1DB954" />
+        </Style>
+
+        <Style x:Key="TextActionButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Background" Value="#14FFFFFF" />
+            <Setter Property="BorderBrush" Value="#24FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+    </Window.Resources>
+
+    <Border x:Name="PanelBorder" Margin="8" Padding="18"
+            Background="#FA111318" BorderBrush="#38FFFFFF"
+            BorderThickness="1" CornerRadius="16">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.55" />
+        </Border.Effect>
+        <StackPanel>
+            <!-- Source and session selection -->
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="SourceBadge" Background="#231DB954" CornerRadius="10" Padding="9,5" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtSource" Text="Media Player" Foreground="#4ADE80" FontSize="11" FontWeight="Bold" />
+                </Border>
+                <ComboBox x:Name="SessionPicker" Grid.Column="1" Margin="10,0" Height="30"
+                          DisplayMemberPath="DisplayLabel" SelectedValuePath="SessionId"
+                          SelectionChanged="SessionPicker_SelectionChanged"
+                          automation:AutomationProperties.Name="Active media player" />
+                <Button x:Name="BtnOverflow" Grid.Column="2" Style="{StaticResource PanelIconButton}"
+                        Width="32" Height="32" Click="BtnOverflow_Click"
+                        automation:AutomationProperties.Name="More LabMedia actions">
+                    <TextBlock Text="•••" FontWeight="Bold" Margin="0,-5,0,0" />
+                    <Button.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Open LabMedia Settings" Click="MenuItem_OpenSettings_Click" />
+                            <MenuItem Header="Copy Artist – Title" Click="MenuItem_Copy_Click" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+            </Grid>
+
+            <!-- Now playing hero -->
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="96" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Width="88" Height="88" CornerRadius="10" ClipToBounds="True"
+                        Background="#18FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Grid>
+                        <Image x:Name="ImgArtwork" Stretch="UniformToFill" />
+                        <Path x:Name="FallbackArtwork" Data="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z M 12,16.5 C 9.51,16.5 7.5,14.49 7.5,12 C 7.5,9.51 9.51,7.5 12,7.5 C 14.49,7.5 16.5,9.51 16.5,12 C 16.5,14.49 14.49,16.5 12,16.5 Z" Fill="#1DB954" Width="38" Height="38" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtTitle" Text="No media playing" Foreground="#F8FAFC"
+                               FontSize="17" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TxtArtist" Text="Start playback in a supported app" Foreground="#A7B0BC"
+                               FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TxtAlbum" Foreground="#707B88" FontSize="11" Margin="0,2,0,0"
+                               TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Style="{StaticResource TextActionButton}" Content="Open source ↗" Click="BtnOpenSource_Click"
+                                automation:AutomationProperties.Name="Open source application" />
+                        <Button Style="{StaticResource TextActionButton}" Content="Copy" Margin="7,0,0,0" Click="MenuItem_Copy_Click"
+                                automation:AutomationProperties.Name="Copy artist and title" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Timeline -->
+            <Grid Margin="0,0,0,12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Slider x:Name="TimelineSlider" Minimum="0" Maximum="100" Height="22"
+                        PreviewMouseLeftButtonDown="TimelineSlider_PreviewMouseLeftButtonDown"
+                        automation:AutomationProperties.Name="Playback position" />
+                <Grid Grid.Row="1">
+                    <TextBlock x:Name="TxtElapsed" Text="0:00" Foreground="#7C8794" FontSize="10" />
+                    <TextBlock x:Name="TxtDuration" Text="0:00" Foreground="#7C8794" FontSize="10" HorizontalAlignment="Right" />
+                </Grid>
+            </Grid>
+
+            <!-- Transport controls -->
+            <Grid Margin="18,0,18,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnShuffle" Grid.Column="0" Style="{StaticResource PanelIconButton}" Click="BtnShuffle_Click"
+                        ToolTip="Shuffle" automation:AutomationProperties.Name="Toggle shuffle">
+                    <TextBlock Text="Shuffle" FontSize="8" FontWeight="SemiBold" />
+                </Button>
+                <Button x:Name="BtnPrevious" Grid.Column="1" Style="{StaticResource PanelIconButton}" Click="BtnPrevious_Click"
+                        ToolTip="Previous" automation:AutomationProperties.Name="Previous track">
+                    <Path Data="M 15,5 L 8,12 L 15,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="9" Height="15" Stretch="Uniform" />
+                </Button>
+                <Button x:Name="BtnPlayPause" Grid.Column="2" Style="{StaticResource PanelPrimaryButton}" Click="BtnPlayPause_Click"
+                        ToolTip="Play or pause" automation:AutomationProperties.Name="Play or pause">
+                    <Path x:Name="PathPlayPause" Data="M 7,5 L 18,12 L 7,19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="16" Stretch="Uniform" />
+                </Button>
+                <Button x:Name="BtnNext" Grid.Column="3" Style="{StaticResource PanelIconButton}" Click="BtnNext_Click"
+                        ToolTip="Next" automation:AutomationProperties.Name="Next track">
+                    <Path Data="M 9,5 L 16,12 L 9,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="9" Height="15" Stretch="Uniform" />
+                </Button>
+                <Button x:Name="BtnRepeat" Grid.Column="4" Style="{StaticResource PanelIconButton}" Click="BtnRepeat_Click"
+                        ToolTip="Repeat" automation:AutomationProperties.Name="Change repeat mode">
+                    <TextBlock x:Name="TxtRepeat" Text="Repeat" FontSize="8" FontWeight="SemiBold" />
+                </Button>
+            </Grid>
+
+            <!-- Per-app volume -->
+            <Grid Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="42" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnMute" Style="{StaticResource PanelIconButton}" Width="40" Height="40"
+                        Click="BtnMute_Click" ToolTip="Mute this app" automation:AutomationProperties.Name="Mute active application">
+                    <TextBlock x:Name="TxtMuteIcon" Text="VOL" FontSize="8" FontWeight="Bold" />
+                </Button>
+                <Slider x:Name="VolumeSlider" Grid.Column="1" Minimum="0" Maximum="100" Margin="10,0"
+                        ValueChanged="VolumeSlider_ValueChanged" automation:AutomationProperties.Name="Application volume" />
+                <TextBlock x:Name="TxtVolume" Grid.Column="2" Text="100%" Foreground="#A7B0BC" FontSize="11"
+                           FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" />
+            </Grid>
+
+            <Separator Background="#20FFFFFF" Margin="0,0,0,12" />
+
+            <!-- Provider-neutral queue -->
+            <Grid Margin="0,0,0,8">
+                <TextBlock Text="Up Next" Foreground="#F8FAFC" FontSize="13" FontWeight="Bold" />
+                <TextBlock x:Name="TxtQueueAttribution" HorizontalAlignment="Right" Foreground="#707B88" FontSize="10" />
+            </Grid>
+            <Border x:Name="QueueStatusBorder" Background="#0FFFFFFF" BorderBrush="#1FFFFFFF"
+                    BorderThickness="1" CornerRadius="9" Padding="12">
+                <StackPanel>
+                    <TextBlock x:Name="TxtQueueStatus" Text="Up Next is not shared by this player."
+                               Foreground="#98A3B1" FontSize="11" TextWrapping="Wrap" />
+                    <Button x:Name="BtnQueueAction" Style="{StaticResource TextActionButton}" Margin="0,10,0,0"
+                            HorizontalAlignment="Left" Visibility="Collapsed" Click="BtnQueueAction_Click" />
+                </StackPanel>
+            </Border>
+            <ScrollViewer x:Name="QueueItemsScroll" MaxHeight="154" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <ItemsControl x:Name="QueueItems">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="38" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="32" Height="32" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                    <Image Source="{Binding ArtworkUrl}" Stretch="UniformToFill" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Artist}" Foreground="#7C8794" FontSize="10" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Text="{Binding Attribution}" Foreground="#65707D" FontSize="9" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </StackPanel>
+    </Border>
+</Window>

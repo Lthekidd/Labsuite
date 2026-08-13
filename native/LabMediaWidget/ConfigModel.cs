@@ -17,7 +17,7 @@ namespace LabMediaWidget
     public class LabMediaConfig
     {
         [JsonPropertyName("schemaVersion")]
-        public int SchemaVersion { get; set; } = 1;
+        public int SchemaVersion { get; set; } = 2;
 
         [JsonPropertyName("enabled")]
         public bool Enabled { get; set; } = true;
@@ -42,6 +42,12 @@ namespace LabMediaWidget
 
         [JsonPropertyName("hideWhenFullscreen")]
         public bool HideWhenFullscreen { get; set; } = true;
+
+        [JsonPropertyName("primaryClickAction")]
+        public string PrimaryClickAction { get; set; } = "panel"; // "panel", "openSource"
+
+        [JsonPropertyName("taskbarControlMode")]
+        public string TaskbarControlMode { get; set; } = "adaptive"; // "adaptive", "always", "minimal"
 
         [JsonPropertyName("controls")]
         public ControlsConfig Controls { get; set; } = new ControlsConfig();

@@ -1,19 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import AppIcon from '../AppIcon';
 import LabMediaMark from '../LabMediaMark';
 import { Play } from '@phosphor-icons/react/Play';
 import { Pause } from '@phosphor-icons/react/Pause';
 import { CaretLeft } from '@phosphor-icons/react/CaretLeft';
 import { CaretRight } from '@phosphor-icons/react/CaretRight';
-import { Palette } from '@phosphor-icons/react/Palette';
 import { Sliders } from '@phosphor-icons/react/Sliders';
-import { Clock } from '@phosphor-icons/react/Clock';
 import { Bell } from '@phosphor-icons/react/Bell';
 import { ClockCounterClockwise } from '@phosphor-icons/react/ClockCounterClockwise';
 import { Sparkle } from '@phosphor-icons/react/Sparkle';
 import { Copy } from '@phosphor-icons/react/Copy';
 import { Check } from '@phosphor-icons/react/Check';
-import { ArrowsOut } from '@phosphor-icons/react/ArrowsOut';
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
@@ -23,8 +20,21 @@ const THEME_STYLES = {
   neon: { label: 'Cyberpunk Neon', bg: '#0d0221', accent: '#00f5d4', border: '#7209b7', text: '#00f5d4' },
   glass: { label: 'Glassmorphism', bg: '#1a1a2e', accent: '#38bdf8', border: '#334155', text: '#f1f5f9' },
   minimal: { label: 'Minimalist', bg: '#111827', accent: '#9ca3af', border: '#1f2937', text: '#e5e7eb' },
-  transparent: { label: 'Transparent Glass', bg: 'rgba(255, 255, 255, 0.04)', accent: '#38bdf8', border: 'rgba(255, 255, 255, 0.25)', text: '#ffffff' }
+  transparent: { label: 'Transparent Glass', bg: 'rgba(255,255,255,.04)', accent: '#38bdf8', border: 'rgba(255,255,255,.25)', text: '#fff' }
 };
+
+const SIZE_OPTIONS = [
+  { id: 'micro', label: 'Micro', width: 140, description: 'Artwork, play/pause, progress' },
+  { id: 'compact', label: 'Compact', width: 200, description: 'Artwork, title, play/pause' },
+  { id: 'normal', label: 'Normal', width: 280, description: 'Two-line metadata and adaptive controls' },
+  { id: 'large', label: 'Large', width: 360, description: 'Full transport controls' }
+];
+
+const CONTROL_MODES = [
+  { id: 'adaptive', label: 'Adaptive', description: 'Secondary controls appear only when space or hover allows.' },
+  { id: 'always', label: 'Always visible', description: 'Show configured previous and next buttons at every size.' },
+  { id: 'minimal', label: 'Minimal', description: 'Keep only play/pause in the taskbar strip.' }
+];
 
 export default function LabMedia({ active = true }) {
   const [status, setStatus] = useState(null);
@@ -32,21 +42,22 @@ export default function LabMedia({ active = true }) {
   const [isBusy, setIsBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [copiedId, setCopiedId] = useState(null);
-  const [activeTab, setActiveTab] = useState('settings'); // 'settings' | 'history'
+  const [activeTab, setActiveTab] = useState('taskbar');
+  const [previewMode, setPreviewMode] = useState('collapsed');
 
   const refreshStatus = useCallback(async () => {
     try {
-      const res = await ipcRenderer?.invoke('labmedia:getStatus');
-      setStatus(res || null);
-    } catch (err) {
-      console.error('Failed to get LabMedia status:', err);
+      const result = await ipcRenderer?.invoke('labmedia:getStatus');
+      setStatus(result || null);
+    } catch (error) {
+      console.error('Failed to get LabMedia status:', error);
     }
   }, []);
 
   const refreshHistory = useCallback(async () => {
     try {
-      const res = await ipcRenderer?.invoke('labmedia:getHistory');
-      setHistory(Array.isArray(res) ? res : []);
+      const result = await ipcRenderer?.invoke('labmedia:getHistory');
+      setHistory(Array.isArray(result) ? result : []);
     } catch (_) {}
   }, []);
 
@@ -54,678 +65,407 @@ export default function LabMedia({ active = true }) {
     if (!active) return undefined;
     refreshStatus();
     refreshHistory();
-
-    const handleStatusChanged = (_event, nextStatus) => {
-      setStatus(nextStatus);
-    };
-
-    ipcRenderer?.on('labmedia:statusChanged', handleStatusChanged);
+    const handleStatus = (_event, nextStatus) => setStatus(nextStatus);
+    ipcRenderer?.on('labmedia:statusChanged', handleStatus);
     const interval = setInterval(() => {
       refreshStatus();
       refreshHistory();
     }, 2000);
-
     return () => {
-      ipcRenderer?.removeListener('labmedia:statusChanged', handleStatusChanged);
+      ipcRenderer?.removeListener('labmedia:statusChanged', handleStatus);
       clearInterval(interval);
     };
-  }, [active, refreshStatus, refreshHistory]);
+  }, [active, refreshHistory, refreshStatus]);
 
-  const handleToggleEnable = async () => {
-    if (!status) return;
+  const invokeAndSetStatus = async (channel, payload, fallbackMessage) => {
     try {
-      setIsBusy(true);
       setActionError('');
-      const nextEnabled = !status.settings?.enabled;
-      const res = await ipcRenderer?.invoke('labmedia:setEnabled', { enabled: nextEnabled });
-      setStatus(res || null);
-    } catch (err) {
-      setActionError(err.message || 'Failed to toggle LabMedia');
-    } finally {
-      setIsBusy(false);
+      const result = await ipcRenderer?.invoke(channel, payload);
+      setStatus(result || null);
+      return result;
+    } catch (error) {
+      setActionError(error.message || fallbackMessage);
+      return null;
     }
   };
 
-  const handleUpdateSetting = async (key, value) => {
-    if (!status) return;
-    try {
-      setActionError('');
-      const updates = { [key]: value };
-      const res = await ipcRenderer?.invoke('labmedia:updateSettings', { updates });
-      setStatus(res || null);
-    } catch (err) {
-      setActionError(err.message || 'Failed to update setting');
-    }
+  const updateSetting = (key, value) => invokeAndSetStatus(
+    'labmedia:updateSettings',
+    { updates: { [key]: value } },
+    'Failed to update LabMedia setting'
+  );
+
+  const updateControl = (key, value) => invokeAndSetStatus(
+    'labmedia:updateSettings',
+    { updates: { controls: { ...(status?.settings?.controls || {}), [key]: value } } },
+    'Failed to update taskbar control'
+  );
+
+  const toggleEnabled = async () => {
+    setIsBusy(true);
+    await invokeAndSetStatus(
+      'labmedia:setEnabled',
+      { enabled: !status?.settings?.enabled },
+      'Failed to toggle LabMedia'
+    );
+    setIsBusy(false);
   };
 
-  const handleUpdateControl = async (controlKey, value) => {
-    if (!status) return;
-    try {
-      setActionError('');
-      const currentControls = status.settings?.controls || {};
-      const updates = {
-        controls: {
-          ...currentControls,
-          [controlKey]: value
-        }
-      };
-      const res = await ipcRenderer?.invoke('labmedia:updateSettings', { updates });
-      setStatus(res || null);
-    } catch (err) {
-      setActionError(err.message || 'Failed to update control toggle');
-    }
+  const restartWidget = async () => {
+    setIsBusy(true);
+    await invokeAndSetStatus('labmedia:restart', undefined, 'Failed to restart LabMedia');
+    setIsBusy(false);
   };
 
-  const handleResetSettings = async () => {
+  const resetSettings = async () => {
     if (!window.confirm('Reset LabMedia settings to defaults?')) return;
-    try {
-      setIsBusy(true);
-      setActionError('');
-      const res = await ipcRenderer?.invoke('labmedia:resetSettings');
-      setStatus(res || null);
-    } catch (err) {
-      setActionError(err.message || 'Failed to reset settings');
-    } finally {
-      setIsBusy(false);
-    }
+    setIsBusy(true);
+    await invokeAndSetStatus('labmedia:resetSettings', undefined, 'Failed to reset LabMedia');
+    setIsBusy(false);
   };
 
-  const handleRestartWidget = async () => {
-    try {
-      setIsBusy(true);
-      setActionError('');
-      const res = await ipcRenderer?.invoke('labmedia:restart');
-      setStatus(res || null);
-    } catch (err) {
-      setActionError(err.message || 'Failed to restart widget');
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handleCopyTrack = async (item) => {
-    const text = `${item.artist} - ${item.title}`;
-    await ipcRenderer?.invoke('labmedia:copyTrackInfo', { text });
+  const copyTrack = async (item) => {
+    await ipcRenderer?.invoke('labmedia:copyTrackInfo', { text: `${item.artist} - ${item.title}` });
     setCopiedId(item.id);
     setTimeout(() => setCopiedId(null), 1500);
   };
 
   if (!status) {
-    return (
-      <div style={{ padding: '40px', color: 'var(--text-secondary)', fontFamily: 'Inter, sans-serif' }}>
-        Loading LabMedia settings...
-      </div>
-    );
+    return <div style={{ padding: 40, color: 'var(--text-secondary)' }}>Loading LabMedia settings…</div>;
   }
 
   const settings = status.settings || {};
   const controls = settings.controls || {};
   const session = status.session || {};
-  const themeObj = THEME_STYLES[settings.theme] || THEME_STYLES.spotify;
+  const queue = status.queue || {};
+  const theme = THEME_STYLES[settings.theme] || THEME_STYLES.spotify;
+  const badge = statusBadge(status.state);
 
-  const getStatusBadge = () => {
-    switch (status.state) {
-      case 'unsupported':
-        return { label: 'Unsupported OS', color: '#eab308', bg: 'rgba(234, 179, 8, 0.15)' };
-      case 'stopped':
-        return { label: 'Stopped', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' };
-      case 'starting':
-        return { label: 'Starting...', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' };
-      case 'running':
-        return { label: 'Active in Taskbar', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)' };
-      case 'no_session':
-        return { label: 'No Media Session', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' };
-      case 'error':
-        return { label: 'Error', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)' };
-      default:
-        return { label: 'Unknown', color: '#94a3b8', bg: 'rgba(148, 163, 184, 0.15)' };
-    }
+  const selectTab = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'taskbar') setPreviewMode('collapsed');
+    if (tab === 'panel') setPreviewMode('expanded');
   };
 
-  const badge = getStatusBadge();
-
   return (
-    <div className="labmedia-container" style={{ padding: '36px 40px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'Inter, Segoe UI, sans-serif' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'rgba(29, 185, 84, 0.15)', display: 'grid', placeItems: 'center' }}>
+    <div className="labmedia-container" style={{ padding: '32px 40px 48px', height: '100%', overflowY: 'auto', boxSizing: 'border-box', fontFamily: 'Inter, Segoe UI, sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 13, background: 'rgba(29,185,84,.14)', display: 'grid', placeItems: 'center' }}>
             <AppIcon appId="labmedia" size={28} color="#1db954" />
           </div>
           <div>
-            <h1 style={{ fontSize: '24px', margin: 0, color: 'var(--text-primary)', fontWeight: 800, letterSpacing: '-0.3px' }}>
-              LabMedia
-            </h1>
-            <p style={{ fontSize: '13.5px', margin: '3px 0 0 0', color: 'var(--text-secondary)' }}>
-              Taskbar media player for Spotify, YouTube, YouTube Music, and web browser audio.
+            <h1 style={{ fontSize: 24, margin: 0, color: 'var(--text-primary)', fontWeight: 800 }}>LabMedia</h1>
+            <p style={{ fontSize: 13.5, margin: '3px 0 0', color: 'var(--text-secondary)' }}>
+              A calm taskbar controller with details on demand.
             </p>
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{
-            padding: '6px 14px',
-            borderRadius: '999px',
-            fontSize: '12px',
-            fontWeight: 700,
-            color: badge.color,
-            background: badge.bg,
-            border: `1px solid ${badge.color}40`
-          }}>
-            {badge.label}
-          </span>
-        </div>
+        <span style={{ padding: '6px 13px', borderRadius: 999, fontSize: 12, fontWeight: 700, color: badge.color, background: badge.bg, border: `1px solid ${badge.color}40` }}>
+          {badge.label}
+        </span>
       </div>
 
-      {/* Tabs Header */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('settings')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeTab === 'settings' ? 'rgba(29, 185, 84, 0.15)' : 'transparent',
-            color: activeTab === 'settings' ? '#4ade80' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: '13px',
-            cursor: 'pointer'
-          }}
-        >
-          <Sliders size={16} weight="bold" />
-          Settings &amp; Layout
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('history')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 16px',
-            borderRadius: '8px',
-            border: 'none',
-            background: activeTab === 'history' ? 'rgba(29, 185, 84, 0.15)' : 'transparent',
-            color: activeTab === 'history' ? '#4ade80' : 'var(--text-secondary)',
-            fontWeight: 700,
-            fontSize: '13px',
-            cursor: 'pointer'
-          }}
-        >
-          <ClockCounterClockwise size={16} weight="bold" />
-          Recently Played ({history.length})
-        </button>
+      <div style={{ display: 'flex', gap: 7, borderBottom: '1px solid var(--border-color)', paddingBottom: 11, marginBottom: 20 }}>
+        <TabButton active={activeTab === 'taskbar'} onClick={() => selectTab('taskbar')} icon={<Sliders size={16} />} label="Taskbar" />
+        <TabButton active={activeTab === 'panel'} onClick={() => selectTab('panel')} icon={<Sparkle size={16} />} label="Expanded Panel" />
+        <TabButton active={activeTab === 'history'} onClick={() => selectTab('history')} icon={<ClockCounterClockwise size={16} />} label={`History (${history.length})`} />
       </div>
 
-      {actionError && (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', fontSize: '13px' }}>
-          {actionError}
-        </div>
-      )}
+      {actionError && <Notice color="#ef4444">{actionError}</Notice>}
+      {status.error && <Notice color="#ef4444">{status.error}</Notice>}
+      {!status.supported && <Notice color="#eab308">LabMedia requires Windows.</Notice>}
 
-      {status.error && (
-        <div style={{ marginBottom: '20px', padding: '12px 16px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5', fontSize: '13px' }}>
-          {status.error}
-        </div>
-      )}
-
-      {!status.supported && (
-        <div style={{ marginBottom: '20px', padding: '16px 20px', borderRadius: '10px', background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', color: '#fde047', fontSize: '13.5px' }}>
-          ⚠️ LabMedia requires Windows. It is unsupported on this platform.
-        </div>
-      )}
-
-      {activeTab === 'settings' && (
-        <>
-          {/* Live Taskbar Widget Preview Card (#13) */}
-          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ fontSize: '12px', color: '#1db954', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Sparkle size={15} weight="bold" /> Live Taskbar Widget Preview
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                🔊 Scroll wheel over taskbar widget adjusts active app volume
-              </div>
+      {activeTab !== 'history' && (
+        <SectionCard>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.55px' }}>
+              <Sparkle size={15} weight="bold" /> Interactive Preview
             </div>
-
-            {/* Interactive Widget Surface Preview */}
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0', background: '#090a0f', borderRadius: '10px', border: '1px border-color' }}>
-              <div style={{
-                width: settings.size === 'micro' ? '140px' : settings.size === 'compact' ? '200px' : settings.size === 'large' ? '360px' : '280px',
-                height: '40px',
-                borderRadius: '8px',
-                background: themeObj.bg,
-                border: `1px solid ${themeObj.border}`,
-                opacity: settings.opacity ?? 1,
-                boxSizing: 'border-box',
-                padding: '4px 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justify: 'space-between',
-                position: 'relative',
-                boxShadow: `0 0 12px ${themeObj.accent}30`,
-                transition: 'all 0.25s ease'
-              }}>
-                {settings.showAlbumArt !== false && (
-                  <div style={{ width: '30px', height: '30px', borderRadius: '5px', background: `${themeObj.accent}25`, display: 'grid', placeItems: 'center', flexShrink: 0, marginRight: '8px' }}>
-                    <LabMediaMark size={18} />
-                  </div>
-                )}
-
-                {settings.size !== 'micro' && (
-                  <div style={{ flex: 1, minWidth: 0, marginRight: '8px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: themeObj.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {session.title || 'Kamel messoudi - Topic'}
-                    </div>
-                    <div style={{ fontSize: '9.5px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px' }}>
-                      {session.artist || 'YouTube Music'}
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                  {controls.previous && (
-                    <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center', color: '#fff' }}>
-                      <CaretLeft size={12} weight="bold" />
-                    </div>
-                  )}
-                  {controls.playPause && (
-                    <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: themeObj.accent, display: 'grid', placeItems: 'center', color: '#fff', boxShadow: `0 0 6px ${themeObj.accent}` }}>
-                      {session.isPlaying ? <Pause size={13} weight="bold" /> : <Play size={13} weight="bold" style={{ marginLeft: '1px' }} />}
-                    </div>
-                  )}
-                  {controls.next && (
-                    <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center', color: '#fff' }}>
-                      <CaretRight size={12} weight="bold" />
-                    </div>
-                  )}
-                </div>
-
-                {settings.showProgress !== false && (
-                  <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3px', background: 'rgba(255,255,255,0.15)', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
-                    <div style={{ width: '45%', height: '100%', background: themeObj.accent, boxShadow: `0 0 6px ${themeObj.accent}` }} />
-                  </div>
-                )}
-              </div>
-            </div>
+            <Segmented
+              value={previewMode}
+              options={[{ id: 'collapsed', label: 'Collapsed' }, { id: 'expanded', label: 'Expanded' }]}
+              onChange={setPreviewMode}
+              compact
+            />
           </div>
+          <div style={{ minHeight: previewMode === 'expanded' ? 510 : 92, padding: 18, borderRadius: 11, border: '1px solid var(--border-color)', background: '#090a0f', display: 'grid', placeItems: 'center' }}>
+            {previewMode === 'collapsed'
+              ? <TaskbarPreview settings={settings} controls={controls} session={session} theme={theme} />
+              : <PanelPreview session={session} queue={queue} theme={theme} />}
+          </div>
+        </SectionCard>
+      )}
 
-          {/* Main Controls Card */}
-          <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
-            {/* Enable Toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '20px', borderBottom: '1px solid var(--border-color)' }}>
-              <div>
-                <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Enable Taskbar Player
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Displays floating playback widget directly inside your Windows taskbar.
-                </div>
-              </div>
-              <ToggleSwitch checked={!!settings.enabled} onChange={handleToggleEnable} disabled={isBusy || !status.supported} />
-            </div>
+      {activeTab === 'taskbar' && (
+        <>
+          <SectionCard title="Taskbar Controller" description="Configure the glanceable 40px strip. The expanded player remains fully functional regardless of this density.">
+            <SettingRow title="Enable Taskbar Player" description="Keep LabMedia available in the Windows taskbar.">
+              <ToggleSwitch checked={!!settings.enabled} onChange={toggleEnabled} disabled={isBusy || !status.supported} />
+            </SettingRow>
 
-            {/* Size Selection (#7 Micro Lozenge Mode) */}
-            <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <ArrowsOut size={16} /> Widget Size &amp; Layout
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                Choose width preset for your taskbar space.
-              </div>
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                {[
-                  { id: 'micro', label: 'Micro (140px)', desc: 'Lozenge mode (art + controls)' },
-                  { id: 'compact', label: 'Compact (200px)', desc: 'Tight taskbar' },
-                  { id: 'normal', label: 'Normal (280px)', desc: 'Standard layout' },
-                  { id: 'large', label: 'Large (360px)', desc: 'Full details' }
-                ].map(sizeOpt => {
-                  const activeSize = (settings.size || 'normal') === sizeOpt.id;
-                  return (
-                    <button
-                      key={sizeOpt.id}
-                      type="button"
-                      onClick={() => handleUpdateSetting('size', sizeOpt.id)}
-                      disabled={!settings.enabled}
-                      style={{
-                        height: '36px',
-                        padding: '0 16px',
-                        borderRadius: '8px',
-                        border: activeSize ? '1.5px solid #1db954' : '1px solid var(--border-color)',
-                        background: activeSize ? 'rgba(29, 185, 84, 0.2)' : 'rgba(0, 0, 0, 0.2)',
-                        color: activeSize ? '#4ade80' : 'var(--text-secondary)',
-                        fontWeight: 700,
-                        fontSize: '12.5px',
-                        cursor: settings.enabled ? 'pointer' : 'default'
-                      }}
-                    >
-                      {sizeOpt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SettingBlock title="Primary click" description="Choose what artwork and track text do when clicked.">
+              <Segmented
+                value={settings.primaryClickAction || 'panel'}
+                options={[{ id: 'panel', label: 'Open panel' }, { id: 'openSource', label: 'Open source app' }]}
+                onChange={(value) => updateSetting('primaryClickAction', value)}
+                disabled={!settings.enabled}
+              />
+            </SettingBlock>
 
-            {/* Custom Preset Themes (#16) */}
-            <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Palette size={16} /> Theme Presets
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                Select visual style for taskbar player surface.
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '10px' }}>
-                {Object.entries(THEME_STYLES).map(([id, theme]) => {
-                  const active = (settings.theme || 'spotify') === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => handleUpdateSetting('theme', id)}
-                      disabled={!settings.enabled}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        padding: '10px 12px',
-                        borderRadius: '10px',
-                        border: active ? `2px solid ${theme.accent}` : '1px solid var(--border-color)',
-                        background: active ? `${theme.accent}15` : 'rgba(0, 0, 0, 0.25)',
-                        color: active ? '#ffffff' : 'var(--text-secondary)',
-                        fontWeight: 700,
-                        fontSize: '12.5px',
-                        cursor: settings.enabled ? 'pointer' : 'default',
-                        textAlign: 'left'
-                      }}
-                    >
-                      <div style={{ height: '16px', borderRadius: '4px', background: theme.bg, border: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', padding: '0 4px' }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: theme.accent }} />
-                      </div>
-                      <span>{theme.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SettingBlock title="Widget size" description="Each size has a deliberate information hierarchy; the height always stays at 40px.">
+              <ChoiceGrid
+                value={settings.size || 'normal'}
+                options={SIZE_OPTIONS}
+                onChange={(value) => updateSetting('size', value)}
+                disabled={!settings.enabled}
+              />
+            </SettingBlock>
 
-            {/* Auto-Hide Settings */}
-            <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={16} /> Auto-Hide Behavior
-              </div>
-              <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-                Controls whether the taskbar widget auto-hides when media playback stops.
-              </div>
+            <SettingBlock title="Control density" description="Adaptive mode keeps the strip calm while retaining fast playback access.">
+              <ChoiceGrid
+                value={settings.taskbarControlMode || 'adaptive'}
+                options={CONTROL_MODES}
+                onChange={(value) => updateSetting('taskbarControlMode', value)}
+                disabled={!settings.enabled}
+              />
+            </SettingBlock>
 
-              <div style={{ marginBottom: '16px' }}>
-                <ToggleRow
-                  label="Auto-Hide Widget When Idle"
-                  checked={!!settings.autoHideWhenIdle}
-                  onChange={(val) => handleUpdateSetting('autoHideWhenIdle', val)}
-                  disabled={!settings.enabled}
-                />
+            <SettingBlock title="Taskbar elements" description="These switches affect only the collapsed strip, not the expanded player.">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 }}>
+                <ToggleRow label="Album artwork" checked={!!settings.showAlbumArt} onChange={(value) => updateSetting('showAlbumArt', value)} disabled={!settings.enabled} />
+                <ToggleRow label="Progress line" checked={!!settings.showProgress} onChange={(value) => updateSetting('showProgress', value)} disabled={!settings.enabled} />
+                <ToggleRow label="Previous button" checked={!!controls.previous} onChange={(value) => updateControl('previous', value)} disabled={!settings.enabled} />
+                <ToggleRow label="Play/pause button" checked={!!controls.playPause} onChange={(value) => updateControl('playPause', value)} disabled={!settings.enabled} />
+                <ToggleRow label="Next button" checked={!!controls.next} onChange={(value) => updateControl('next', value)} disabled={!settings.enabled} />
+                <ToggleRow label="Hide in fullscreen" checked={!!settings.hideWhenFullscreen} onChange={(value) => updateSetting('hideWhenFullscreen', value)} disabled={!settings.enabled} />
               </div>
+            </SettingBlock>
 
-              {settings.autoHideWhenIdle ? (
-                <div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                    Grace Period Before Hiding:
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    {[0, 5, 15, 30].map(sec => {
-                      const active = (settings.autoHideGraceSec ?? 0) === sec;
-                      return (
-                        <button
-                          key={sec}
-                          type="button"
-                          onClick={() => handleUpdateSetting('autoHideGraceSec', sec)}
-                          disabled={!settings.enabled}
-                          style={{
-                            height: '34px',
-                            padding: '0 16px',
-                            borderRadius: '6px',
-                            border: active ? '1.5px solid #1db954' : '1px solid var(--border-color)',
-                            background: active ? 'rgba(29, 185, 84, 0.2)' : 'rgba(0, 0, 0, 0.2)',
-                            color: active ? '#4ade80' : 'var(--text-secondary)',
-                            fontWeight: 700,
-                            fontSize: '12.5px',
-                            cursor: settings.enabled ? 'pointer' : 'default'
-                          }}
-                        >
-                          {sec === 0 ? 'Instant (0s)' : `${sec} seconds`}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  fontSize: '12.5px',
-                  color: '#34d399',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <Check size={16} /> Widget is Always Visible on Taskbar (Does not auto-hide when idle).
+            <SettingBlock title="Idle behavior" description="Keep the controller docked, or hide it after media sessions stop.">
+              <ToggleRow label="Auto-hide when idle" checked={!!settings.autoHideWhenIdle} onChange={(value) => updateSetting('autoHideWhenIdle', value)} disabled={!settings.enabled} />
+              {settings.autoHideWhenIdle && (
+                <div style={{ marginTop: 10 }}>
+                  <Segmented
+                    value={String(settings.autoHideGraceSec ?? 0)}
+                    options={[0, 5, 15, 30].map((seconds) => ({ id: String(seconds), label: seconds ? `${seconds}s` : 'Instant' }))}
+                    onChange={(value) => updateSetting('autoHideGraceSec', Number(value))}
+                    disabled={!settings.enabled}
+                  />
                 </div>
               )}
-            </div>
+            </SettingBlock>
+          </SectionCard>
 
-            {/* Opacity Slider */}
-            <div style={{ padding: '20px 0', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                  Widget Opacity
-                </div>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1db954' }}>
-                  {Math.round((settings.opacity ?? 1) * 100)}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0.4"
-                max="1.0"
-                step="0.05"
-                value={settings.opacity ?? 1}
-                disabled={!settings.enabled}
-                onChange={(e) => handleUpdateSetting('opacity', parseFloat(e.target.value))}
-                style={{ width: '100%', cursor: settings.enabled ? 'pointer' : 'default' }}
-              />
+          <SectionCard title="Appearance" description="Existing visual presets remain available; this redesign changes behavior and hierarchy rather than replacing themes.">
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(135px,1fr))', gap: 9, marginBottom: 18 }}>
+              {Object.entries(THEME_STYLES).map(([id, item]) => (
+                <button key={id} type="button" onClick={() => updateSetting('theme', id)} disabled={!settings.enabled}
+                  style={{ padding: 10, borderRadius: 9, border: settings.theme === id ? `2px solid ${item.accent}` : '1px solid var(--border-color)', background: settings.theme === id ? `${item.accent}14` : 'rgba(0,0,0,.18)', color: settings.theme === id ? 'var(--text-primary)' : 'var(--text-secondary)', cursor: settings.enabled ? 'pointer' : 'default', textAlign: 'left', fontWeight: 700 }}>
+                  <div style={{ height: 15, borderRadius: 4, background: item.bg, border: `1px solid ${item.border}`, marginBottom: 7, padding: '0 4px', display: 'flex', alignItems: 'center' }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: item.accent }} />
+                  </div>
+                  {item.label}
+                </button>
+              ))}
             </div>
-
-            {/* UI Element Toggles & Toast Notifications (#14 Custom Switches, #19 Notifications) */}
-            <div style={{ padding: '20px 0 0 0' }}>
-              <div style={{ fontSize: '14.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '14px' }}>
-                Feature &amp; UI Toggles
+            <SettingRow title="Widget opacity" description="Applies to the collapsed taskbar surface.">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 240 }}>
+                <input type="range" min="0.4" max="1" step="0.05" value={settings.opacity ?? 1} disabled={!settings.enabled}
+                  onChange={(event) => updateSetting('opacity', Number(event.target.value))} style={{ flex: 1 }} />
+                <span style={{ color: theme.accent, fontWeight: 800, width: 42 }}>{Math.round((settings.opacity ?? 1) * 100)}%</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-                <ToggleRow label="Album Art Thumbnail" checked={!!settings.showAlbumArt} onChange={(val) => handleUpdateSetting('showAlbumArt', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Progress Bar Line" checked={!!settings.showProgress} onChange={(val) => handleUpdateSetting('showProgress', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Previous Button" checked={!!controls.previous} onChange={(val) => handleUpdateControl('previous', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Play/Pause Button" checked={!!controls.playPause} onChange={(val) => handleUpdateControl('playPause', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Next Button" checked={!!controls.next} onChange={(val) => handleUpdateControl('next', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Hide in Fullscreen" checked={!!settings.hideWhenFullscreen} onChange={(val) => handleUpdateSetting('hideWhenFullscreen', val)} disabled={!settings.enabled} />
-                <ToggleRow label="Now Playing Toast" checked={!!settings.showToastNotifications} onChange={(val) => handleUpdateSetting('showToastNotifications', val)} disabled={!settings.enabled} icon={<Bell size={14} />} />
-              </div>
-            </div>
-          </div>
+            </SettingRow>
+          </SectionCard>
         </>
       )}
 
-      {/* History Log Tab (#21) */}
-      {activeTab === 'history' && (
-        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Recently Played Tracks
+      {activeTab === 'panel' && (
+        <>
+          <SectionCard title="Expanded Now Playing" description="A native flyout anchored above LabMedia. It takes focus only while you interact with it and closes like a standard Windows flyout.">
+            <InfoGrid items={[
+              ['Open', settings.primaryClickAction === 'panel' ? 'Click artwork or track text' : 'Switch Primary click to Open panel'],
+              ['Dismiss', 'Outside click, Escape, fullscreen, taskbar auto-hide'],
+              ['Playback', 'Timeline, transport, shuffle, repeat, app volume and mute'],
+              ['Players', 'Explicit selector when multiple media sessions are open']
+            ]} />
+            <div style={{ marginTop: 14 }}>
+              <ToggleRow label="Now Playing notifications" icon={<Bell size={14} />} checked={!!settings.showToastNotifications}
+                onChange={(value) => updateSetting('showToastNotifications', value)} disabled={!settings.enabled} />
             </div>
-            <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-              Rolling log of the last 50 played tracks
-            </div>
-          </div>
+          </SectionCard>
 
-          {history.length === 0 ? (
-            <div style={{ padding: '30px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13.5px' }}>
-              No playback history recorded yet. Start listening on Spotify, YouTube, or browser media tabs!
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {history.map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: 'rgba(0, 0, 0, 0.2)',
-                    border: '1px solid var(--border-color)'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {item.title}
-                    </div>
-                    <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>{item.artist}</span>
-                      <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(29, 185, 84, 0.15)', color: '#4ade80', fontWeight: 700 }}>
-                        {item.sourceApp}
-                      </span>
-                      <span>• {item.timestamp}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopyTrack(item)}
-                    style={{
-                      height: '32px',
-                      padding: '0 12px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      background: copiedId === item.id ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                      color: copiedId === item.id ? '#4ade80' : 'var(--text-secondary)',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    {copiedId === item.id ? <Check size={14} weight="bold" /> : <Copy size={14} />}
-                    {copiedId === item.id ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+          <SectionCard title="Up Next" description="Queue data is provider-controlled and is never fabricated from history or open browser sessions.">
+            <QueueCapability state={queue} />
+            <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
+              Spotify support is capability-gated for public builds. Authentication and refresh tokens remain in LabSuite’s main process; the native panel receives only sanitized, read-only queue items.
+            </p>
+          </SectionCard>
+        </>
       )}
 
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '16px' }}>
-        <button
-          type="button"
-          onClick={handleResetSettings}
-          disabled={isBusy}
-          style={{
-            height: '38px',
-            padding: '0 18px',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            background: 'rgba(0, 0, 0, 0.2)',
-            color: 'var(--text-secondary)',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: isBusy ? 'default' : 'pointer'
-          }}
-        >
-          Reset to Defaults
-        </button>
+      {activeTab === 'history' && (
+        <SectionCard title="Recently Played" description="A rolling session log of the last 50 tracks. History is never presented as an upcoming queue.">
+          {history.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13.5 }}>No playback history recorded yet.</div>
+          ) : history.map((item) => (
+            <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', borderRadius: 9, background: 'rgba(0,0,0,.18)', border: '1px solid var(--border-color)', marginBottom: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: 'var(--text-primary)', fontSize: 13.5, fontWeight: 750, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 12, marginTop: 3 }}>{item.artist} · {item.sourceApp} · {item.timestamp}</div>
+              </div>
+              <button type="button" onClick={() => copyTrack(item)} style={smallButton(copiedId === item.id)}>
+                {copiedId === item.id ? <Check size={14} /> : <Copy size={14} />}
+                {copiedId === item.id ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          ))}
+        </SectionCard>
+      )}
 
-        <button
-          type="button"
-          onClick={handleRestartWidget}
-          disabled={isBusy || !status.supported}
-          style={{
-            height: '38px',
-            padding: '0 18px',
-            borderRadius: '8px',
-            border: 'none',
-            background: 'linear-gradient(90deg, #1db954, #15803d)',
-            color: '#fff',
-            fontSize: '13px',
-            fontWeight: 700,
-            cursor: isBusy || !status.supported ? 'default' : 'pointer'
-          }}
-        >
-          Restart Widget
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+        <button type="button" onClick={resetSettings} disabled={isBusy} style={secondaryAction}>Reset defaults</button>
+        <button type="button" onClick={restartWidget} disabled={isBusy || !status.supported} style={primaryAction}>Restart widget</button>
       </div>
     </div>
   );
 }
 
-function ToggleSwitch({ checked, onChange, disabled }) {
+function TaskbarPreview({ settings, controls, session, theme }) {
+  const [hovered, setHovered] = useState(false);
+  const size = SIZE_OPTIONS.find((item) => item.id === settings.size) || SIZE_OPTIONS[2];
+  const mode = settings.taskbarControlMode || 'adaptive';
+  const showInfo = size.id !== 'micro';
+  const showArtist = size.id === 'normal' || size.id === 'large';
+  const showSecondary = mode === 'always' || (mode === 'adaptive' && (size.id === 'large' || (size.id === 'normal' && hovered)));
+  const reserveSecondary = mode === 'always' || (mode === 'adaptive' && (size.id === 'large' || size.id === 'normal'));
+  const artSize = ['micro', 'compact'].includes(size.id) ? 28 : 32;
   return (
-    <div
-      onClick={() => !disabled && onChange(!checked)}
-      style={{
-        width: '42px',
-        height: '24px',
-        borderRadius: '12px',
-        background: checked ? '#1db954' : 'rgba(255, 255, 255, 0.15)',
-        position: 'relative',
-        cursor: disabled ? 'default' : 'pointer',
-        transition: 'background 0.2s ease',
-        flexShrink: 0
-      }}
-    >
-      <div
-        style={{
-          width: '18px',
-          height: '18px',
-          borderRadius: '50%',
-          background: '#ffffff',
-          position: 'absolute',
-          top: '3px',
-          left: checked ? '21px' : '3px',
-          transition: 'left 0.2s ease',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.4)'
-        }}
-      />
+    <div onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      title="Clicking artwork or track text opens Now Playing"
+      style={{ width: size.width, height: 40, boxSizing: 'border-box', borderRadius: 8, background: theme.bg, border: `1px solid ${theme.border}`, opacity: settings.opacity ?? 1, display: 'flex', alignItems: 'center', padding: '3px 6px', position: 'relative', boxShadow: `0 8px 22px rgba(0,0,0,.4)` }}>
+      {settings.showAlbumArt !== false && <div style={{ width: artSize, height: artSize, borderRadius: 5, flex: '0 0 auto', background: `${theme.accent}24`, display: 'grid', placeItems: 'center', marginRight: 8 }}><LabMediaMark size={16} /></div>}
+      {showInfo && <div style={{ flex: 1, minWidth: 0, marginRight: 7 }}>
+        <div style={{ color: theme.text, fontSize: 11, fontWeight: 750, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{session.title || 'Night Drive'}</div>
+        {showArtist && <div style={{ color: '#8c98a7', fontSize: 9.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>{session.artist || 'LabMedia Radio'}</div>}
+      </div>}
+      <div style={{ width: reserveSecondary ? 86 : 30, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, flex: '0 0 auto' }}>
+        {reserveSecondary && controls.previous !== false && <span style={{ opacity: showSecondary ? 1 : 0, pointerEvents: showSecondary ? 'auto' : 'none' }}><RoundControl><CaretLeft size={12} weight="bold" /></RoundControl></span>}
+        {controls.playPause !== false && <RoundControl primary color={theme.accent}>{session.isPlaying ? <Pause size={12} weight="bold" /> : <Play size={12} weight="bold" />}</RoundControl>}
+        {reserveSecondary && controls.next !== false && <span style={{ opacity: showSecondary ? 1 : 0, pointerEvents: showSecondary ? 'auto' : 'none' }}><RoundControl><CaretRight size={12} weight="bold" /></RoundControl></span>}
+      </div>
+      {settings.showProgress !== false && <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, borderRadius: '0 0 8px 8px', background: 'rgba(255,255,255,.12)', overflow: 'hidden' }}><div style={{ width: '44%', height: '100%', background: theme.accent }} /></div>}
     </div>
   );
 }
 
-function ToggleRow({ label, checked, onChange, disabled, icon }) {
+function PanelPreview({ session, queue, theme }) {
+  const queueReady = queue.status === 'ready' && Array.isArray(queue.items) && queue.items.length > 0;
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '10px 12px',
-      borderRadius: '8px',
-      background: 'rgba(0, 0, 0, 0.15)',
-      border: '1px solid var(--border-color)'
-    }}>
-      <span style={{ fontSize: '13px', color: disabled ? 'var(--text-muted)' : 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-        {icon}
-        {label}
-      </span>
-      <ToggleSwitch checked={checked} onChange={onChange} disabled={disabled} />
+    <div style={{ width: 384, maxWidth: '100%', boxSizing: 'border-box', borderRadius: 16, padding: 18, background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: '0 20px 45px rgba(0,0,0,.58)', color: theme.text }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+        <span style={{ padding: '5px 9px', borderRadius: 10, background: `${theme.accent}20`, color: theme.accent, fontSize: 11, fontWeight: 800 }}>{session.sourceApp || 'Media Player'}</span>
+        <span style={{ marginLeft: 9, color: '#8c98a7', fontSize: 11, flex: 1 }}>{session.sessionCount > 1 ? `${session.sessionCount} players available` : 'Now playing'}</span>
+        <span style={{ color: '#8c98a7', letterSpacing: 2 }}>•••</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '88px 1fr', gap: 12, alignItems: 'center' }}>
+        <div style={{ width: 88, height: 88, borderRadius: 10, background: `${theme.accent}20`, display: 'grid', placeItems: 'center' }}><LabMediaMark size={38} /></div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 17, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{session.title || 'Night Drive'}</div>
+          <div style={{ color: '#a7b0bc', fontSize: 12, marginTop: 4 }}>{session.artist || 'LabMedia Radio'}</div>
+          <div style={{ color: '#707b88', fontSize: 11, marginTop: 2 }}>{session.album || 'Now Playing'}</div>
+          <div style={{ display: 'flex', gap: 7, marginTop: 10 }}><MiniPill>Open source ↗</MiniPill><MiniPill>Copy</MiniPill></div>
+        </div>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ height: 4, borderRadius: 4, background: 'rgba(255,255,255,.13)' }}><div style={{ width: '43%', height: '100%', borderRadius: 4, background: theme.accent }} /></div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#7c8794', fontSize: 10, marginTop: 5 }}><span>1:42</span><span>3:58</span></div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', margin: '8px 22px 14px' }}>
+        <RoundControl>SH</RoundControl><RoundControl><CaretLeft size={14} /></RoundControl><RoundControl primary color={theme.accent} large>{session.isPlaying ? <Pause size={16} /> : <Play size={16} />}</RoundControl><RoundControl><CaretRight size={14} /></RoundControl><RoundControl>RP</RoundControl>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}><span style={{ fontSize: 10, fontWeight: 800 }}>VOL</span><div style={{ flex: 1, height: 4, borderRadius: 4, background: 'rgba(255,255,255,.13)' }}><div style={{ width: '72%', height: '100%', borderRadius: 4, background: theme.accent }} /></div><span style={{ color: '#a7b0bc', fontSize: 11 }}>72%</span></div>
+      <div style={{ borderTop: '1px solid rgba(255,255,255,.1)', paddingTop: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Up Next</div>
+        {queueReady ? queue.items.slice(0, 3).map((item) => <div key={item.id} style={{ padding: '7px 9px', background: 'rgba(255,255,255,.04)', borderRadius: 7, marginBottom: 5, fontSize: 11 }}>{item.title} <span style={{ color: '#7c8794' }}>· {item.artist}</span></div>)
+          : <div style={{ padding: 12, borderRadius: 9, border: '1px solid rgba(255,255,255,.09)', color: '#98a3b1', fontSize: 11 }}>{queue.message || 'Up Next is not shared by this player.'}</div>}
+      </div>
     </div>
   );
 }
+
+function QueueCapability({ state = {} }) {
+  const labels = { unavailable: 'Unavailable', requiresAuth: 'Connection required', loading: 'Loading', ready: 'Available', empty: 'Queue empty', error: 'Provider error' };
+  const color = state.status === 'ready' ? '#34d399' : state.status === 'error' ? '#f87171' : '#94a3b8';
+  return <div style={{ padding: 13, borderRadius: 9, border: `1px solid ${color}40`, background: `${color}10` }}>
+    <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[state.status] || 'Unavailable'}{state.attribution ? ` · ${state.attribution}` : ''}</div>
+    <div style={{ color: 'var(--text-secondary)', fontSize: 12.5, marginTop: 4 }}>{state.message || 'Up Next is not shared by this player.'}</div>
+  </div>;
+}
+
+function SectionCard({ title, description, children }) {
+  return <section style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: 12, padding: 22, marginBottom: 20 }}>
+    {title && <div style={{ marginBottom: 16 }}><div style={{ color: 'var(--text-primary)', fontSize: 15, fontWeight: 800 }}>{title}</div>{description && <div style={{ color: 'var(--text-secondary)', fontSize: 12.5, marginTop: 4, lineHeight: 1.45 }}>{description}</div>}</div>}
+    {children}
+  </section>;
+}
+
+function SettingRow({ title, description, children }) {
+  return <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 20, paddingBottom: 18, borderBottom: '1px solid var(--border-color)' }}><div><div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 750 }}>{title}</div><div style={{ color: 'var(--text-secondary)', fontSize: 12.5, marginTop: 3 }}>{description}</div></div>{children}</div>;
+}
+
+function SettingBlock({ title, description, children }) {
+  return <div style={{ padding: '18px 0', borderBottom: '1px solid var(--border-color)' }}><div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 750 }}>{title}</div><div style={{ color: 'var(--text-secondary)', fontSize: 12.5, margin: '3px 0 11px' }}>{description}</div>{children}</div>;
+}
+
+function TabButton({ active, onClick, icon, label }) {
+  return <button type="button" onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', border: 0, borderRadius: 8, background: active ? 'rgba(29,185,84,.14)' : 'transparent', color: active ? '#4ade80' : 'var(--text-secondary)', fontSize: 13, fontWeight: 750, cursor: 'pointer' }}>{icon}{label}</button>;
+}
+
+function Segmented({ value, options, onChange, disabled, compact }) {
+  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{options.map((option) => <button key={option.id} type="button" disabled={disabled} onClick={() => onChange(option.id)} style={{ minHeight: compact ? 28 : 34, padding: compact ? '0 10px' : '0 14px', borderRadius: 7, border: value === option.id ? '1.5px solid #1db954' : '1px solid var(--border-color)', background: value === option.id ? 'rgba(29,185,84,.16)' : 'rgba(0,0,0,.16)', color: value === option.id ? '#4ade80' : 'var(--text-secondary)', fontSize: compact ? 11.5 : 12.5, fontWeight: 750, cursor: disabled ? 'default' : 'pointer' }}>{option.label}</button>)}</div>;
+}
+
+function ChoiceGrid({ value, options, onChange, disabled }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(145px,1fr))', gap: 9 }}>{options.map((option) => <button key={option.id} type="button" disabled={disabled} onClick={() => onChange(option.id)} style={{ padding: 11, borderRadius: 9, textAlign: 'left', border: value === option.id ? '1.5px solid #1db954' : '1px solid var(--border-color)', background: value === option.id ? 'rgba(29,185,84,.13)' : 'rgba(0,0,0,.15)', color: 'var(--text-primary)', cursor: disabled ? 'default' : 'pointer' }}><div style={{ fontSize: 12.5, fontWeight: 800 }}>{option.label}</div><div style={{ marginTop: 4, color: 'var(--text-secondary)', fontSize: 11.5, lineHeight: 1.35 }}>{option.description}</div></button>)}</div>;
+}
+
+function ToggleSwitch({ checked, onChange, disabled }) {
+  return <button type="button" role="switch" aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)} style={{ width: 44, height: 25, padding: 0, border: 0, borderRadius: 13, background: checked ? '#1db954' : 'rgba(255,255,255,.15)', position: 'relative', cursor: disabled ? 'default' : 'pointer', flex: '0 0 auto' }}><span style={{ width: 19, height: 19, borderRadius: '50%', background: '#fff', position: 'absolute', top: 3, left: checked ? 22 : 3, boxShadow: '0 1px 3px rgba(0,0,0,.4)' }} /></button>;
+}
+
+function ToggleRow({ label, checked, onChange, disabled, icon }) {
+  return <div style={{ minHeight: 42, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '0 11px', borderRadius: 8, background: 'rgba(0,0,0,.14)', border: '1px solid var(--border-color)' }}><span style={{ display: 'flex', alignItems: 'center', gap: 6, color: disabled ? 'var(--text-muted)' : 'var(--text-primary)', fontSize: 12.5 }}>{icon}{label}</span><ToggleSwitch checked={checked} onChange={onChange} disabled={disabled} /></div>;
+}
+
+function InfoGrid({ items }) {
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 9 }}>{items.map(([label, value]) => <div key={label} style={{ padding: 11, borderRadius: 8, border: '1px solid var(--border-color)', background: 'rgba(0,0,0,.14)' }}><div style={{ color: '#4ade80', fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.4px' }}>{label}</div><div style={{ color: 'var(--text-primary)', fontSize: 12.5, marginTop: 4 }}>{value}</div></div>)}</div>;
+}
+
+function RoundControl({ children, primary, color = '#1db954', large }) {
+  return <span style={{ width: large ? 44 : 25, height: large ? 44 : 25, borderRadius: '50%', background: primary ? color : 'rgba(255,255,255,.1)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 7, fontWeight: 800, flex: '0 0 auto' }}>{children}</span>;
+}
+
+function MiniPill({ children }) {
+  return <span style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid rgba(255,255,255,.12)', background: 'rgba(255,255,255,.06)', color: '#d4d8de', fontSize: 10 }}>{children}</span>;
+}
+
+function Notice({ color, children }) {
+  return <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 8, background: `${color}18`, border: `1px solid ${color}45`, color, fontSize: 12.5 }}>{children}</div>;
+}
+
+function statusBadge(state) {
+  const values = {
+    unsupported: ['Unsupported OS', '#eab308'], stopped: ['Stopped', '#94a3b8'], starting: ['Starting…', '#3b82f6'],
+    running: ['Active in Taskbar', '#10b981'], no_session: ['Waiting for media', '#38bdf8'], error: ['Error', '#ef4444']
+  };
+  const [label, color] = values[state] || ['Unknown', '#94a3b8'];
+  return { label, color, bg: `${color}20` };
+}
+
+function smallButton(active) {
+  return { minWidth: 80, height: 32, padding: '0 11px', borderRadius: 7, border: '1px solid var(--border-color)', background: active ? 'rgba(16,185,129,.18)' : 'rgba(255,255,255,.05)', color: active ? '#4ade80' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 12, fontWeight: 750, cursor: 'pointer' };
+}
+
+const secondaryAction = { height: 38, padding: '0 17px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'rgba(0,0,0,.18)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 750, cursor: 'pointer' };
+const primaryAction = { ...secondaryAction, border: 0, background: 'linear-gradient(90deg,#1db954,#15803d)', color: '#fff' };
