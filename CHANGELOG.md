@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.33 - 2026-08-13
+
+### 24/7 Lo-Fi & Ambient Internet Radio Stations Integration
+
+- **Curated 24/7 Radio Station Category (`youtubeLibrary.js`)**:
+  - Integrated 5 curated 24/7 ambient radio streams directly into the YouTube Library tab (*Lofi Hip Hop Radio*, *Synthwave & Retrowave Radio*, *Chillhop Radio*, *Peaceful Piano Radio*, and *Smooth Jazz Cafe Radio*).
+  - 1-click playback hands off to YouTube Music app window directly from the flyout!
+
 ## 2.10.32 - 2026-08-13
 
 ### Quiet Background Launching (Start App Minimized to Taskbar)

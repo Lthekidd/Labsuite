@@ -130,7 +130,7 @@ async function testConnectedLibraryFlow() {
   assert.strictEqual(state.connection.email, 'same@example.com');
   assert.strictEqual(state.connection.channelTitle, 'My Channel');
   assert.strictEqual(state.library.status, 'ready');
-  assert.deepStrictEqual(state.library.playlists.map(item => item.title), ['Liked Music', 'Owned playlist']);
+  assert.deepStrictEqual(state.library.playlists.map(item => item.title), ['24/7 Lo-Fi & Ambient Radio', 'Liked Music', 'Owned playlist']);
   assert.strictEqual(state.library.hasMore, true);
   assert.ok(storedSecret.includes('secure-refresh-token'));
   assert.ok(!storedSecret.includes('memory-only-access-token'));
@@ -143,7 +143,7 @@ async function testConnectedLibraryFlow() {
 
   await provider.loadMore();
   state = provider.getState();
-  assert.deepStrictEqual(state.library.playlists.map(item => item.title), ['Liked Music', 'Owned playlist', 'Second playlist']);
+  assert.deepStrictEqual(state.library.playlists.map(item => item.title), ['24/7 Lo-Fi & Ambient Radio', 'Liked Music', 'Owned playlist', 'Second playlist']);
   assert.strictEqual(state.library.hasMore, false);
 
   await provider.selectPlaylist('PL_owned');
@@ -260,7 +260,7 @@ async function test401RetryAndRetryAfter() {
   assert.strictEqual(refreshes, 2, 'A 401 must trigger exactly one fresh access token');
   assert.strictEqual(channelCalls, 3);
   assert.deepStrictEqual(waits, [2000], 'Retry-After must be honored before retrying');
-  assert.strictEqual(provider.getState().library.status, 'empty');
+  assert.strictEqual(provider.getState().library.status, 'ready');
   provider.shutdown();
 }
 

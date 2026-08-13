@@ -80,8 +80,26 @@ function safeHttpsUrl(value) {
   }
 }
 
+const CURATED_RADIO_PLAYLIST = Object.freeze({
+  id: 'RADIO_STATIONS',
+  title: '24/7 Lo-Fi & Ambient Radio',
+  thumbnailUrl: 'https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg',
+  itemCount: 5,
+  isLiked: false,
+  attribution: 'Radio'
+});
+
+const CURATED_RADIO_ITEMS = Object.freeze([
+  { id: 'radio-1', videoId: 'jfKfPfyJRdk', title: 'Lofi Hip Hop Radio – Beats to Relax/Study to', artist: 'Lofi Girl', thumbnailUrl: 'https://i.ytimg.com/vi/jfKfPfyJRdk/hqdefault.jpg', durationMs: 0, available: true, attribution: 'Radio' },
+  { id: 'radio-2', videoId: '4xDzrJKXOOY', title: 'Synthwave Radio – Chill Synth Beats', artist: 'Lofi Girl', thumbnailUrl: 'https://i.ytimg.com/vi/4xDzrJKXOOY/hqdefault.jpg', durationMs: 0, available: true, attribution: 'Radio' },
+  { id: 'radio-3', videoId: '5wRWniH7WDA', title: 'Chillhop Radio – Jazzy & Lofi Beats', artist: 'Chillhop Music', thumbnailUrl: 'https://i.ytimg.com/vi/5wRWniH7WDA/hqdefault.jpg', durationMs: 0, available: true, attribution: 'Radio' },
+  { id: 'radio-4', videoId: 'DWcJFNfaw9c', title: 'Peaceful Piano Radio – Relax & Study', artist: 'Relaxing Music', thumbnailUrl: 'https://i.ytimg.com/vi/DWcJFNfaw9c/hqdefault.jpg', durationMs: 0, available: true, attribution: 'Radio' },
+  { id: 'radio-5', videoId: 'Dx5qFact3Mg', title: 'Smooth Jazz Cafe Radio – Soft Background Jazz', artist: 'Cafe Music BGM', thumbnailUrl: 'https://i.ytimg.com/vi/Dx5qFact3Mg/hqdefault.jpg', durationMs: 0, available: true, attribution: 'Radio' }
+]);
+
 function validatePlaylistId(value) {
   const id = String(value || '').trim();
+  if (id === 'RADIO_STATIONS') return id;
   if (!PLAYLIST_ID_PATTERN.test(id)) throw new YouTubeLibraryError('invalidId', 'Invalid YouTube playlist ID.');
   return id;
 }
@@ -632,7 +650,7 @@ class YouTubeLibraryProvider {
         const likedApi = Array.isArray(likedResponse.items) ? likedResponse.items[0] : null;
         liked = this._playlistFromApi(likedApi || { id: likedId }, true);
       }
-      const playlists = [liked, ...ownedPage.playlists]
+      const playlists = [CURATED_RADIO_PLAYLIST, liked, ...ownedPage.playlists]
         .filter(Boolean)
         .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index);
       this._playlistNextPageToken = ownedPage.nextPageToken;
@@ -723,6 +741,14 @@ class YouTubeLibraryProvider {
 
   async selectPlaylist(playlistId, { force = false } = {}) {
     const id = validatePlaylistId(playlistId);
+    if (id === 'RADIO_STATIONS') {
+      this._state.library = {
+        ...this._state.library, status: 'ready', message: '',
+        selectedPlaylist: CURATED_RADIO_PLAYLIST, items: clone(CURATED_RADIO_ITEMS), hasMore: false
+      };
+      this._publish();
+      return this.getState();
+    }
     const playlist = this._state.library.playlists.find(item => item.id === id);
     if (!playlist) throw new YouTubeLibraryError('unknownPlaylist', 'That playlist is not in the loaded YouTube Library.');
     const cached = this._playlistItemCache.get(id);
@@ -797,8 +823,9 @@ class YouTubeLibraryProvider {
 
   async openPlaylist(playlistId, preferredApp = 'auto', startMinimized = true) {
     const id = validatePlaylistId(playlistId);
-    if (!this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
-    const url = `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
+    const isRadio = id === 'RADIO_STATIONS';
+    if (!isRadio && !this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
+    const url = isRadio ? 'https://music.youtube.com/watch?v=jfKfPfyJRdk' : `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
     try {
       this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {
@@ -810,9 +837,12 @@ class YouTubeLibraryProvider {
   async openTrack(playlistId, videoId, preferredApp = 'auto', startMinimized = true) {
     const playlist = validatePlaylistId(playlistId);
     const video = validateVideoId(videoId);
-    const item = this._state.library.items.find(entry => entry.videoId === video && entry.available);
-    if (this._state.library.selectedPlaylist?.id !== playlist || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
-    const url = `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
+    const isRadio = playlist === 'RADIO_STATIONS';
+    const item = isRadio
+      ? CURATED_RADIO_ITEMS.find(entry => entry.videoId === video)
+      : this._state.library.items.find(entry => entry.videoId === video && entry.available);
+    if ((!isRadio && this._state.library.selectedPlaylist?.id !== playlist) || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
+    const url = isRadio ? `https://music.youtube.com/watch?v=${encodeURIComponent(video)}` : `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
     try {
       this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {
