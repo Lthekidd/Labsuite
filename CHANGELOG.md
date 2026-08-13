@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.21 - 2026-08-13
+
+### Active Media Session Volume Isolation & Transparent Glass Theme
+
+- **Strict Active App Volume Isolation**:
+  - Refactored `IsMediaProcess` in `AppVolume.cs` and `smtcWorker.ps1`. When both Spotify and YouTube (in Chrome/Edge) are open, scrolling the mouse wheel on the taskbar widget now **strictly adjusts ONLY the process currently active and displayed on screen**.
+  - If Spotify is shown on the player, only Spotify volume changes. If YouTube in Chrome is shown, only Chrome volume changes.
+- **Added Transparent Glass Theme Preset**:
+  - Added 6th theme preset: **Transparent Glass** (`transparent`), featuring a 100% borderless transparent background surface (`#00000000`) with subtle frosted outline (`#35FFFFFF`) and sky blue accent (`#38BDF8`).
+
 ## 2.10.20 - 2026-08-13
 
 ### Native C# Compilation Fix

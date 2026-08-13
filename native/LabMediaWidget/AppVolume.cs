@@ -178,27 +178,35 @@ namespace LabMediaWidget
         {
             if (string.IsNullOrWhiteSpace(processName)) return false;
 
-            if (!string.IsNullOrWhiteSpace(activeAppHint)
-                && (processName.Contains(activeAppHint, StringComparison.OrdinalIgnoreCase)
-                    || activeAppHint.Contains(processName, StringComparison.OrdinalIgnoreCase)))
-                return true;
+            // When an active session app hint is provided, strictly target ONLY the process
+            // corresponding to the active session currently displayed on the taskbar widget.
+            if (!string.IsNullOrWhiteSpace(activeAppHint))
+            {
+                string hint = activeAppHint.Trim().ToLowerInvariant();
+                string name = processName.ToLowerInvariant();
 
-            string name = processName.ToLowerInvariant();
-            return name.Contains("spotify") ||
-                   name.Contains("chrome") ||
-                   name.Contains("msedge") ||
-                   name.Contains("firefox") ||
-                   name.Contains("brave") ||
-                   name.Contains("opera") ||
-                   name.Contains("vivaldi") ||
-                   name.Contains("vlc") ||
-                   name.Contains("wmplayer") ||
-                   name.Contains("musicbee") ||
-                   name.Contains("foobar2000") ||
-                   name.Contains("itunes") ||
-                   name.Contains("applemusic") ||
-                   name.Contains("tidal") ||
-                   name.Contains("deezer");
+                if (hint.Contains("spotify") && name.Contains("spotify")) return true;
+                if ((hint.Contains("chrome") || hint.Contains("youtube")) && name.Contains("chrome")) return true;
+                if ((hint.Contains("edge") || hint.Contains("msedge")) && name.Contains("msedge")) return true;
+                if (hint.Contains("firefox") && name.Contains("firefox")) return true;
+                if (hint.Contains("brave") && name.Contains("brave")) return true;
+                if (hint.Contains("opera") && name.Contains("opera")) return true;
+                if (hint.Contains("vlc") && name.Contains("vlc")) return true;
+
+                if (name.Contains(hint) || hint.Contains(name)) return true;
+
+                return false;
+            }
+
+            string fallbackName = processName.ToLowerInvariant();
+            return fallbackName.Contains("spotify") ||
+                   fallbackName.Contains("chrome") ||
+                   fallbackName.Contains("msedge") ||
+                   fallbackName.Contains("firefox") ||
+                   fallbackName.Contains("brave") ||
+                   fallbackName.Contains("opera") ||
+                   fallbackName.Contains("vlc") ||
+                   fallbackName.Contains("wmplayer");
         }
 
         private static void ReleaseComObject(object? value)

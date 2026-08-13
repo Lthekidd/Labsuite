@@ -22,7 +22,8 @@ const THEME_STYLES = {
   oled: { label: 'OLED Black', bg: '#000000', accent: '#10b981', border: '#18181b', text: '#ffffff' },
   neon: { label: 'Cyberpunk Neon', bg: '#0d0221', accent: '#00f5d4', border: '#7209b7', text: '#00f5d4' },
   glass: { label: 'Glassmorphism', bg: '#1a1a2e', accent: '#38bdf8', border: '#334155', text: '#f1f5f9' },
-  minimal: { label: 'Minimalist', bg: '#111827', accent: '#9ca3af', border: '#1f2937', text: '#e5e7eb' }
+  minimal: { label: 'Minimalist', bg: '#111827', accent: '#9ca3af', border: '#1f2937', text: '#e5e7eb' },
+  transparent: { label: 'Transparent Glass', bg: 'rgba(255, 255, 255, 0.04)', accent: '#38bdf8', border: 'rgba(255, 255, 255, 0.25)', text: '#ffffff' }
 };
 
 export default function LabMedia({ active = true }) {

@@ -28,7 +28,7 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
 });
 
 const VALID_SIZES = new Set(['micro', 'compact', 'normal', 'large']);
-const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal']);
+const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal', 'transparent']);
 const CRASH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CRASHES_PER_WINDOW = 3;
 const BACKOFF_DELAYS_MS = [1000, 5000, 30000];

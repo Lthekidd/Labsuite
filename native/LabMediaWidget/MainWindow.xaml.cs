@@ -222,6 +222,11 @@ namespace LabMediaWidget
                     borderHex = "#1F2937";
                     accentHex = "#9CA3AF";
                     break;
+                case "transparent":
+                    bgHex = "#00000000";
+                    borderHex = "#35FFFFFF";
+                    accentHex = "#38BDF8";
+                    break;
                 default: // spotify
                     bgHex = "#CC18181B";
                     borderHex = "#3027272A";

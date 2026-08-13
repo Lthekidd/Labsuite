@@ -33,6 +33,9 @@ function testSettingsValidation() {
   assert.strictEqual(custom.showAlbumArt, false);
   assert.strictEqual(custom.controls.previous, false);
 
+  const transparentTheme = mediaWidget.validateSettings({ theme: 'transparent' });
+  assert.strictEqual(transparentTheme.theme, 'transparent');
+
   // Invalid size string & invalid theme string
   const invalidSize = mediaWidget.validateSettings({ size: 'super_large', theme: 'invalid_theme' });
   assert.strictEqual(invalidSize.size, 'normal');
