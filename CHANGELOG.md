@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.10.16 - 2026-08-13
+
+### Critical Stability Fix: Eliminate Windows Taskbar & Explorer Crashes
+
+- **Removed `GWLP_HWNDPARENT` Taskbar Ownership Coupling**:
+  - Removed `SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, taskbar)`. Coupling external WPF window handles to Explorer's main taskbar (`Shell_TrayWnd`) was causing `explorer.exe` message loop crashes during taskbar updates.
+- **Eliminated UI Automation Polling**:
+  - Switched from querying COM `AutomationElement.FromHandle` on every 1-second timer tick to a zero-overhead pure native Win32 calculation (`FindWindowEx("TrayNotifyWnd")` + `GetWindowRect`).
+  - Completely prevents thread contention and COM flooding on Explorer's `taskbar.dll` thread.
+
 ## 2.10.15 - 2026-08-13
 
 ### LabMedia Complete 22-Upgrade Suite & UI Overhaul

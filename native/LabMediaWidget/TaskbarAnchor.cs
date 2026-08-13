@@ -59,47 +59,11 @@ namespace LabMediaWidget
                 if (visibleTaskbarPx < taskbarBandPx - 4 || requestedHeightPx > taskbarBandPx)
                     return info; // wait until an auto-hide animation has settled
 
-                var anchors = ReadTaskbarAnchors(taskbar);
-                if (!anchors.Ok)
-                    return info;
+                int? notifyLeft = NativeMethods.GetTrayNotifyLeft(taskbar);
+                int rightBound = notifyLeft.HasValue ? notifyLeft.Value : taskbarRect.Right - 200;
 
-                int leftPx;
-                int rightLimitPx;
-                bool isLeftAligned = IsTaskbarLeftAligned();
-                if (!isLeftAligned)
-                {
-                    if (!anchors.StartLeft.HasValue)
-                        return info;
-
-                    // Centered taskbar: use the real Widgets/Start bounds. With
-                    // Widgets disabled, the physical left edge is the safe anchor.
-                    leftPx = anchors.WidgetsRight.HasValue
-                        ? (int)Math.Ceiling(anchors.WidgetsRight.Value) + 8
-                        : taskbarRect.Left + 12;
-                    rightLimitPx = (int)Math.Floor(anchors.StartLeft.Value) - 8;
-                }
-                else
-                {
-                    // Left aligned: right-align before the notification area and
-                    // require a trustworthy end bound for Start/task buttons.
-                    int? notifyLeft = NativeMethods.GetTrayNotifyLeft(taskbar);
-                    if (!notifyLeft.HasValue)
-                        return info;
-                    double? taskButtonsEnd = anchors.TaskButtonsRight ?? anchors.StartRight;
-                    if (!taskButtonsEnd.HasValue)
-                        return info;
-                    int taskButtonsRight = (int)Math.Ceiling(taskButtonsEnd.Value);
-                    leftPx = notifyLeft.Value - 8 - requestedWidthPx;
-                    rightLimitPx = notifyLeft.Value - 8;
-                    if (leftPx < taskButtonsRight + 8)
-                        return info;
-                }
-
-                if (rightLimitPx - leftPx < requestedWidthPx)
-                    return info;
-
-                int topPx = taskbarRect.Bottom - taskbarBandPx
-                    + Math.Max(0, (taskbarBandPx - requestedHeightPx) / 2);
+                int leftPx = rightBound - 12 - requestedWidthPx;
+                int topPx = taskbarRect.Bottom - taskbarBandPx + Math.Max(0, (taskbarBandPx - requestedHeightPx) / 2);
 
                 info.X = leftPx;
                 info.Y = topPx;

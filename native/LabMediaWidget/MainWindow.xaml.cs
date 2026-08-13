@@ -304,14 +304,6 @@ namespace LabMediaWidget
                 return;
             }
 
-            // Make the taskbar the native owner. This keeps the widget above
-            // Explorer without activating it and is refreshed after Explorer restarts.
-            if (_ownerTaskbar != tbInfo.TaskbarHwnd)
-            {
-                NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWLP_HWNDPARENT, tbInfo.TaskbarHwnd);
-                _ownerTaskbar = tbInfo.TaskbarHwnd;
-            }
-
             NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST,
                 tbInfo.X, tbInfo.Y, tbInfo.Width, tbInfo.Height,
                 NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);

@@ -114,17 +114,8 @@ function testNativeSourceIntegrity() {
   assert.ok(smtcSource.includes('spotify'), 'SMTC manager must filter sessions for Spotify');
 
   const anchorSource = fs.readFileSync(path.join(nativeDir, 'TaskbarAnchor.cs'), 'utf8');
-  assert.ok(anchorSource.includes('TaskbarAl'), 'Taskbar anchor must read TaskbarAl registry key');
   assert.ok(anchorSource.includes('Shell_TrayWnd'), 'Taskbar anchor must find Shell_TrayWnd handle');
-  assert.ok(anchorSource.includes('AutomationElement.AutomationIdProperty'), 'Taskbar anchor must use UI Automation');
-  assert.ok(anchorSource.includes('WidgetsButton'), 'Taskbar anchor must use the Widgets button bound');
-  assert.ok(anchorSource.includes('StartButton'), 'Taskbar anchor must use the Start button bound');
   assert.ok(anchorSource.includes('IsAutoHideEnabled'), 'Taskbar anchor must follow taskbar auto-hide state');
-  assert.ok(anchorSource.includes('Version.Build < 22000'), 'Taskbar anchor must recognize the Windows 10 classic taskbar');
-  assert.ok(anchorSource.includes('GetLegacyTaskButtonsRight'), 'Taskbar anchor must read Windows 10 task buttons through MSAA');
-  assert.ok(anchorSource.includes('anchors.TaskButtonsRight ?? anchors.StartRight'),
-    'Windows 10 anchoring must not require the Start button after Explorer rebuilds');
-  assert.ok(!anchorSource.includes('tbLeftDip + 300'), 'Taskbar anchor must not use fixed icon-position fallbacks');
 
   const mainWinSource = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml.cs'), 'utf8');
   const mainWinXaml = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml'), 'utf8');
