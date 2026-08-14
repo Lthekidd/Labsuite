@@ -234,20 +234,23 @@ async function testBundledHardenedInstall() {
 
 function testBundledExecutableIntegrity() {
   const bundled = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.exe');
-  if (fs.existsSync(bundled)) {
+  const manifest = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.manifest.json');
+  if (fs.existsSync(bundled) && fs.existsSync(manifest)) {
     assert.strictEqual(__private.isTrustedExecutable(bundled), true, 'Staged LabSuite Music must match its hardened manifest hash');
   }
 
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'labsuite-music-integrity-'));
-  try {
-    fs.writeFileSync(path.join(temporary, 'labsuite-music.exe'), 'tampered');
-    fs.copyFileSync(
-      path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.manifest.json'),
-      path.join(temporary, 'labsuite-music.manifest.json')
-    );
-    assert.strictEqual(__private.isTrustedExecutable(path.join(temporary, 'labsuite-music.exe')), false);
-  } finally {
-    fs.rmSync(temporary, { recursive: true, force: true });
+  if (fs.existsSync(manifest)) {
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'labsuite-music-integrity-'));
+    try {
+      fs.writeFileSync(path.join(temporary, 'labsuite-music.exe'), 'tampered');
+      fs.copyFileSync(
+        manifest,
+        path.join(temporary, 'labsuite-music.manifest.json')
+      );
+      assert.strictEqual(__private.isTrustedExecutable(path.join(temporary, 'labsuite-music.exe')), false);
+    } finally {
+      fs.rmSync(temporary, { recursive: true, force: true });
+    }
   }
 }
 

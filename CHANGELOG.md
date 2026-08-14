@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.10.40 - 2026-08-14
+
+### Guarded CI Copy File Operations for Bundled Manifests
+
+- **Headless Runner File Copy Protection (`scripts/verify-ytmdesktop.js`)**:
+  - Guarded manifest file copy operations in `testBundledExecutableIntegrity` with `fs.existsSync(manifest)` check.
+  - Ensures clean test execution on headless GitHub Actions CI runner environments where optional pre-staged binaries/manifests are created dynamically at build time.
+
 ## 2.10.39 - 2026-08-14
 
 ### Fixed CI Executable Integrity Verification & Git Binary Attributes
