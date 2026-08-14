@@ -8,8 +8,11 @@ module.exports = async function refreshLabSuiteMusicManifest(context) {
   const bundlePath = path.join(context.appOutDir, 'resources', 'bin', 'LabSuiteMusic');
   const executablePath = path.join(bundlePath, 'labsuite-music.exe');
   const manifestPath = path.join(bundlePath, 'labsuite-music.manifest.json');
+
+  // LabSuite Music is an optional companion binary — skip gracefully if not bundled
   if (!fs.existsSync(executablePath) || !fs.existsSync(manifestPath)) {
-    throw new Error('Packaged LabSuite Music binary or manifest is missing after signing.');
+    console.log('  • LabSuite Music companion binary not bundled — skipping hash refresh');
+    return;
   }
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.41 - 2026-08-14
+
+### Fixed Post-Sign Hook Blocking Builds Without Bundled Companion Binary
+
+- **Optional Binary Skip in `after-sign-labsuite-music.js`**:
+  - Changed the post-sign electron-builder hook from a hard `throw` to a graceful `return` when `labsuite-music.exe` or its manifest is absent from the packaged output.
+  - LabSuite Music companion is an optional component — builds without it should proceed normally.
+  - When present, the hook still re-hashes the post-signing binary and updates the manifest SHA256 for integrity verification.
+
 ## 2.10.40 - 2026-08-14
 
 ### Guarded CI Copy File Operations for Bundled Manifests
