@@ -185,6 +185,14 @@ function checkLabSuiteMusicBundle(bundlePath, label) {
 }
 
 function main() {
+  if (process.argv.includes('--labsuite-music-only')) {
+    checkLabSuiteMusicBundle(
+      path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabSuiteMusic'),
+      'packaged LabSuite Music'
+    );
+    return;
+  }
+
   checkNoInlineScripts();
   checkNoRendererElectronRequire();
   checkNoRemoteCssImports();

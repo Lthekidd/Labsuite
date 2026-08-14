@@ -17,6 +17,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Check out pinned LabSuite Music source
+        uses: actions/checkout@v4
+        with:
+          repository: Lthekidd/LabSuiteMusic
+          ref: 1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad
+          path: LabSuiteMusic
+          persist-credentials: false
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -33,6 +41,16 @@ jobs:
 
       - name: Download verified rclone binary
         run: npm run download-rclone
+
+      - name: Build hardened LabSuite Music companion
+        shell: pwsh
+        run: |
+          ./scripts/build-labsuite-music.ps1 `
+            -SourcePath "$env:GITHUB_WORKSPACE\LabSuiteMusic" `
+            -ExpectedCommit '1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad'
+
+      - name: Verify LabSuite Music runtime boundary
+        run: npm run verify:labsuite-music-runtime
 
       - name: Verify tag matches package version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -57,6 +75,9 @@ jobs:
 
       - name: Build unsigned Windows installer
         run: npx electron-builder --win --publish never
+
+      - name: Verify packaged release security
+        run: node scripts/verify-release-security.js --labsuite-music-only
 
       - name: Verify unsigned installer and update metadata
         shell: pwsh

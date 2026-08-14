@@ -271,12 +271,27 @@ function testStaticSecurityContract() {
   const rendererSource = fs.readFileSync(path.join(ROOT, 'renderer', 'apps', 'LabMedia.jsx'), 'utf8');
   const builderConfig = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8');
   const afterSignSource = fs.readFileSync(path.join(ROOT, 'scripts', 'after-sign-labsuite-music.js'), 'utf8');
+  const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-labsuite-music.ps1'), 'utf8');
+  const releaseWorkflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release-windows.yml'), 'utf8');
+  const pinnedCommit = '1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad';
   assert.ok(rendererSource.includes('labsuite-hardened-v1')
     && rendererSource.includes('upstream YTMDesktop builds are rejected'),
     'LabMedia settings must disclose the hardened companion trust boundary');
   assert.ok(!providerSource.includes('winget.exe') && !providerSource.includes('Ytmdesktop.Ytmdesktop'));
   assert.ok(!providerSource.includes('github.com/ytmdesktop/ytmdesktop/releases'));
   assert.ok(builderConfig.includes('afterSign: scripts/after-sign-labsuite-music.js'));
+  assert.ok(releaseWorkflow.includes('repository: Lthekidd/LabSuiteMusic')
+    && releaseWorkflow.includes(`ref: ${pinnedCommit}`)
+    && releaseWorkflow.includes(`-ExpectedCommit '${pinnedCommit}'`),
+    'Windows releases must build the public hardened fork at an exact reviewed commit');
+  assert.ok(releaseWorkflow.indexOf('Build hardened LabSuite Music companion')
+    < releaseWorkflow.indexOf('npx electron-builder --win --publish never'),
+    'The hardened companion must be staged before electron-builder packages the installer');
+  assert.ok(releaseWorkflow.includes('node scripts/verify-release-security.js --labsuite-music-only'),
+    'Windows releases must verify the packaged companion and corresponding GPL source');
+  assert.ok(buildScript.includes('[string]$ExpectedCommit')
+    && buildScript.includes('does not match pinned commit'),
+    'The companion build must reject source revisions that differ from the workflow pin');
   assert.ok(afterSignSource.includes("securityProfile !== 'labsuite-hardened-v1'")
     && afterSignSource.includes("createHash('sha256')"),
     'Windows packaging must refresh the manifest after Authenticode changes the sidecar bytes');
