@@ -238,7 +238,7 @@ function testQueueContract() {
   const ready = labmediaQueue.normalizeQueueState({
     status: 'ready',
     provider: 'test-provider',
-    items: Array.from({ length: 12 }, (_, index) => ({
+    items: Array.from({ length: 60 }, (_, index) => ({
       id: `track-${index}`,
       title: `Track ${index}`,
       artist: 'Artist',

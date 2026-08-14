@@ -23,6 +23,7 @@ namespace LabMediaWidget
         private MediaSessionState _state = new MediaSessionState();
         private QueueState _queueState = QueueState.Unavailable();
         private YouTubeLibraryState _libraryState = YouTubeLibraryState.RequiresSetup();
+        private YTMDesktopRuntimeState _ytmdState = new YTMDesktopRuntimeState();
         private TaskbarInfo _anchor;
         private bool _updatingSession;
         private bool _updatingVolume;
@@ -36,7 +37,7 @@ namespace LabMediaWidget
         public DateTime LastDeactivatedUtc { get; private set; } = DateTime.MinValue;
 
         public Action? OpenSettingsRequested { get; set; }
-        public Action<string>? ProviderActionRequested { get; set; }
+        public Action<string, object?, int?>? ProviderActionRequested { get; set; }
         public Action<string, string?, string?>? LibraryActionRequested { get; set; }
 
         public NowPlayingPanel(SmtcManager smtc)
@@ -100,6 +101,59 @@ namespace LabMediaWidget
 
             if (IsVisible && !string.Equals(previousSource, state.SourceApp, StringComparison.Ordinal))
                 RefreshVolume();
+            ApplyYTMDesktopState();
+        }
+
+        public void UpdateYTMDesktopState(YTMDesktopRuntimeState? state)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(() => UpdateYTMDesktopState(state));
+                return;
+            }
+            _ytmdState = state ?? new YTMDesktopRuntimeState();
+            ApplyYTMDesktopState();
+        }
+
+        private void ApplyYTMDesktopState()
+        {
+            MenuItemOpenYTMDesktop.Visibility = _ytmdState.Installed ? Visibility.Visible : Visibility.Collapsed;
+            if (!_ytmdState.Active) return;
+
+            YTMDesktopPlaybackState playback = _ytmdState.Playback ?? new YTMDesktopPlaybackState();
+            YTMDesktopCapabilities capabilities = _ytmdState.Capabilities ?? new YTMDesktopCapabilities();
+            double duration = Math.Max(0, playback.DurationSeconds);
+            TimelineSlider.Maximum = Math.Max(1, duration);
+            TimelineSlider.Value = Math.Clamp(playback.PositionSeconds, 0, TimelineSlider.Maximum);
+            TimelineSlider.IsEnabled = duration > 0;
+            TxtElapsed.Text = FormatTime(playback.PositionSeconds);
+            TxtDuration.Text = FormatTime(duration);
+            PathPlayPause.Data = Geometry.Parse(playback.IsPlaying
+                ? "M 6,5 H 10 V 19 H 6 Z M 14,5 H 18 V 19 H 14 Z"
+                : "M 7,5 L 18,12 L 7,19 Z");
+
+            BtnPrevious.IsEnabled = capabilities.CanSkipPrevious;
+            BtnPlayPause.IsEnabled = capabilities.CanPlayPause;
+            BtnNext.IsEnabled = capabilities.CanSkipNext;
+            BtnShuffle.IsEnabled = capabilities.CanShuffle;
+            BtnRepeat.IsEnabled = capabilities.CanRepeat;
+            BtnRewind.IsEnabled = capabilities.CanSeek;
+            BtnForward.IsEnabled = capabilities.CanSeek;
+            BtnLike.IsEnabled = capabilities.CanLike;
+            BtnDislike.IsEnabled = capabilities.CanDislike;
+            VolumeSlider.IsEnabled = capabilities.CanSetVolume;
+            BtnMute.IsEnabled = capabilities.CanMute;
+            BtnShuffle.Background = playback.ShuffleActive ? AccentBrush() : NeutralBrush();
+            BtnRepeat.Background = playback.RepeatMode != "none" ? AccentBrush() : NeutralBrush();
+            BtnLike.Background = playback.LikeState == "liked" ? AccentBrush() : NeutralBrush();
+            BtnDislike.Background = playback.LikeState == "disliked" ? WithOpacity(AccentBrush(), 0.35) : NeutralBrush();
+            TxtRepeat.Text = playback.RepeatMode == "one" ? "Repeat 1" : "Repeat";
+
+            _updatingVolume = true;
+            VolumeSlider.Value = Math.Clamp(playback.Volume, 0, 100);
+            TxtVolume.Text = $"{Math.Round(VolumeSlider.Value):0}%";
+            TxtMuteIcon.Text = playback.Muted ? "MUTE" : "VOL";
+            _updatingVolume = false;
         }
 
         public void UpdateQueueState(QueueState? queue)
@@ -121,14 +175,16 @@ namespace LabMediaWidget
             BtnQueueAction.Visibility = Visibility.Collapsed;
             if (_queueState.Status == QueueStatuses.RequiresAuth)
             {
-                BtnQueueAction.Content = "Connect Spotify";
-                BtnQueueAction.Tag = "connectSpotify";
+                bool isYTMDesktop = string.Equals(_queueState.Provider, "ytmdesktop", StringComparison.Ordinal);
+                BtnQueueAction.Content = isYTMDesktop ? "Set up in LabSuite" : "Connect Spotify";
+                BtnQueueAction.Tag = isYTMDesktop ? "ytmd:openSettings" : "connectSpotify";
                 BtnQueueAction.Visibility = Visibility.Visible;
             }
             else if (_queueState.Status == QueueStatuses.Error)
             {
                 BtnQueueAction.Content = "Retry";
-                BtnQueueAction.Tag = "refreshQueue";
+                BtnQueueAction.Tag = string.Equals(_queueState.Provider, "ytmdesktop", StringComparison.Ordinal)
+                    ? "ytmd:refresh" : "refreshQueue";
                 BtnQueueAction.Visibility = Visibility.Visible;
             }
         }
@@ -299,6 +355,11 @@ namespace LabMediaWidget
 
         private void RefreshVolume()
         {
+            if (_ytmdState.Active)
+            {
+                ApplyYTMDesktopState();
+                return;
+            }
             string source = VolumeProcessHint();
             _ = Task.Run(() =>
             {
@@ -324,23 +385,79 @@ namespace LabMediaWidget
 
         private async void TimelineSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (!_state.CanSeek || _state.DurationSeconds <= 0 || TimelineSlider.ActualWidth <= 0) return;
+            bool providerSeek = _ytmdState.Active && _ytmdState.Playback.DurationSeconds > 0;
+            if ((!providerSeek && (!_state.CanSeek || _state.DurationSeconds <= 0)) || TimelineSlider.ActualWidth <= 0) return;
             Point point = e.GetPosition(TimelineSlider);
-            double target = Math.Clamp(point.X / TimelineSlider.ActualWidth * _state.DurationSeconds, 0, _state.DurationSeconds);
+            double duration = providerSeek ? _ytmdState.Playback.DurationSeconds : _state.DurationSeconds;
+            double target = Math.Clamp(point.X / TimelineSlider.ActualWidth * duration, 0, duration);
             TimelineSlider.Value = target;
-            await _smtc.SeekToAsync(target);
+            if (providerSeek) RequestYTMDesktopAction("seekTo", target);
+            else await _smtc.SeekToAsync(target);
             e.Handled = true;
         }
 
-        private async void BtnPrevious_Click(object sender, RoutedEventArgs e) => await _smtc.SkipPreviousAsync();
-        private async void BtnPlayPause_Click(object sender, RoutedEventArgs e) => await _smtc.TogglePlayPauseAsync();
-        private async void BtnNext_Click(object sender, RoutedEventArgs e) => await _smtc.SkipNextAsync();
-        private async void BtnShuffle_Click(object sender, RoutedEventArgs e) => await _smtc.ToggleShuffleAsync();
-        private async void BtnRepeat_Click(object sender, RoutedEventArgs e) => await _smtc.CycleRepeatAsync();
-        private async void BtnRewind_Click(object sender, RoutedEventArgs e) => await _smtc.SeekBackwardAsync(10);
-        private async void BtnForward_Click(object sender, RoutedEventArgs e) => await _smtc.SeekForwardAsync(10);
-        private void BtnLike_Click(object sender, RoutedEventArgs e) => _smtc.LikeCurrentTrack();
-        private void BtnDislike_Click(object sender, RoutedEventArgs e) => _smtc.DislikeCurrentTrack();
+        private async void BtnPrevious_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("previous");
+            else await _smtc.SkipPreviousAsync();
+        }
+
+        private async void BtnPlayPause_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("playPause");
+            else await _smtc.TogglePlayPauseAsync();
+        }
+
+        private async void BtnNext_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("next");
+            else await _smtc.SkipNextAsync();
+        }
+
+        private async void BtnShuffle_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("shuffle");
+            else await _smtc.ToggleShuffleAsync();
+        }
+
+        private async void BtnRepeat_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active)
+            {
+                string nextMode = _ytmdState.Playback.RepeatMode switch
+                {
+                    "none" => "all",
+                    "all" => "one",
+                    _ => "none"
+                };
+                RequestYTMDesktopAction("repeatMode", nextMode);
+            }
+            else await _smtc.CycleRepeatAsync();
+        }
+
+        private async void BtnRewind_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("seekTo", Math.Max(0, _ytmdState.Playback.PositionSeconds - 10));
+            else await _smtc.SeekBackwardAsync(10);
+        }
+
+        private async void BtnForward_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("seekTo", Math.Min(_ytmdState.Playback.DurationSeconds, _ytmdState.Playback.PositionSeconds + 10));
+            else await _smtc.SeekForwardAsync(10);
+        }
+
+        private void BtnLike_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("toggleLike");
+            else _smtc.LikeCurrentTrack();
+        }
+
+        private void BtnDislike_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("toggleDislike");
+            else _smtc.DislikeCurrentTrack();
+        }
 
         private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
@@ -353,6 +470,11 @@ namespace LabMediaWidget
         private void VolumeCommitTimer_Tick(object? sender, EventArgs e)
         {
             _volumeCommitTimer.Stop();
+            if (_ytmdState.Active)
+            {
+                RequestYTMDesktopAction("setVolume", VolumeSlider.Value);
+                return;
+            }
             string source = VolumeProcessHint();
             float level = (float)(VolumeSlider.Value / 100.0);
             _ = Task.Run(() =>
@@ -364,6 +486,11 @@ namespace LabMediaWidget
 
         private void BtnMute_Click(object sender, RoutedEventArgs e)
         {
+            if (_ytmdState.Active)
+            {
+                RequestYTMDesktopAction(_ytmdState.Playback.Muted ? "unmute" : "mute");
+                return;
+            }
             string source = VolumeProcessHint();
             bool mute = TxtMuteIcon.Text != "MUTE";
             _ = Task.Run(() =>
@@ -373,7 +500,14 @@ namespace LabMediaWidget
             });
         }
 
-        private void BtnOpenSource_Click(object sender, RoutedEventArgs e) => _smtc.BringAppToFront();
+        private void BtnOpenSource_Click(object sender, RoutedEventArgs e)
+        {
+            if (_ytmdState.Active) RequestYTMDesktopAction("open");
+            else _smtc.BringAppToFront();
+        }
+
+        private void RequestYTMDesktopAction(string action, object? value = null, int? queueIndex = null) =>
+            ProviderActionRequested?.Invoke($"ytmd:{action}", value, queueIndex);
 
         private string VolumeProcessHint() => string.IsNullOrWhiteSpace(_state.SourceAppId)
             ? _state.SourceApp
@@ -393,9 +527,17 @@ namespace LabMediaWidget
 
         private void MenuItem_OpenSettings_Click(object sender, RoutedEventArgs e) => OpenSettingsRequested?.Invoke();
 
+        private void MenuItem_OpenYTMDesktop_Click(object sender, RoutedEventArgs e) => RequestYTMDesktopAction("open");
+
         private void BtnQueueAction_Click(object sender, RoutedEventArgs e)
         {
-            if (BtnQueueAction.Tag is string action) ProviderActionRequested?.Invoke(action);
+            if (BtnQueueAction.Tag is string action) ProviderActionRequested?.Invoke(action, null, null);
+        }
+
+        private void QueueItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button { Tag: QueueItem item } && item.Available && item.QueueIndex >= 0)
+                RequestYTMDesktopAction("playQueueIndex", null, item.QueueIndex);
         }
 
         private void BtnNowPlayingTab_Click(object sender, RoutedEventArgs e) => SelectNowPlayingTab(false);

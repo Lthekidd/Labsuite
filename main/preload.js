@@ -252,6 +252,12 @@ const INVOKE_CHANNELS = new Set([
   'labmedia:youtubeDisconnect',
   'labmedia:youtubeRefresh',
   'labmedia:openYouTubeOAuthSettings',
+  'labmedia:ytmdInstall',
+  'labmedia:ytmdLaunch',
+  'labmedia:ytmdPair',
+  'labmedia:ytmdReconnect',
+  'labmedia:ytmdForget',
+  'labmedia:ytmdRefresh',
   'labmedia:mediaAction',
   'labmedia:copyTrackInfo'
 ]);

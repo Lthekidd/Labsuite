@@ -269,6 +269,7 @@ class YouTubeLibraryProvider {
     this._setCredential = dependencies.setCredential || (secret => keychain.setCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT, secret));
     this._deleteCredential = dependencies.deleteCredential || (() => keychain.deleteCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT));
     this._openExternal = dependencies.openExternal || (url => require('electron').shell.openExternal(url));
+    this._openPlayback = typeof dependencies.openPlayback === 'function' ? dependencies.openPlayback : null;
     this._spawn = dependencies.spawn || spawn;
     this._onChange = dependencies.onChange || (() => {});
     this._state = initialState();
@@ -837,6 +838,15 @@ class YouTubeLibraryProvider {
     const isRadio = id === 'RADIO_STATIONS';
     if (!isRadio && !this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
     const url = isRadio ? 'https://music.youtube.com/watch?v=jfKfPfyJRdk' : `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
+    if (this._openPlayback) {
+      try {
+        const handled = await this._openPlayback({
+          playlistId: isRadio ? '' : id,
+          videoId: isRadio ? 'jfKfPfyJRdk' : ''
+        });
+        if (handled) return this.getState();
+      } catch (_) {}
+    }
     try {
       this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {
@@ -854,6 +864,12 @@ class YouTubeLibraryProvider {
       : this._state.library.items.find(entry => entry.videoId === video && entry.available);
     if ((!isRadio && this._state.library.selectedPlaylist?.id !== playlist) || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
     const url = isRadio ? `https://music.youtube.com/watch?v=${encodeURIComponent(video)}` : `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
+    if (this._openPlayback) {
+      try {
+        const handled = await this._openPlayback({ playlistId: isRadio ? '' : playlist, videoId: video });
+        if (handled) return this.getState();
+      } catch (_) {}
+    }
     try {
       this._launchApp(url, preferredApp, startMinimized);
     } catch (_) {

@@ -26,6 +26,7 @@ namespace LabMediaWidget
         private NowPlayingPanel _panel;
         private QueueState _queueState = QueueState.Unavailable();
         private YouTubeLibraryState _libraryState = YouTubeLibraryState.RequiresSetup();
+        private YTMDesktopRuntimeState _ytmdState = new YTMDesktopRuntimeState();
         private TaskbarInfo _lastTaskbarInfo;
         private CancellationTokenSource _runtimeInputCancellation = new CancellationTokenSource();
         private uint _taskbarCreatedMsg;
@@ -40,7 +41,8 @@ namespace LabMediaWidget
             _panel = new NowPlayingPanel(_smtc)
             {
                 OpenSettingsRequested = () => EmitEvent("action", new { type = "openSettings" }),
-                ProviderActionRequested = action => EmitEvent("providerAction", new { action }),
+                ProviderActionRequested = (action, value, queueIndex) =>
+                    EmitEvent("providerAction", new { action, value, queueIndex }),
                 LibraryActionRequested = (action, playlistId, videoId) =>
                     EmitEvent("libraryAction", new { action, playlistId, videoId })
             };
@@ -173,6 +175,15 @@ namespace LabMediaWidget
                                 _panel.UpdateLibraryState(library);
                             });
                         }
+                        else if (message?.Type == "ytmd:update" && message.YTMDesktop != null)
+                        {
+                            YTMDesktopRuntimeState ytmd = SanitizeYTMDesktopState(message.YTMDesktop);
+                            Dispatcher.Invoke(() =>
+                            {
+                                _ytmdState = ytmd;
+                                _panel.UpdateYTMDesktopState(ytmd);
+                            });
+                        }
                     }
                     catch
                     {
@@ -197,7 +208,7 @@ namespace LabMediaWidget
             if (!allowed.Contains(value.Status, StringComparer.Ordinal))
                 value.Status = QueueStatuses.Error;
             value.Items = (value.Items ?? new System.Collections.Generic.List<QueueItem>())
-                .Take(8)
+                .Take(50)
                 .Select((item, index) => SanitizeQueueItem(item, index))
                 .ToList();
             if (value.Status == QueueStatuses.Ready && value.Items.Count == 0)
@@ -218,11 +229,43 @@ namespace LabMediaWidget
             item.Artist = LimitText(item.Artist, 300);
             item.Attribution = LimitText(item.Attribution, 80);
             item.DurationMs = Math.Max(0, item.DurationMs);
+            item.QueueIndex = Math.Max(-1, item.QueueIndex);
+            item.Kind = item.Kind == "automix" ? "automix" : "queue";
+            item.Available = item.Available && item.QueueIndex >= 0;
             item.ArtworkUrl = Uri.TryCreate(item.ArtworkUrl, UriKind.Absolute, out Uri? artwork)
                 && artwork.Scheme == Uri.UriSchemeHttps
                 ? LimitText(artwork.AbsoluteUri, 2048)
                 : string.Empty;
             return item;
+        }
+
+        private static YTMDesktopRuntimeState SanitizeYTMDesktopState(YTMDesktopRuntimeState value)
+        {
+            string[] allowed =
+            {
+                "notInstalled", "stopped", "serverDisabled", "requiresPairing", "pairing",
+                "connected", "reauthRequired", "incompatible", "error"
+            };
+            if (!allowed.Contains(value.Status, StringComparer.Ordinal)) value.Status = "error";
+            value.Message = LimitText(value.Message, 500);
+            value.Active = value.Active && value.Status == "connected";
+            value.Playback ??= new YTMDesktopPlaybackState();
+            value.Capabilities ??= new YTMDesktopCapabilities();
+            value.Playback.VideoId = IsSafeYouTubeId(value.Playback.VideoId, 11)
+                && value.Playback.VideoId.Length == 11 ? value.Playback.VideoId : string.Empty;
+            value.Playback.Title = LimitText(value.Playback.Title, 300);
+            value.Playback.Artist = LimitText(value.Playback.Artist, 300);
+            value.Playback.Album = LimitText(value.Playback.Album, 300);
+            value.Playback.ArtworkUrl = SanitizeHttpsUrl(value.Playback.ArtworkUrl);
+            value.Playback.DurationSeconds = Math.Max(0, value.Playback.DurationSeconds);
+            value.Playback.PositionSeconds = Math.Clamp(value.Playback.PositionSeconds, 0,
+                Math.Max(value.Playback.DurationSeconds, value.Playback.PositionSeconds));
+            value.Playback.Volume = Math.Clamp(value.Playback.Volume, 0, 100);
+            value.Playback.RepeatMode = value.Playback.RepeatMode is "all" or "one"
+                ? value.Playback.RepeatMode : "none";
+            value.Playback.LikeState = value.Playback.LikeState is "liked" or "disliked" or "neutral"
+                ? value.Playback.LikeState : "unknown";
+            return value;
         }
 
         private static YouTubeLibraryState SanitizeLibraryState(YouTubeLibraryState value)
@@ -660,6 +703,7 @@ namespace LabMediaWidget
                     artist = e.Artist,
                     album = e.Album,
                     sourceApp = e.SourceApp,
+                    sourceAppId = e.SourceAppId,
                     isPlaying = e.IsPlaying,
                     position = e.PositionSeconds,
                     duration = e.DurationSeconds,
@@ -739,36 +783,69 @@ namespace LabMediaWidget
         private async void BtnPrev_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                EmitEvent("providerAction", new { action = "ytmd:previous" });
+                return;
+            }
             await _smtc.SkipPreviousAsync();
         }
 
         private async void BtnPlayPause_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                EmitEvent("providerAction", new { action = "ytmd:playPause" });
+                return;
+            }
             await _smtc.TogglePlayPauseAsync();
         }
 
         private async void BtnNext_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                EmitEvent("providerAction", new { action = "ytmd:next" });
+                return;
+            }
             await _smtc.SkipNextAsync();
         }
 
         private async void BtnRewind_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                double target = Math.Max(0, _ytmdState.Playback.PositionSeconds - 10);
+                EmitEvent("providerAction", new { action = "ytmd:seekTo", value = target });
+                return;
+            }
             await _smtc.SeekBackwardAsync(10);
         }
 
         private async void BtnForward_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                double target = Math.Min(_ytmdState.Playback.DurationSeconds,
+                    _ytmdState.Playback.PositionSeconds + 10);
+                EmitEvent("providerAction", new { action = "ytmd:seekTo", value = target });
+                return;
+            }
             await _smtc.SeekForwardAsync(10);
         }
 
         private void BtnLike_Click(object sender, RoutedEventArgs e)
         {
             e.Handled = true;
+            if (_ytmdState.Active)
+            {
+                EmitEvent("providerAction", new { action = "ytmd:toggleLike" });
+                return;
+            }
             _smtc.LikeCurrentTrack();
         }
 
@@ -778,6 +855,12 @@ namespace LabMediaWidget
             Point pt = e.GetPosition(ProgressTrack);
             double ratio = pt.X / ProgressTrack.ActualWidth;
             double targetSeconds = Math.Clamp(ratio * _currentDurationSeconds, 0, _currentDurationSeconds);
+            if (_ytmdState.Active)
+            {
+                EmitEvent("providerAction", new { action = "ytmd:seekTo", value = targetSeconds });
+                e.Handled = true;
+                return;
+            }
             await _smtc.SeekToAsync(targetSeconds);
             e.Handled = true;
         }
@@ -798,7 +881,8 @@ namespace LabMediaWidget
         {
             if (string.Equals(_config.PrimaryClickAction, "openSource", StringComparison.OrdinalIgnoreCase))
             {
-                _smtc.BringAppToFront();
+                if (_ytmdState.Active) EmitEvent("providerAction", new { action = "ytmd:open" });
+                else _smtc.BringAppToFront();
                 return;
             }
 
@@ -816,6 +900,7 @@ namespace LabMediaWidget
 
             _panel.UpdateQueueState(_queueState);
             _panel.UpdateLibraryState(_libraryState);
+            _panel.UpdateYTMDesktopState(_ytmdState);
             _panel.ShowAnchored(_lastTaskbarInfo);
         }
 

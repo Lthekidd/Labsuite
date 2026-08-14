@@ -7,20 +7,24 @@ const QUEUE_STATUSES = new Set([
   'error'
 ]);
 
-const MAX_QUEUE_ITEMS = 8;
+const MAX_QUEUE_ITEMS = 50;
 
 function cleanText(value, maxLength = 300) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
 
 function normalizeQueueItem(raw = {}, index = 0) {
+  const queueIndex = Number(raw.queueIndex);
   return {
     id: cleanText(raw.id, 160) || `queue-${index}`,
     title: cleanText(raw.title, 300) || 'Unknown title',
     artist: cleanText(raw.artist, 300),
     artworkUrl: /^https:\/\//i.test(String(raw.artworkUrl || '')) ? String(raw.artworkUrl).slice(0, 2048) : '',
     durationMs: Number.isFinite(raw.durationMs) ? Math.max(0, Math.round(raw.durationMs)) : 0,
-    attribution: cleanText(raw.attribution, 80)
+    attribution: cleanText(raw.attribution, 80),
+    queueIndex: Number.isInteger(queueIndex) && queueIndex >= 0 ? queueIndex : -1,
+    kind: raw.kind === 'automix' ? 'automix' : 'queue',
+    available: raw.available !== false
   };
 }
 
@@ -34,6 +38,7 @@ function normalizeQueueState(raw = {}) {
     provider: cleanText(raw.provider, 80),
     message: cleanText(raw.message, 500),
     attribution: cleanText(raw.attribution, 80),
+    autoplay: !!raw.autoplay,
     items
   };
 }

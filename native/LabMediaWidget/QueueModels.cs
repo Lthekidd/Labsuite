@@ -33,6 +33,15 @@ namespace LabMediaWidget
 
         [JsonPropertyName("attribution")]
         public string Attribution { get; set; } = string.Empty;
+
+        [JsonPropertyName("queueIndex")]
+        public int QueueIndex { get; set; } = -1;
+
+        [JsonPropertyName("kind")]
+        public string Kind { get; set; } = "queue";
+
+        [JsonPropertyName("available")]
+        public bool Available { get; set; } = true;
     }
 
     public sealed class QueueState
@@ -48,6 +57,9 @@ namespace LabMediaWidget
 
         [JsonPropertyName("attribution")]
         public string Attribution { get; set; } = string.Empty;
+
+        [JsonPropertyName("autoplay")]
+        public bool Autoplay { get; set; }
 
         [JsonPropertyName("items")]
         public List<QueueItem> Items { get; set; } = new List<QueueItem>();
@@ -204,6 +216,126 @@ namespace LabMediaWidget
         public static YouTubeLibraryState RequiresSetup() => new YouTubeLibraryState();
     }
 
+    public sealed class YTMDesktopPlaybackState
+    {
+        [JsonPropertyName("hasTrack")]
+        public bool HasTrack { get; set; }
+
+        [JsonPropertyName("videoId")]
+        public string VideoId { get; set; } = string.Empty;
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [JsonPropertyName("artist")]
+        public string Artist { get; set; } = string.Empty;
+
+        [JsonPropertyName("album")]
+        public string Album { get; set; } = string.Empty;
+
+        [JsonPropertyName("artworkUrl")]
+        public string ArtworkUrl { get; set; } = string.Empty;
+
+        [JsonPropertyName("durationSeconds")]
+        public double DurationSeconds { get; set; }
+
+        [JsonPropertyName("positionSeconds")]
+        public double PositionSeconds { get; set; }
+
+        [JsonPropertyName("isPlaying")]
+        public bool IsPlaying { get; set; }
+
+        [JsonPropertyName("isBuffering")]
+        public bool IsBuffering { get; set; }
+
+        [JsonPropertyName("volume")]
+        public double Volume { get; set; }
+
+        [JsonPropertyName("muted")]
+        public bool Muted { get; set; }
+
+        [JsonPropertyName("shuffleActive")]
+        public bool ShuffleActive { get; set; }
+
+        [JsonPropertyName("repeatMode")]
+        public string RepeatMode { get; set; } = "none";
+
+        [JsonPropertyName("likeState")]
+        public string LikeState { get; set; } = "unknown";
+
+        [JsonPropertyName("autoplay")]
+        public bool Autoplay { get; set; }
+
+        [JsonPropertyName("isGenerating")]
+        public bool IsGenerating { get; set; }
+
+        [JsonPropertyName("isInfinite")]
+        public bool IsInfinite { get; set; }
+    }
+
+    public sealed class YTMDesktopRuntimeState
+    {
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "notInstalled";
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
+
+        [JsonPropertyName("installed")]
+        public bool Installed { get; set; }
+
+        [JsonPropertyName("running")]
+        public bool Running { get; set; }
+
+        [JsonPropertyName("paired")]
+        public bool Paired { get; set; }
+
+        [JsonPropertyName("active")]
+        public bool Active { get; set; }
+
+        [JsonPropertyName("playback")]
+        public YTMDesktopPlaybackState Playback { get; set; } = new YTMDesktopPlaybackState();
+
+        [JsonPropertyName("capabilities")]
+        public YTMDesktopCapabilities Capabilities { get; set; } = new YTMDesktopCapabilities();
+    }
+
+    public sealed class YTMDesktopCapabilities
+    {
+        [JsonPropertyName("canPlayPause")]
+        public bool CanPlayPause { get; set; }
+
+        [JsonPropertyName("canSkipPrevious")]
+        public bool CanSkipPrevious { get; set; }
+
+        [JsonPropertyName("canSkipNext")]
+        public bool CanSkipNext { get; set; }
+
+        [JsonPropertyName("canSeek")]
+        public bool CanSeek { get; set; }
+
+        [JsonPropertyName("canShuffle")]
+        public bool CanShuffle { get; set; }
+
+        [JsonPropertyName("canRepeat")]
+        public bool CanRepeat { get; set; }
+
+        [JsonPropertyName("canLike")]
+        public bool CanLike { get; set; }
+
+        [JsonPropertyName("canDislike")]
+        public bool CanDislike { get; set; }
+
+        [JsonPropertyName("canSetVolume")]
+        public bool CanSetVolume { get; set; }
+
+        [JsonPropertyName("canMute")]
+        public bool CanMute { get; set; }
+
+        [JsonPropertyName("canPlayQueueItem")]
+        public bool CanPlayQueueItem { get; set; }
+    }
+
     internal sealed class RuntimeMessage
     {
         [JsonPropertyName("type")]
@@ -214,5 +346,8 @@ namespace LabMediaWidget
 
         [JsonPropertyName("library")]
         public YouTubeLibraryState? Library { get; set; }
+
+        [JsonPropertyName("ytmd")]
+        public YTMDesktopRuntimeState? YTMDesktop { get; set; }
     }
 }

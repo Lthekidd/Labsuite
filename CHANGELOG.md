@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.37 - 2026-08-14
+
+### Optional YTMDesktop Companion Integration
+
+- Added secure local pairing with YTMDesktop Companion API v1, authenticated live playback state, genuine queue and autoplay/automix items, and browser-free YouTube Music playback handoff.
+- Added clickable Up Next rows and YTMDesktop-aware seek, transport, shuffle, repeat, like/dislike, volume, and mute controls while retaining SMTC/Core Audio fallback behavior for every other player.
+- Added Expanded Panel setup controls for winget installation, launch, pairing, reconnecting, status refresh, recommendations handoff, and forgetting the locally stored companion token.
+- Restricted all companion traffic to `127.0.0.1:9863`, kept credentials in Windows Credential Manager, rejected redirects and arbitrary commands, and added dedicated security and regression coverage.
+
 ## 2.10.36 - 2026-08-14
 
 ### Integrated Like, Dislike, -10s Rewind, and +10s Fast-Forward Controls

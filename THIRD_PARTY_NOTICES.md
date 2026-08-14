@@ -36,3 +36,19 @@ SOFTWARE.
 
 "Spotify" is a trademark of Spotify AB. This project is independent and is
 not affiliated with, sponsored or endorsed by Spotify AB.
+
+---
+
+## YouTube Music Desktop App (YTMDesktop)
+
+LabMedia can optionally communicate with a separately installed copy of
+[YTMDesktop](https://github.com/ytmdesktop/ytmdesktop) through its local
+Companion Server API. YTMDesktop is not bundled with LabSuite and no
+YTMDesktop source code is incorporated into LabSuite.
+
+YTMDesktop is distributed under the
+[GNU General Public License v3.0](https://github.com/ytmdesktop/ytmdesktop/blob/development/LICENSE).
+Copyright © 2024 NovusTheory and YTMDesktop contributors.
+
+"YouTube" and "YouTube Music" are trademarks of Google LLC. LabSuite is not
+affiliated with, sponsored or endorsed by Google LLC or the YTMDesktop project.

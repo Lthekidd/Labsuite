@@ -2122,6 +2122,12 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   ipcMain.handle('labmedia:youtubeDisconnect', async () => mediaWidget.disconnectYouTube());
   ipcMain.handle('labmedia:youtubeRefresh', async () => mediaWidget.refreshYouTubeLibrary());
   ipcMain.handle('labmedia:openYouTubeOAuthSettings', async () => mediaWidget.openYouTubeOAuthSettings());
+  ipcMain.handle('labmedia:ytmdInstall', async () => mediaWidget.installYTMDesktop());
+  ipcMain.handle('labmedia:ytmdLaunch', async () => mediaWidget.launchYTMDesktop());
+  ipcMain.handle('labmedia:ytmdPair', async () => mediaWidget.pairYTMDesktop());
+  ipcMain.handle('labmedia:ytmdReconnect', async () => mediaWidget.reconnectYTMDesktop());
+  ipcMain.handle('labmedia:ytmdForget', async () => mediaWidget.forgetYTMDesktop());
+  ipcMain.handle('labmedia:ytmdRefresh', async () => mediaWidget.refreshYTMDesktop());
   ipcMain.handle('labmedia:mediaAction', async (_event, { action, positionSeconds } = {}) => mediaWidget.sendMediaAction(action, { positionSeconds }));
   ipcMain.handle('labmedia:copyTrackInfo', async (_event, { text } = {}) => {
     if (typeof text === 'string' && text.trim()) {

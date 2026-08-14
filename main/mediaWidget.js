@@ -7,6 +7,7 @@ const readline = require('readline');
 const db = require('./database');
 const queueProvider = require('./labmediaQueue');
 const { YouTubeLibraryProvider } = require('./youtubeLibrary');
+const { YTMDesktopProvider } = require('./ytmDesktopProvider');
 
 const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   schemaVersion: 2,
@@ -55,7 +56,15 @@ let restartPromise = null;
 let initialized = false;
 let mainWindowGetter = null;
 const intentionalStops = new WeakSet();
+const ytmDesktopProvider = new YTMDesktopProvider({
+  onChange: () => {
+    updateQueueForSession(lastSessionInfo);
+    updateYTMDesktopRuntime();
+    notifyStatusChanged();
+  }
+});
 const youtubeLibraryProvider = new YouTubeLibraryProvider({
+  openPlayback: request => ytmDesktopProvider.playLibraryItem(request),
   onChange: state => {
     sendRuntimeMessage({ type: 'library:update', library: state });
     notifyStatusChanged();
@@ -263,7 +272,8 @@ function getStatus() {
       error: 'LabMedia is supported only on Windows 11.',
       session: lastSessionInfo,
       queue: currentQueueState,
-      youtubeLibrary: getYouTubeSettingsStatus()
+      youtubeLibrary: getYouTubeSettingsStatus(),
+      ytmDesktop: getYTMDesktopSettingsStatus()
     };
   }
 
@@ -276,7 +286,8 @@ function getStatus() {
     error: currentError,
     session: lastSessionInfo,
     queue: currentQueueState,
-    youtubeLibrary: getYouTubeSettingsStatus()
+    youtubeLibrary: getYouTubeSettingsStatus(),
+    ytmDesktop: getYTMDesktopSettingsStatus()
   };
 }
 
@@ -292,6 +303,24 @@ function getYouTubeSettingsStatus() {
   };
 }
 
+function getYTMDesktopSettingsStatus() {
+  const state = ytmDesktopProvider.getState(lastSessionInfo);
+  return {
+    status: state.status,
+    message: state.message,
+    installed: state.installed,
+    running: state.running,
+    paired: state.paired,
+    pairingCode: state.pairingCode,
+    apiVersion: state.apiVersion,
+    installing: state.installing,
+    installProgress: state.installProgress,
+    active: state.active,
+    playback: state.playback,
+    capabilities: state.capabilities
+  };
+}
+
 function sendRuntimeMessage(message, target = childProcess) {
   if (!target || !target.stdin || target.stdin.destroyed || !target.stdin.writable) return false;
   try {
@@ -303,9 +332,41 @@ function sendRuntimeMessage(message, target = childProcess) {
 }
 
 function updateQueueForSession(session = lastSessionInfo, target = childProcess) {
-  currentQueueState = queueProvider.getQueueStateForSession(session);
+  const ytmState = ytmDesktopProvider.getState(session);
+  if (ytmState.active) {
+    currentQueueState = queueProvider.normalizeQueueState(ytmState.queue);
+  } else if (ytmDesktopProvider.handlesSession(session)) {
+    const retryable = ['error', 'incompatible'].includes(ytmState.status);
+    currentQueueState = queueProvider.normalizeQueueState({
+      status: retryable ? 'error' : 'requiresAuth',
+      provider: 'ytmdesktop',
+      message: ytmState.message,
+      attribution: 'YouTube Music',
+      items: []
+    });
+  } else {
+    currentQueueState = queueProvider.getQueueStateForSession(session);
+  }
   sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState }, target);
   return currentQueueState;
+}
+
+function updateYTMDesktopRuntime(target = childProcess) {
+  const state = ytmDesktopProvider.getState(lastSessionInfo);
+  sendRuntimeMessage({
+    type: 'ytmd:update',
+    ytmd: {
+      status: state.status,
+      message: state.message,
+      installed: state.installed,
+      running: state.running,
+      paired: state.paired,
+      active: state.active,
+      playback: state.playback,
+      capabilities: state.capabilities
+    }
+  }, target);
+  return state;
 }
 
 function updateLibraryRuntime(target = childProcess) {
@@ -323,6 +384,7 @@ function handleStdoutLine(line) {
     if (data.event === 'ready') {
       updateQueueForSession(lastSessionInfo);
       updateLibraryRuntime();
+      updateYTMDesktopRuntime();
       if (currentState === 'starting') {
         currentState = currentError ? 'error' : 'no_session';
         notifyStatusChanged();
@@ -338,6 +400,7 @@ function handleStdoutLine(line) {
       lastSessionInfo = {
         hasSession: !!data.hasSession,
         sessionId: String(data.sessionId || ''),
+        sourceAppId: String(data.sourceAppId || ''),
         title: newTitle,
         artist: newArtist,
         album: String(data.album || ''),
@@ -359,6 +422,7 @@ function handleStdoutLine(line) {
         || previousSession.title !== lastSessionInfo.title
         || previousSession.artist !== lastSessionInfo.artist) {
         updateQueueForSession(lastSessionInfo);
+        updateYTMDesktopRuntime();
       }
 
       // Log to rolling history if track changed
@@ -398,7 +462,15 @@ function handleStdoutLine(line) {
         });
       }
     } else if (data.event === 'providerAction') {
-      queueProvider.handleProviderAction(String(data.action || ''), lastSessionInfo)
+      const action = String(data.action || '');
+      if (action.startsWith('ytmd:')) {
+        handleYTMDesktopProviderAction(action.slice(5), data).catch(() => {
+          updateQueueForSession(lastSessionInfo);
+          updateYTMDesktopRuntime();
+        });
+        return;
+      }
+      queueProvider.handleProviderAction(action, lastSessionInfo)
         .then(queue => {
           currentQueueState = queueProvider.normalizeQueueState(queue);
           sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
@@ -438,6 +510,32 @@ function handleStdoutLine(line) {
   } catch (_) {
     // Ignore non-JSON stdout lines
   }
+}
+
+async function handleYTMDesktopProviderAction(action, data = {}) {
+  if (action === 'openSettings') {
+    navigateMainWindow('labmedia');
+    return true;
+  }
+  if (action === 'open') return ytmDesktopProvider.openRecommendations();
+  if (action === 'refresh') return ytmDesktopProvider.refreshStatus({ connect: true });
+
+  const state = ytmDesktopProvider.getState(lastSessionInfo);
+  if (!state.active) throw new Error('YTMDesktop is not the active LabMedia session.');
+  const allowed = new Set([
+    'playPause', 'play', 'pause', 'next', 'previous', 'mute', 'unmute',
+    'shuffle', 'toggleLike', 'toggleDislike', 'setVolume', 'seekTo',
+    'repeatMode', 'playQueueIndex'
+  ]);
+  if (!allowed.has(action)) throw new Error('Unsupported YTMDesktop provider action.');
+  const payload = {
+    value: data.value,
+    queueIndex: data.queueIndex
+  };
+  const result = await ytmDesktopProvider.sendCommand(action, payload);
+  updateQueueForSession(lastSessionInfo);
+  updateYTMDesktopRuntime();
+  return result;
 }
 
 function startWidget() {
@@ -686,6 +784,7 @@ function initMediaWidget(getMainWindowArg) {
   if (typeof getMainWindowArg === 'function') mainWindowGetter = getMainWindowArg;
   if (initialized) return;
   initialized = true;
+  ytmDesktopProvider.initialize().catch(() => {});
   youtubeLibraryProvider.initialize().catch(() => {});
   if (!isSupported()) {
     currentState = 'unsupported';
@@ -698,6 +797,7 @@ function initMediaWidget(getMainWindowArg) {
   }
 
   app.on('before-quit', () => {
+    ytmDesktopProvider.shutdown();
     youtubeLibraryProvider.shutdown();
     stopWidget();
   });
@@ -726,6 +826,40 @@ async function refreshYouTubeLibrary() {
 async function refreshYouTubeSetupState() {
   await youtubeLibraryProvider.initialize();
   updateLibraryRuntime();
+  return getStatus();
+}
+
+async function installYTMDesktop() {
+  await ytmDesktopProvider.install();
+  return getStatus();
+}
+
+async function launchYTMDesktop() {
+  await ytmDesktopProvider.launch();
+  return getStatus();
+}
+
+async function pairYTMDesktop() {
+  await ytmDesktopProvider.pair();
+  return getStatus();
+}
+
+async function reconnectYTMDesktop() {
+  await ytmDesktopProvider.reconnect();
+  return getStatus();
+}
+
+async function forgetYTMDesktop() {
+  await ytmDesktopProvider.forget();
+  updateQueueForSession(lastSessionInfo);
+  updateYTMDesktopRuntime();
+  return getStatus();
+}
+
+async function refreshYTMDesktop() {
+  await ytmDesktopProvider.refreshStatus({ connect: true });
+  updateQueueForSession(lastSessionInfo);
+  updateYTMDesktopRuntime();
   return getStatus();
 }
 
@@ -768,6 +902,12 @@ module.exports = {
   refreshYouTubeLibrary,
   refreshYouTubeSetupState,
   openYouTubeOAuthSettings,
+  installYTMDesktop,
+  launchYTMDesktop,
+  pairYTMDesktop,
+  reconnectYTMDesktop,
+  forgetYTMDesktop,
+  refreshYTMDesktop,
   isInstalled,
   handleInstalledAppsChanged,
   setEnabled,

@@ -106,6 +106,8 @@
                     <TextBlock Text="•••" FontWeight="Bold" Margin="0,-5,0,0" />
                     <Button.ContextMenu>
                         <ContextMenu>
+                            <MenuItem x:Name="MenuItemOpenYTMDesktop" Header="Open YTMDesktop for recommendations"
+                                      Visibility="Collapsed" Click="MenuItem_OpenYTMDesktop_Click" />
                             <MenuItem Header="Open LabMedia Settings" Click="MenuItem_OpenSettings_Click" />
                             <MenuItem Header="Copy Artist – Title" Click="MenuItem_Copy_Click" />
                         </ContextMenu>
@@ -241,7 +243,10 @@
                 <ItemsControl x:Name="QueueItems">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid Margin="0,4">
+                            <Button Style="{StaticResource TextActionButton}" Margin="0,4" Padding="4"
+                                    HorizontalContentAlignment="Stretch" Tag="{Binding}" IsEnabled="{Binding Available}"
+                                    Click="QueueItem_Click" automation:AutomationProperties.Name="{Binding Title}">
+                            <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="38" />
                                     <ColumnDefinition Width="*" />
@@ -256,6 +261,7 @@
                                 </StackPanel>
                                 <TextBlock Grid.Column="2" Text="{Binding Attribution}" Foreground="#65707D" FontSize="9" VerticalAlignment="Center" />
                             </Grid>
+                            </Button>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
