@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -150,6 +151,39 @@ function checkMediaWidgetHelper(binaryPath, label) {
   }
 }
 
+function checkLabSuiteMusicBundle(bundlePath, label) {
+  const executablePath = path.join(bundlePath, 'labsuite-music.exe');
+  const manifestPath = path.join(bundlePath, 'labsuite-music.manifest.json');
+  const sourcePath = path.join(bundlePath, 'source');
+  for (const required of [
+    executablePath,
+    manifestPath,
+    path.join(sourcePath, 'LICENSE'),
+    path.join(sourcePath, 'LABSUITE_FORK.md'),
+    path.join(sourcePath, 'package.json'),
+    path.join(sourcePath, 'scripts', 'verify-security.mjs')
+  ]) {
+    if (!fs.existsSync(required)) fail(`${label} is missing ${required}.`);
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
+  if (manifest.product !== 'LabSuite Music' || manifest.securityProfile !== 'labsuite-hardened-v1' || manifest.correspondingSource !== 'source') {
+    fail(`${label} has invalid hardened companion metadata.`);
+  }
+  const executableHash = crypto.createHash('sha256').update(fs.readFileSync(executablePath)).digest('hex').toUpperCase();
+  if (executableHash !== manifest.executableSha256) fail(`${label} executable hash does not match its manifest.`);
+
+  const packageJson = JSON.parse(fs.readFileSync(path.join(sourcePath, 'package.json'), 'utf8'));
+  if (packageJson.license !== 'GPL-3.0-only' || packageJson.name !== 'labsuite-music') {
+    fail(`${label} corresponding source has unexpected identity or license.`);
+  }
+  const hardeningSource = fs.readFileSync(path.join(sourcePath, 'src', 'main', 'integrations', 'companion-server', 'index.ts'), 'utf8');
+  if (!hardeningSource.includes('listenIp = "127.0.0.1"') || hardeningSource.includes('0.0.0.0')) {
+    fail(`${label} corresponding source does not enforce loopback-only binding.`);
+  }
+  console.log(`release-security: ${label} ${manifest.version} (${executableHash}) ok.`);
+}
+
 function main() {
   checkNoInlineScripts();
   checkNoRendererElectronRequire();
@@ -157,7 +191,7 @@ function main() {
   checkDatabaseFileName();
   checkNoWorkspaceRcloneSecrets();
   checkElectronVersion();
-  checkRcloneBinary(path.join(ROOT, 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac'), 'bundled rclone');
+  if (process.platform === 'win32') checkLabSuiteMusicBundle(path.join(ROOT, 'bin', 'LabSuiteMusic'), 'bundled LabSuite Music');
 
   const packagedApp = path.join(ROOT, 'dist-packaged', 'win-unpacked', 'LabSuite.exe');
   if (fs.existsSync(packagedApp)) {
@@ -169,11 +203,17 @@ function main() {
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabMediaWidget.exe'),
       'packaged LabMediaWidget helper'
     );
+    checkLabSuiteMusicBundle(
+      path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabSuiteMusic'),
+      'packaged LabSuite Music'
+    );
     checkMediaWidgetHelper(
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'THIRD_PARTY_NOTICES.md'),
       'packaged third-party notices'
     );
   }
+
+  checkRcloneBinary(path.join(ROOT, 'bin', process.platform === 'win32' ? 'rclone-win.exe' : 'rclone-mac'), 'bundled rclone');
 
   for (const candidate of [
     ['dist-packaged/win-unpacked/LabSuite.exe', 'packaged LabSuite.exe'],

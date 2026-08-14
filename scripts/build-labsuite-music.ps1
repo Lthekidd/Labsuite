@@ -1,0 +1,81 @@
+[CmdletBinding()]
+param(
+  [string]$SourcePath = "",
+  [switch]$SkipBuild
+)
+
+$ErrorActionPreference = "Stop"
+
+$labSuiteRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+if (-not $SourcePath) {
+  $SourcePath = Join-Path (Split-Path $labSuiteRoot -Parent) "LabSuiteMusic"
+}
+$sourceRoot = [System.IO.Path]::GetFullPath($SourcePath)
+$sourcePackage = Join-Path $sourceRoot "package.json"
+if (-not (Test-Path -LiteralPath $sourcePackage -PathType Leaf)) {
+  throw "LabSuite Music source was not found at $sourceRoot"
+}
+
+$package = Get-Content -LiteralPath $sourcePackage -Raw | ConvertFrom-Json
+if ($package.name -ne "labsuite-music" -or $package.license -ne "GPL-3.0-only") {
+  throw "The selected source is not the LabSuite Music GPL companion."
+}
+
+if (-not $SkipBuild) {
+  & corepack yarn --cwd $sourceRoot install --immutable
+  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music dependency installation failed." }
+  & corepack yarn --cwd $sourceRoot verify:security
+  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music security verification failed." }
+  & corepack yarn --cwd $sourceRoot lint
+  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music lint failed." }
+  & corepack yarn --cwd $sourceRoot package --platform win32 --arch x64
+  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music packaging failed." }
+}
+
+$packageRoot = Join-Path $sourceRoot "out\LabSuite Music-win32-x64"
+$sourceExecutable = Join-Path $packageRoot "labsuite-music.exe"
+if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
+  throw "The packaged LabSuite Music executable was not found at $sourceExecutable"
+}
+
+$binRoot = [System.IO.Path]::GetFullPath((Join-Path $labSuiteRoot "bin"))
+$destination = [System.IO.Path]::GetFullPath((Join-Path $binRoot "LabSuiteMusic"))
+if (-not $destination.StartsWith($binRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "Refusing to replace a destination outside LabSuite's bin directory."
+}
+
+if (Test-Path -LiteralPath $destination) {
+  Remove-Item -LiteralPath $destination -Recurse -Force
+}
+New-Item -ItemType Directory -Path $destination -Force | Out-Null
+Copy-Item -Path (Join-Path $packageRoot "*") -Destination $destination -Recurse -Force
+
+# Ship the exact corresponding GPL source used for this binary. `git ls-files`
+# includes modified tracked files and new, non-ignored files while excluding
+# node_modules, build output, and repository metadata.
+$sourceDestination = Join-Path $destination "source"
+New-Item -ItemType Directory -Path $sourceDestination -Force | Out-Null
+$sourceFiles = & git -C $sourceRoot ls-files --cached --others --exclude-standard
+if ($LASTEXITCODE -ne 0 -or -not $sourceFiles) { throw "Could not enumerate LabSuite Music corresponding source." }
+foreach ($relativeFile in $sourceFiles) {
+  $sourceFile = Join-Path $sourceRoot $relativeFile
+  if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { continue }
+  $targetFile = Join-Path $sourceDestination $relativeFile
+  $targetDirectory = Split-Path $targetFile -Parent
+  New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+  Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
+}
+
+$sourceCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
+$manifest = [ordered]@{
+  product = "LabSuite Music"
+  version = $package.version
+  securityProfile = "labsuite-hardened-v1"
+  sourceCommit = $sourceCommit
+  correspondingSource = "source"
+  executableSha256 = (Get-FileHash -LiteralPath (Join-Path $destination "labsuite-music.exe") -Algorithm SHA256).Hash
+}
+$manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination "labsuite-music.manifest.json") -Encoding UTF8
+
+Write-Output "LabSuite Music staged at $destination"
+Write-Output "SHA256 $($manifest.executableSha256)"

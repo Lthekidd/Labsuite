@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { EventEmitter } = require('events');
 const {
@@ -12,6 +13,12 @@ const {
 
 const ROOT = path.join(__dirname, '..');
 const TOKEN = 'a'.repeat(512);
+const HARDENED_METADATA = {
+  apiVersions: ['v1'],
+  product: 'LabSuite Music',
+  securityProfile: 'labsuite-hardened-v1',
+  transport: 'loopback-only'
+};
 
 function response(status, body = {}, headers = {}) {
   return { status, body, headers, text: JSON.stringify(body) };
@@ -95,7 +102,7 @@ async function testPairingRealtimeCommandsAndForget() {
   const request = async (urlValue, options = {}) => {
     const url = new URL(urlValue);
     assert.strictEqual(url.origin, BASE_URL);
-    if (url.pathname === '/metadata') return response(200, { apiVersions: ['v1'] });
+    if (url.pathname === '/metadata') return response(200, HARDENED_METADATA);
     if (url.pathname === '/api/v1/auth/requestcode') {
       assert.ok(!options.headers.Authorization);
       const body = JSON.parse(options.body);
@@ -120,7 +127,7 @@ async function testPairingRealtimeCommandsAndForget() {
     getCredential: async () => null,
     setCredential: async token => { storedToken = token; },
     deleteCredential: async () => { deleted = true; },
-    findExecutable: () => 'C:\\Trusted\\youtube-music-desktop-app.exe',
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
     isProcessRunning: async () => true,
     socketFactory: (url, options) => { socketUrl = url; socketOptions = options; return socket; },
     now: () => now,
@@ -142,7 +149,7 @@ async function testPairingRealtimeCommandsAndForget() {
   const inactive = provider.getState({ sourceAppId: 'Spotify.exe' });
   assert.strictEqual(inactive.active, false);
   assert.strictEqual(inactive.queue.status, 'unavailable');
-  const active = provider.getState({ sourceAppId: 'youtube-music-desktop-app' });
+  const active = provider.getState({ sourceAppId: 'labsuite-music' });
   assert.strictEqual(active.active, true);
   assert.strictEqual(active.queue.items.length, 4);
   assert.ok(!JSON.stringify(active).includes(TOKEN), 'Sanitized provider state must never contain the companion token');
@@ -161,7 +168,7 @@ async function testPairingRealtimeCommandsAndForget() {
   assert.deepStrictEqual(commands.at(-1), { command: 'changeVideo', data: { videoId: 'abcdefghijk', playlistId: 'PL_test' } });
 
   socket.emit('state-update', { ...playerState(), video: { ...playerState().video, title: 'Socket update' } });
-  assert.strictEqual(provider.getState({ sourceApp: 'YTMDesktop' }).playback.title, 'Socket update');
+  assert.strictEqual(provider.getState({ sourceApp: 'LabSuite Music' }).playback.title, 'Socket update');
 
   await provider.forget();
   assert.strictEqual(deleted, true);
@@ -174,13 +181,13 @@ async function testRevokedCredential() {
   const provider = new YTMDesktopProvider({
     request: async urlValue => {
       const url = new URL(urlValue);
-      if (url.pathname === '/metadata') return response(200, { apiVersions: ['v1'] });
+      if (url.pathname === '/metadata') return response(200, HARDENED_METADATA);
       if (url.pathname === '/api/v1/state') return response(401, { error: 'UNAUTHORIZED' });
       throw new Error(`Unexpected request ${url}`);
     },
     getCredential: async () => TOKEN,
     deleteCredential: async () => { deleted = true; },
-    findExecutable: () => 'C:\\Trusted\\youtube-music-desktop-app.exe',
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
     isProcessRunning: async () => true,
     socketFactory: () => new FakeSocket()
   });
@@ -189,40 +196,57 @@ async function testRevokedCredential() {
   assert.strictEqual(deleted, true);
 }
 
-async function testWingetAllowlist() {
-  let executable = '';
-  let spawnCall = null;
-  const publishedStates = [];
-  const child = new EventEmitter();
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
+async function testRejectsUpstreamService() {
+  const provider = new YTMDesktopProvider({
+    request: async urlValue => {
+      const url = new URL(urlValue);
+      if (url.pathname === '/metadata') return response(200, { apiVersions: ['v1'] });
+      throw new Error(`Unexpected request ${url}`);
+    },
+    getCredential: async () => null,
+    findExecutable: () => '',
+    isProcessRunning: async () => true
+  });
+  const state = await provider.initialize();
+  assert.strictEqual(state.status, 'incompatible');
+  assert.match(state.message, /non-hardened YTMDesktop service/i);
+}
+
+async function testBundledHardenedInstall() {
+  let spawnCalled = false;
   const provider = new YTMDesktopProvider({
     platform: 'win32',
-    spawn: (command, args, options) => {
-      spawnCall = { command, args, options };
-      process.nextTick(() => {
-        executable = 'C:\\Trusted\\youtube-music-desktop-app.exe';
-        child.stdout.emit('data', 'Installing under C:\\Users\\private-account\\AppData\\Local\n');
-        child.emit('exit', 0);
-      });
-      return child;
-    },
-    findExecutable: () => executable,
+    spawn: () => { spawnCalled = true; },
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
+    validateExecutable: () => true,
     isProcessRunning: async () => false,
     request: async urlValue => {
       const url = new URL(urlValue);
       if (url.pathname === '/metadata') throw new Error('not running');
       throw new Error(`Unexpected request ${url}`);
     },
-    getCredential: async () => null,
-    openExternal: async () => {},
-    onChange: state => publishedStates.push(state)
+    getCredential: async () => null
   });
-  await provider.install();
-  assert.strictEqual(spawnCall.command, 'winget.exe');
-  assert.deepStrictEqual(spawnCall.args.slice(0, 6), ['install', '--exact', '--id', 'Ytmdesktop.Ytmdesktop', '--source', 'winget']);
-  assert.strictEqual(spawnCall.options.shell, false);
-  assert.ok(!JSON.stringify(publishedStates).includes('private-account'), 'Raw winget output must not reach the renderer status surface');
+  const state = await provider.install();
+  assert.strictEqual(state.installed, true);
+  assert.strictEqual(spawnCalled, false, 'Install must never invoke Winget or an upstream installer');
+}
+
+function testBundledExecutableIntegrity() {
+  const bundled = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.exe');
+  assert.strictEqual(__private.isTrustedExecutable(bundled), true, 'Staged LabSuite Music must match its hardened manifest hash');
+
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'labsuite-music-integrity-'));
+  try {
+    fs.writeFileSync(path.join(temporary, 'labsuite-music.exe'), 'tampered');
+    fs.copyFileSync(
+      path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.manifest.json'),
+      path.join(temporary, 'labsuite-music.manifest.json')
+    );
+    assert.strictEqual(__private.isTrustedExecutable(path.join(temporary, 'labsuite-music.exe')), false);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function testStaticSecurityContract() {
@@ -233,10 +257,24 @@ function testStaticSecurityContract() {
   const nativeSource = fs.readFileSync(path.join(ROOT, 'native', 'LabMediaWidget', 'MainWindow.xaml.cs'), 'utf8');
   assert.strictEqual(BASE_URL, 'http://127.0.0.1:9863');
   assert.ok(!providerSource.includes('0.0.0.0'));
-  assert.ok(providerSource.includes("CREDENTIAL_SERVICE = 'LabSuite.LabMedia.YTMDesktop'"));
+  assert.ok(providerSource.includes("CREDENTIAL_SERVICE = 'LabSuite.LabMedia.LabSuiteMusic'"));
+  assert.ok(providerSource.includes("REQUIRED_SECURITY_PROFILE = 'labsuite-hardened-v1'"));
+  assert.ok(providerSource.includes("metadata.body.product !== REQUIRED_PRODUCT"));
   assert.ok(providerSource.includes("url.origin !== BASE_URL"));
   assert.ok(providerSource.includes("new YTMDesktopError('redirectRejected'"));
   assert.ok(!providerSource.includes('console.log') && !providerSource.includes('console.error'));
+  const rendererSource = fs.readFileSync(path.join(ROOT, 'renderer', 'apps', 'LabMedia.jsx'), 'utf8');
+  const builderConfig = fs.readFileSync(path.join(ROOT, 'electron-builder.yml'), 'utf8');
+  const afterSignSource = fs.readFileSync(path.join(ROOT, 'scripts', 'after-sign-labsuite-music.js'), 'utf8');
+  assert.ok(rendererSource.includes('labsuite-hardened-v1')
+    && rendererSource.includes('upstream YTMDesktop builds are rejected'),
+    'LabMedia settings must disclose the hardened companion trust boundary');
+  assert.ok(!providerSource.includes('winget.exe') && !providerSource.includes('Ytmdesktop.Ytmdesktop'));
+  assert.ok(!providerSource.includes('github.com/ytmdesktop/ytmdesktop/releases'));
+  assert.ok(builderConfig.includes('afterSign: scripts/after-sign-labsuite-music.js'));
+  assert.ok(afterSignSource.includes("securityProfile !== 'labsuite-hardened-v1'")
+    && afterSignSource.includes("createHash('sha256')"),
+    'Windows packaging must refresh the manifest after Authenticode changes the sidecar bytes');
   assert.ok(supervisorSource.includes("type: 'ytmd:update'"));
   assert.ok(!nativeSource.includes('Authorization') && !nativeSource.includes('companion token'));
   for (const action of ['ytmdInstall', 'ytmdLaunch', 'ytmdPair', 'ytmdReconnect', 'ytmdForget', 'ytmdRefresh']) {
@@ -251,9 +289,11 @@ async function main() {
   testStateTransformation();
   await testPairingRealtimeCommandsAndForget();
   await testRevokedCredential();
-  await testWingetAllowlist();
+  await testRejectsUpstreamService();
+  await testBundledHardenedInstall();
+  testBundledExecutableIntegrity();
   testStaticSecurityContract();
-  console.log('All LabMedia YTMDesktop Companion tests passed cleanly!');
+  console.log('All LabMedia LabSuite Music companion tests passed cleanly!');
 }
 
 main().catch(error => {

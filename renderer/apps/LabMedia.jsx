@@ -141,8 +141,8 @@ export default function LabMedia({ active = true }) {
   };
 
   const ytmdAction = async (action) => {
-    if (action === 'install' && !window.confirm('Install the third-party GPL-licensed YTMDesktop app using the official winget package?')) return;
-    if (action === 'forget' && !window.confirm('Forget LabMedia’s YTMDesktop token? To revoke it inside YTMDesktop too, remove LabSuite from its Authorized companions list.')) return;
+    if (action === 'install' && !window.confirm('Check for the bundled GPL-licensed LabSuite Music hardened build?')) return;
+    if (action === 'forget' && !window.confirm('Forget LabMedia’s LabSuite Music token? To revoke it inside LabSuite Music too, remove LabSuite from its Authorized companions list.')) return;
     const channels = {
       install: 'labmedia:ytmdInstall',
       launch: 'labmedia:ytmdLaunch',
@@ -155,7 +155,7 @@ export default function LabMedia({ active = true }) {
     const channel = channels[action];
     if (!channel) return;
     setIsBusy(true);
-    await invokeAndSetStatus(channel, undefined, `Failed to ${action} YTMDesktop`);
+    await invokeAndSetStatus(channel, undefined, `Failed to ${action} LabSuite Music`);
     setIsBusy(false);
   };
 
@@ -339,10 +339,10 @@ export default function LabMedia({ active = true }) {
             </p>
           </SectionCard>
 
-          <SectionCard title="YTMDesktop Companion" description="Optional browser-free YouTube Music playback, genuine live queue data, and richer controls through YTMDesktop’s local Companion Server.">
+      <SectionCard title="LabSuite Music" description="Hardened YouTube Music playback, genuine live queue data, and richer controls through LabSuite’s audited GPL companion.">
             <YTMDesktopConnection state={ytmd} busy={isBusy} onAction={ytmdAction} />
             <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
-              LabMedia connects only to <code>127.0.0.1:9863</code>. Keep YTMDesktop’s browser communication option disabled and block inbound Companion Server access in Windows Firewall. Personalized recommendations remain in YTMDesktop’s Home interface.
+              LabMedia accepts only the <code>labsuite-hardened-v1</code> service on <code>127.0.0.1:9863</code>. Browser-origin requests, network clients, and upstream YTMDesktop builds are rejected. Personalized recommendations remain inside LabSuite Music.
             </p>
           </SectionCard>
 
@@ -500,7 +500,7 @@ function YTMDesktopConnection({ state = {}, busy, onAction }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[state.status] || 'Unavailable'}</div>
         <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, marginTop: 4, lineHeight: 1.4 }}>
-          {state.message || 'YTMDesktop status is unavailable.'}
+          {state.message || 'LabSuite Music status is unavailable.'}
         </div>
         {state.pairingCode && <div aria-live="polite" style={{ marginTop: 9, fontSize: 22, fontWeight: 900, letterSpacing: 6, color: '#f8fafc' }}>
           {state.pairingCode}
@@ -510,20 +510,20 @@ function YTMDesktopConnection({ state = {}, busy, onAction }) {
         </div>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7, maxWidth: 330 }}>
-        {state.status === 'notInstalled' && <button type="button" disabled={busy || state.installing} onClick={() => onAction('install')} style={primaryAction}>Install with winget</button>}
+        {state.status === 'notInstalled' && <button type="button" disabled={busy || state.installing} onClick={() => onAction('install')} style={primaryAction}>Check hardened build</button>}
         {state.status === 'stopped' && <button type="button" disabled={busy} onClick={() => onAction('launch')} style={primaryAction}>Launch</button>}
-        {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('open')} style={secondaryAction}>Open YTMDesktop</button>}
+        {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('open')} style={secondaryAction}>Open LabSuite Music</button>}
         {['requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('pair')} style={primaryAction}>Pair</button>}
-        {['connected', 'error'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction(state.status === 'connected' ? 'open' : 'reconnect')} style={primaryAction}>{state.status === 'connected' ? 'Open YTMDesktop' : 'Reconnect'}</button>}
+        {['connected', 'error'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction(state.status === 'connected' ? 'open' : 'reconnect')} style={primaryAction}>{state.status === 'connected' ? 'Open LabSuite Music' : 'Reconnect'}</button>}
         {state.status !== 'notInstalled' && state.status !== 'pairing' && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh status</button>}
         {(state.paired || state.status === 'reauthRequired') && <button type="button" disabled={busy} onClick={() => onAction('forget')} style={secondaryAction}>Forget connection</button>}
       </div>
     </div>
     {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 10 }}>
-      In YTMDesktop Settings → Integrations, enable <strong>Companion server</strong>, then temporarily enable <strong>Companion authorization</strong> before pressing Pair. Authorization closes automatically after approval.
+      In LabSuite Music Settings → Integrations, enable <strong>Companion server</strong>, then temporarily enable <strong>Companion authorization</strong> before pressing Pair. Authorization closes automatically after approval.
     </div>}
     {healthy && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 8 }}>
-      YTMDesktop does not expose the signed-in Gmail address, so confirm it uses the same account as the official YouTube Library connection.
+      LabSuite Music does not expose the signed-in Gmail address to LabSuite, so confirm it uses the same account as the official YouTube Library connection.
     </div>}
   </div>;
 }

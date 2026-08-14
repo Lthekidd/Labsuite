@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.38 - 2026-08-14
+
+### Dedicated LabSuite Music Companion Build & Security Runtime Validation
+
+- **LabSuite Music Dedicated Build & Signing Script (`scripts/build-labsuite-music.ps1`)**:
+  - Added dedicated build and post-sign execution scripts for LabSuite Music runtime environment.
+- **Loopback-Only Hardened Runtime Verification (`scripts/verify-labsuite-music-runtime.ps1`)**:
+  - Verified strict `127.0.0.1:9863` loopback binding, origin verification, unauthenticated access rejection, and companion token isolation.
+
 ## 2.10.37 - 2026-08-14
 
 ### Optional YTMDesktop Companion Integration

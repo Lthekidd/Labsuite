@@ -209,6 +209,11 @@ function testNativeSourceIntegrity() {
   assert.ok(mainWinXaml.includes('x:Key="MediaIconButton"'), 'Media controls must use the circular vector icon style');
   assert.ok(!mainWinXaml.includes('BtnSwitchSession'), 'Player switching must not occupy the taskbar strip');
   assert.ok(mainWinXaml.includes('x:Name="ControlsRail"'), 'Normal mode must reserve a stable control rail');
+  assert.ok(mainWinSource.includes('ControlsRail.Width = showSecondary || reserveSecondary ? 84 : 34;'),
+    'The taskbar transport rail must fit previous, play/pause, and next without clipping');
+  assert.ok(!mainWinXaml.includes('x:Name="BtnRewind"') && !mainWinXaml.includes('x:Name="BtnForward"')
+    && !mainWinXaml.includes('x:Name="BtnLike"'),
+    'Secondary seek and rating actions belong in the expanded panel, not the 40px taskbar strip');
   assert.ok(mainWinXaml.includes('VolToastBorder'), 'MainWindow XAML must include live volume toast badge');
   assert.ok(!mainWinXaml.includes('Content="⏮"') && !mainWinXaml.includes('Content="⏭"'),
     'Media controls must not depend on font-specific symbol glyphs');

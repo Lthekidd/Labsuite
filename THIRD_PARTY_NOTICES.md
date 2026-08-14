@@ -39,16 +39,23 @@ not affiliated with, sponsored or endorsed by Spotify AB.
 
 ---
 
-## YouTube Music Desktop App (YTMDesktop)
+## LabSuite Music / YouTube Music Desktop App (YTMDesktop)
 
-LabMedia can optionally communicate with a separately installed copy of
-[YTMDesktop](https://github.com/ytmdesktop/ytmdesktop) through its local
-Companion Server API. YTMDesktop is not bundled with LabSuite and no
-YTMDesktop source code is incorporated into LabSuite.
+LabMedia can optionally communicate with LabSuite Music, a separately built
+and separately licensed hardened fork of
+[YTMDesktop](https://github.com/ytmdesktop/ytmdesktop), through its loopback
+Companion Server API. Packaged LabSuite releases may aggregate the companion
+binary under `resources/bin/LabSuiteMusic`; the companion remains an
+independent GPL program and communicates with LabSuite through a local API.
 
 YTMDesktop is distributed under the
 [GNU General Public License v3.0](https://github.com/ytmdesktop/ytmdesktop/blob/development/LICENSE).
 Copyright © 2024 NovusTheory and YTMDesktop contributors.
+LabSuite fork modifications Copyright © 2026 LabSuite Team.
+
+The exact corresponding GPL source and build instructions are included beside
+the companion binary under `resources/bin/LabSuiteMusic/source` and maintained
+in the separate `LabSuiteMusic` source repository alongside the workspace.
 
 "YouTube" and "YouTube Music" are trademarks of Google LLC. LabSuite is not
 affiliated with, sponsored or endorsed by Google LLC or the YTMDesktop project.

@@ -22,9 +22,9 @@
             <Setter Property="Height" Value="25" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Focusable" Value="False" />
-            <Setter Property="Foreground" Value="#46515c" />
-            <Setter Property="Background" Value="#eaf7ff" />
-            <Setter Property="BorderBrush" Value="#73c9ff" />
+            <Setter Property="Foreground" Value="#d7dde5" />
+            <Setter Property="Background" Value="#18ffffff" />
+            <Setter Property="BorderBrush" Value="#20ffffff" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -35,19 +35,16 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="14"
                                 SnapsToDevicePixels="True">
-                            <Border.Effect>
-                                <DropShadowEffect Color="#38bdf8" BlurRadius="4" ShadowDepth="0" Opacity="0.34" />
-                            </Border.Effect>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonSurface" Property="Background" Value="#ffffff" />
-                                <Setter TargetName="ButtonSurface" Property="BorderBrush" Value="#9bddff" />
+                                <Setter TargetName="ButtonSurface" Property="Background" Value="#2cffffff" />
+                                <Setter TargetName="ButtonSurface" Property="BorderBrush" Value="#38ffffff" />
+                                <Setter Property="Foreground" Value="#ffffff" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonSurface" Property="Background" Value="#c9edff" />
-                                <Setter TargetName="ButtonSurface" Property="Opacity" Value="0.88" />
+                                <Setter TargetName="ButtonSurface" Property="Opacity" Value="0.72" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonSurface" Property="Opacity" Value="0.42" />
@@ -63,7 +60,7 @@
             <Setter Property="Height" Value="28" />
             <Setter Property="Foreground" Value="#ffffff" />
             <Setter Property="Background" Value="#1db954" />
-            <Setter Property="BorderBrush" Value="#69e596" />
+            <Setter Property="BorderBrush" Value="#1db954" />
         </Style>
     </Window.Resources>
 
@@ -96,14 +93,6 @@
             <!-- Media Control Buttons -->
             <StackPanel x:Name="ControlsRail" Grid.Column="2" Orientation="Horizontal"
                         HorizontalAlignment="Right" VerticalAlignment="Center" Margin="4,0,2,0">
-                <Button x:Name="BtnLike" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnLike_Click" Cursor="Hand" ToolTip="Like track"
-                        automation:AutomationProperties.Name="Like track">
-                    <TextBlock Text="♥" FontSize="9" FontWeight="Bold" />
-                </Button>
-                <Button x:Name="BtnRewind" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnRewind_Click" Cursor="Hand" ToolTip="Rewind 10s"
-                        automation:AutomationProperties.Name="Rewind 10 seconds">
-                    <TextBlock Text="-10s" FontSize="7.5" FontWeight="Bold" />
-                </Button>
                 <Button x:Name="BtnPrev" Style="{StaticResource MediaIconButton}" Margin="0,0,3,0" Click="BtnPrev_Click" Cursor="Hand" ToolTip="Previous"
                         automation:AutomationProperties.Name="Previous track">
                     <Path Data="M 15,5 L 8,12 L 15,19"
@@ -123,10 +112,6 @@
                           Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
                           Width="8" Height="13" Stretch="Uniform" />
-                </Button>
-                <Button x:Name="BtnForward" Style="{StaticResource MediaIconButton}" Click="BtnForward_Click" Cursor="Hand" ToolTip="Fast forward 10s" Margin="0,0,3,0"
-                        automation:AutomationProperties.Name="Fast forward 10 seconds">
-                    <TextBlock Text="+10s" FontSize="7.5" FontWeight="Bold" />
                 </Button>
             </StackPanel>
 

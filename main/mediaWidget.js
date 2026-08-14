@@ -521,13 +521,13 @@ async function handleYTMDesktopProviderAction(action, data = {}) {
   if (action === 'refresh') return ytmDesktopProvider.refreshStatus({ connect: true });
 
   const state = ytmDesktopProvider.getState(lastSessionInfo);
-  if (!state.active) throw new Error('YTMDesktop is not the active LabMedia session.');
+  if (!state.active) throw new Error('LabSuite Music is not the active LabMedia session.');
   const allowed = new Set([
     'playPause', 'play', 'pause', 'next', 'previous', 'mute', 'unmute',
     'shuffle', 'toggleLike', 'toggleDislike', 'setVolume', 'seekTo',
     'repeatMode', 'playQueueIndex'
   ]);
-  if (!allowed.has(action)) throw new Error('Unsupported YTMDesktop provider action.');
+  if (!allowed.has(action)) throw new Error('Unsupported LabSuite Music provider action.');
   const payload = {
     value: data.value,
     queueIndex: data.queueIndex

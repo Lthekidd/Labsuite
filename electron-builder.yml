@@ -10,6 +10,7 @@ publish:
   releaseType: draft
 directories:
   output: dist-packaged
+afterSign: scripts/after-sign-labsuite-music.js
 forceCodeSigning: false
 files:
   - dist/**/*

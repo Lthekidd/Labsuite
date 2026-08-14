@@ -1,17 +1,20 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { execFile, execFileSync, spawn } = require('child_process');
+const crypto = require('crypto');
+const { execFile, spawn } = require('child_process');
 const { URL } = require('url');
 
 const keychain = require('./keychain');
 
 const BASE_URL = 'http://127.0.0.1:9863';
 const REALTIME_URL = `${BASE_URL}/api/v1/realtime`;
-const CREDENTIAL_SERVICE = 'LabSuite.LabMedia.YTMDesktop';
+const CREDENTIAL_SERVICE = 'LabSuite.LabMedia.LabSuiteMusic';
 const CREDENTIAL_ACCOUNT = 'companion-v1';
 const APP_ID = 'labsuite_labmedia';
 const APP_NAME = 'LabSuite LabMedia';
+const REQUIRED_PRODUCT = 'LabSuite Music';
+const REQUIRED_SECURITY_PROFILE = 'labsuite-hardened-v1';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_QUEUE_ITEMS = 50;
 const MIN_COMMAND_INTERVAL_MS = 550;
@@ -77,7 +80,7 @@ function bestThumbnail(thumbnails) {
 
 function validateToken(value) {
   const token = String(value || '').trim();
-  if (!TOKEN_PATTERN.test(token)) throw new YTMDesktopError('invalidToken', 'YTMDesktop returned an invalid companion token.');
+  if (!TOKEN_PATTERN.test(token)) throw new YTMDesktopError('invalidToken', 'LabSuite Music returned an invalid companion token.');
   return token;
 }
 
@@ -99,7 +102,7 @@ function isYTMDesktopSession(session = {}) {
   const identity = [session.sourceAppId, session.sourceApp, session.sessionId]
     .map(value => String(value || '').toLowerCase())
     .join(' ');
-  return /(?:youtube[-_. ]?music[-_. ]?desktop|ytmdesktop)/i.test(identity);
+  return /(?:labsuite[-_. ]?music|youtube[-_. ]?music[-_. ]?desktop|ytmdesktop)/i.test(identity);
 }
 
 function emptyPlayback() {
@@ -141,7 +144,7 @@ function emptyCapabilities() {
   };
 }
 
-function unavailableQueue(message = 'YTMDesktop is not connected.') {
+function unavailableQueue(message = 'LabSuite Music is not connected.') {
   return {
     status: 'unavailable',
     provider: 'ytmdesktop',
@@ -155,7 +158,7 @@ function unavailableQueue(message = 'YTMDesktop is not connected.') {
 function initialState() {
   return {
     status: 'notInstalled',
-    message: 'Install YTMDesktop to enable a live YouTube Music queue.',
+    message: 'Build LabSuite Music to enable a live YouTube Music queue.',
     installed: false,
     running: false,
     paired: false,
@@ -233,7 +236,7 @@ function transformPlayerState(raw = {}) {
   let message = '';
   if (!queue) {
     status = video ? 'loading' : 'empty';
-    message = video ? 'YouTube Music is preparing the queue…' : 'Start playback in YTMDesktop to load Up Next.';
+    message = video ? 'YouTube Music is preparing the queue…' : 'Start playback in LabSuite Music to load Up Next.';
   } else if (!upcoming.length && queue.isGenerating) {
     status = 'loading';
     message = 'YouTube Music is generating more recommendations…';
@@ -273,11 +276,11 @@ function defaultRequest(urlValue, options = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try { url = new URL(urlValue); } catch (_) {
-      reject(new YTMDesktopError('invalidUrl', 'Invalid YTMDesktop companion address.'));
+      reject(new YTMDesktopError('invalidUrl', 'Invalid LabSuite Music companion address.'));
       return;
     }
     if (url.origin !== BASE_URL || !url.pathname.startsWith('/api/v1/') && url.pathname !== '/metadata') {
-      reject(new YTMDesktopError('invalidUrl', 'YTMDesktop requests are restricted to the local companion server.'));
+      reject(new YTMDesktopError('invalidUrl', 'LabSuite Music requests are restricted to the local companion server.'));
       return;
     }
 
@@ -288,7 +291,7 @@ function defaultRequest(urlValue, options = {}) {
     }, response => {
       if (response.statusCode >= 300 && response.statusCode < 400) {
         response.resume();
-        reject(new YTMDesktopError('redirectRejected', 'YTMDesktop companion redirects are not allowed.'));
+        reject(new YTMDesktopError('redirectRejected', 'LabSuite Music companion redirects are not allowed.'));
         return;
       }
       const chunks = [];
@@ -296,7 +299,7 @@ function defaultRequest(urlValue, options = {}) {
       response.on('data', chunk => {
         bytes += chunk.length;
         if (bytes > MAX_RESPONSE_BYTES) {
-          request.destroy(new YTMDesktopError('responseTooLarge', 'YTMDesktop returned an oversized response.'));
+          request.destroy(new YTMDesktopError('responseTooLarge', 'LabSuite Music returned an oversized response.'));
           return;
         }
         chunks.push(chunk);
@@ -308,53 +311,51 @@ function defaultRequest(urlValue, options = {}) {
         resolve({ status: Number(response.statusCode || 0), headers: response.headers || {}, body, text });
       });
     });
-    request.on('error', error => reject(new YTMDesktopError('unreachable', 'YTMDesktop Companion Server could not be reached.', { cause: error })));
+    request.on('error', error => reject(new YTMDesktopError('unreachable', 'LabSuite Music companion could not be reached.', { cause: error })));
     request.setTimeout(options.timeoutMs || 5000, () => {
-      request.destroy(new YTMDesktopError('timeout', 'YTMDesktop Companion Server timed out.'));
+      request.destroy(new YTMDesktopError('timeout', 'LabSuite Music companion timed out.'));
     });
     if (options.body) request.write(options.body);
     request.end();
   });
 }
 
-function registryExecutable() {
-  if (process.platform !== 'win32') return '';
-  for (const key of [
-    'HKCU\\Software\\Classes\\ytmd\\shell\\open\\command',
-    'HKCR\\ytmd\\shell\\open\\command'
-  ]) {
-    try {
-      const output = execFileSync('reg.exe', ['query', key, '/ve'], { encoding: 'utf8', windowsHide: true, timeout: 2500 });
-      const match = output.match(/"([^"\r\n]+\.exe)"/i);
-      if (match && /^youtube-music-desktop-app\.exe$/i.test(path.basename(match[1])) && fs.existsSync(match[1])) return match[1];
-    } catch (_) {}
+function isTrustedExecutable(candidate) {
+  try {
+    if (!candidate || !/^labsuite-music\.exe$/i.test(path.basename(candidate)) || !fs.existsSync(candidate)) return false;
+    const manifestPath = path.join(path.dirname(candidate), 'labsuite-music.manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
+    if (
+      manifest.product !== REQUIRED_PRODUCT ||
+      manifest.securityProfile !== REQUIRED_SECURITY_PROFILE ||
+      manifest.correspondingSource !== 'source' ||
+      !/^[A-Fa-f0-9]{64}$/.test(String(manifest.executableSha256 || ''))
+    ) return false;
+    const sourcePath = path.join(path.dirname(candidate), manifest.correspondingSource);
+    if (!fs.existsSync(path.join(sourcePath, 'LICENSE')) || !fs.existsSync(path.join(sourcePath, 'LABSUITE_FORK.md'))) return false;
+    const actual = crypto.createHash('sha256').update(fs.readFileSync(candidate)).digest();
+    const expected = Buffer.from(manifest.executableSha256, 'hex');
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  } catch (_) {
+    return false;
   }
-  return '';
 }
 
 function defaultFindExecutable() {
-  const local = process.env.LOCALAPPDATA || '';
-  const programFiles = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']].filter(Boolean);
+  const projectRoot = path.resolve(__dirname, '..');
   const candidates = [
-    registryExecutable(),
-    local ? path.join(local, 'youtube_music_desktop_app', 'youtube-music-desktop-app.exe') : '',
-    local ? path.join(local, 'youtube-music-desktop-app', 'youtube-music-desktop-app.exe') : '',
-    local ? path.join(local, 'Programs', 'youtube-music-desktop-app', 'youtube-music-desktop-app.exe') : '',
-    local ? path.join(local, 'Programs', 'YouTube Music Desktop App', 'youtube-music-desktop-app.exe') : '',
-    ...programFiles.flatMap(root => [
-      path.join(root, 'youtube-music-desktop-app', 'youtube-music-desktop-app.exe'),
-      path.join(root, 'YouTube Music Desktop App', 'youtube-music-desktop-app.exe')
-    ])
+    path.join(projectRoot, 'bin', 'LabSuiteMusic', 'labsuite-music.exe'),
+    path.join(process.resourcesPath || projectRoot, 'bin', 'LabSuiteMusic', 'labsuite-music.exe')
   ].filter(Boolean);
-  return candidates.find(candidate => fs.existsSync(candidate) && /^youtube-music-desktop-app\.exe$/i.test(path.basename(candidate))) || '';
+  return candidates.find(isTrustedExecutable) || '';
 }
 
 function defaultIsProcessRunning() {
   if (process.platform !== 'win32') return Promise.resolve(false);
   return new Promise(resolve => {
-    execFile('tasklist.exe', ['/FI', 'IMAGENAME eq youtube-music-desktop-app.exe', '/FO', 'CSV', '/NH'], {
+    execFile('tasklist.exe', ['/FI', 'IMAGENAME eq labsuite-music.exe', '/FO', 'CSV', '/NH'], {
       encoding: 'utf8', windowsHide: true, timeout: 3000
-    }, (error, stdout) => resolve(!error && /youtube-music-desktop-app\.exe/i.test(String(stdout || ''))));
+    }, (error, stdout) => resolve(!error && /labsuite-music\.exe/i.test(String(stdout || ''))));
   });
 }
 
@@ -365,9 +366,9 @@ class YTMDesktopProvider {
     this._setCredential = dependencies.setCredential || (token => keychain.setCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT, token));
     this._deleteCredential = dependencies.deleteCredential || (() => keychain.deleteCredential(CREDENTIAL_SERVICE, CREDENTIAL_ACCOUNT));
     this._findExecutable = dependencies.findExecutable || defaultFindExecutable;
+    this._validateExecutable = dependencies.validateExecutable || isTrustedExecutable;
     this._isProcessRunning = dependencies.isProcessRunning || defaultIsProcessRunning;
     this._spawn = dependencies.spawn || spawn;
-    this._openExternal = dependencies.openExternal || (url => require('electron').shell.openExternal(url));
     this._socketFactory = dependencies.socketFactory || ((url, options) => require('socket.io-client').io(url, options));
     this._sleep = dependencies.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
     this._now = dependencies.now || (() => Date.now());
@@ -381,7 +382,6 @@ class YTMDesktopProvider {
     this._queueLength = 0;
     this._initializePromise = null;
     this._pairPromise = null;
-    this._installPromise = null;
     this._pendingCommands = [];
     this._processingCommands = false;
     this._lastCommandAt = 0;
@@ -406,7 +406,7 @@ class YTMDesktopProvider {
     result.active = result.status === 'connected' && isYTMDesktopSession(session);
     if (!result.active) result.queue = unavailableQueue(
       result.status === 'connected'
-        ? 'Select the YTMDesktop media session to show its live queue.'
+        ? 'Select the LabSuite Music media session to show its live queue.'
         : result.message
     );
     return result;
@@ -445,19 +445,26 @@ class YTMDesktopProvider {
       const metadata = await this._request(`${BASE_URL}/metadata`, { timeoutMs: 3000 });
       serverReached = true;
       if (metadata.status !== 200 || !Array.isArray(metadata.body?.apiVersions)) {
-        throw new YTMDesktopError('incompatible', 'YTMDesktop returned invalid companion metadata.');
+        throw new YTMDesktopError('incompatible', 'LabSuite Music returned invalid companion metadata.');
+      }
+      if (
+        metadata.body.product !== REQUIRED_PRODUCT ||
+        metadata.body.securityProfile !== REQUIRED_SECURITY_PROFILE ||
+        metadata.body.transport !== 'loopback-only'
+      ) {
+        throw new YTMDesktopError('incompatible', 'A non-hardened YTMDesktop service is using port 9863. Close it and start LabSuite Music.');
       }
       if (!metadata.body.apiVersions.includes('v1')) {
         this._disconnectSocket();
         this._patchState({
-          status: 'incompatible', message: 'This YTMDesktop version does not expose Companion API v1.',
+          status: 'incompatible', message: 'This LabSuite Music build does not expose Companion API v1.',
           installed: !!executablePath || running, running: true, paired: !!this._token, apiVersion: '', pairingCode: ''
         });
         return this.getState();
       }
       this._patchState({
         status: this._token ? 'connected' : 'requiresPairing',
-        message: this._token ? 'Connecting to YTMDesktop…' : 'Pair LabMedia with the local YTMDesktop Companion Server.',
+        message: this._token ? 'Connecting to LabSuite Music…' : 'Pair LabMedia with the local LabSuite Music companion.',
         installed: true, running: true, paired: !!this._token, apiVersion: 'v1', pairingCode: ''
       });
       if (this._token && connect) await this._connectAuthenticated();
@@ -471,7 +478,7 @@ class YTMDesktopProvider {
         const incompatible = error?.code === 'incompatible';
         this._patchState({
           status: incompatible ? 'incompatible' : 'error',
-          message: safeText(error?.message || 'YTMDesktop returned invalid companion state.', 240),
+          message: safeText(error?.message || 'LabSuite Music returned invalid companion state.', 240),
           installed: true, running: true, paired: !!this._token, pairingCode: '',
           playback: emptyPlayback(), capabilities: emptyCapabilities(), queue: unavailableQueue(error?.message)
         });
@@ -479,9 +486,9 @@ class YTMDesktopProvider {
       }
       const status = running ? 'serverDisabled' : executablePath ? 'stopped' : 'notInstalled';
       const messages = {
-        serverDisabled: 'YTMDesktop is running, but its Companion server is disabled.',
-        stopped: 'Start YTMDesktop to use its live queue and playback controls.',
-        notInstalled: 'Install YTMDesktop to enable a live YouTube Music queue.'
+        serverDisabled: 'LabSuite Music is running, but its companion server is disabled.',
+        stopped: 'Start LabSuite Music to use its live queue and playback controls.',
+        notInstalled: 'Build LabSuite Music to enable a live YouTube Music queue.'
       };
       this._patchState({
         status, message: messages[status], installed: !!executablePath || running, running,
@@ -493,14 +500,14 @@ class YTMDesktopProvider {
   }
 
   async _authenticatedRequest(pathname, options = {}) {
-    if (!this._token) throw new YTMDesktopError('requiresPairing', 'Pair LabMedia with YTMDesktop first.');
+    if (!this._token) throw new YTMDesktopError('requiresPairing', 'Pair LabMedia with LabSuite Music first.');
     const response = await this._request(`${BASE_URL}${pathname}`, {
       ...options,
       headers: { ...(options.headers || {}), Authorization: this._token, Accept: 'application/json' }
     });
     if (response.status === 401) {
       await this._markReauthRequired();
-      throw new YTMDesktopError('reauthRequired', 'YTMDesktop no longer accepts this companion token. Pair again.');
+      throw new YTMDesktopError('reauthRequired', 'LabSuite Music no longer accepts this companion token. Pair again.');
     }
     return response;
   }
@@ -508,12 +515,12 @@ class YTMDesktopProvider {
   async _connectAuthenticated() {
     const response = await this._authenticatedRequest('/api/v1/state', { timeoutMs: 5000 });
     if (response.status < 200 || response.status >= 300 || !response.body || typeof response.body !== 'object') {
-      throw new YTMDesktopError('stateError', 'YTMDesktop returned invalid playback state.');
+      throw new YTMDesktopError('stateError', 'LabSuite Music returned invalid playback state.');
     }
     this._applyPlayerState(response.body);
     this._connectSocket();
     this._patchState({
-      status: 'connected', message: 'Connected to YTMDesktop on this PC.', installed: true,
+      status: 'connected', message: 'Connected securely to LabSuite Music on this PC.', installed: true,
       running: true, paired: true, apiVersion: 'v1', pairingCode: ''
     });
     return this.getState();
@@ -552,15 +559,15 @@ class YTMDesktopProvider {
     this._socket = socket;
     socket.on('connect', () => {
       if (socket !== this._socket) return;
-      this._patchState({ status: 'connected', message: 'Connected to YTMDesktop on this PC.', running: true, paired: true });
+      this._patchState({ status: 'connected', message: 'Connected securely to LabSuite Music on this PC.', running: true, paired: true });
     });
     socket.on('state-update', state => {
       if (socket === this._socket) this._applyPlayerState(state);
     });
     socket.on('disconnect', () => {
       if (socket !== this._socket || this._shuttingDown) return;
-      this._rejectPendingCommands(new YTMDesktopError('disconnected', 'YTMDesktop disconnected before the command was sent.'));
-      this._patchState({ status: 'error', message: 'YTMDesktop connection was interrupted; reconnecting…', running: false });
+      this._rejectPendingCommands(new YTMDesktopError('disconnected', 'LabSuite Music disconnected before the command was sent.'));
+      this._patchState({ status: 'error', message: 'LabSuite Music connection was interrupted; reconnecting…', running: false });
     });
     socket.on('connect_error', error => {
       if (socket !== this._socket || this._shuttingDown) return;
@@ -568,7 +575,7 @@ class YTMDesktopProvider {
       if (code.includes('UNAUTHENTICATED') || code.includes('UNAUTHORIZED')) {
         this._markReauthRequired().catch(() => {});
       } else {
-        this._patchState({ status: 'error', message: 'YTMDesktop Companion Server is temporarily unavailable; reconnecting…', running: false });
+        this._patchState({ status: 'error', message: 'LabSuite Music companion is temporarily unavailable; reconnecting…', running: false });
       }
     });
   }
@@ -591,12 +598,12 @@ class YTMDesktopProvider {
   async _markReauthRequired() {
     this._disconnectSocket();
     this._token = '';
-    this._rejectPendingCommands(new YTMDesktopError('reauthRequired', 'YTMDesktop authorization was revoked.'));
+    this._rejectPendingCommands(new YTMDesktopError('reauthRequired', 'LabSuite Music authorization was revoked.'));
     await this._deleteCredential().catch(() => {});
     this._patchState({
-      status: 'reauthRequired', message: 'YTMDesktop revoked this companion. Enable authorization and pair again.',
+      status: 'reauthRequired', message: 'LabSuite Music revoked this companion. Enable authorization and pair again.',
       paired: false, pairingCode: '', playback: emptyPlayback(), capabilities: emptyCapabilities(),
-      queue: unavailableQueue('Pair YTMDesktop again to restore its live queue.')
+      queue: unavailableQueue('Pair LabSuite Music again to restore its live queue.')
     });
   }
 
@@ -604,11 +611,11 @@ class YTMDesktopProvider {
     const code = safeText(response?.body?.code || response?.body?.error, 80);
     const message = safeText(response?.body?.message, 240) || fallback;
     if (code === 'AUTHORIZATION_DISABLED') {
-      return new YTMDesktopError('authorizationDisabled', 'Enable Companion authorization in YTMDesktop Settings → Integrations, then try Pair again.');
+      return new YTMDesktopError('authorizationDisabled', 'Enable companion authorization in LabSuite Music Settings → Integrations, then try Pair again.');
     }
-    if (code === 'AUTHORIZATION_DENIED') return new YTMDesktopError('authorizationDenied', 'YTMDesktop pairing was denied.');
-    if (code === 'AUTHORIZATION_TIME_OUT') return new YTMDesktopError('authorizationTimeout', 'YTMDesktop pairing timed out.');
-    if (response?.status === 401) return new YTMDesktopError('reauthRequired', 'YTMDesktop rejected this companion token.');
+    if (code === 'AUTHORIZATION_DENIED') return new YTMDesktopError('authorizationDenied', 'LabSuite Music pairing was denied.');
+    if (code === 'AUTHORIZATION_TIME_OUT') return new YTMDesktopError('authorizationTimeout', 'LabSuite Music pairing timed out.');
+    if (response?.status === 401) return new YTMDesktopError('reauthRequired', 'LabSuite Music rejected this companion token.');
     return new YTMDesktopError(code || 'apiError', message);
   }
 
@@ -617,7 +624,7 @@ class YTMDesktopProvider {
     this._pairPromise = (async () => {
       await this.refreshStatus({ connect: false });
       if (!['requiresPairing', 'reauthRequired', 'connected'].includes(this._state.status)) {
-        throw new YTMDesktopError('notReady', this._state.message || 'YTMDesktop is not ready to pair.');
+        throw new YTMDesktopError('notReady', this._state.message || 'LabSuite Music is not ready to pair.');
       }
       this._disconnectSocket();
       this._patchState({ status: 'pairing', message: 'Requesting a one-time pairing code…', pairingCode: '' });
@@ -627,19 +634,19 @@ class YTMDesktopProvider {
         body: requestBody, timeoutMs: 10000
       });
       if (codeResponse.status < 200 || codeResponse.status >= 300 || !/^\d{4}$/.test(String(codeResponse.body?.code || ''))) {
-        throw this._apiError(codeResponse, 'YTMDesktop could not create a pairing code.');
+        throw this._apiError(codeResponse, 'LabSuite Music could not create a pairing code.');
       }
       const code = String(codeResponse.body.code);
       this._patchState({
         status: 'pairing', pairingCode: code,
-        message: `Approve code ${code} in the YTMDesktop authorization window.`
+        message: `Approve code ${code} in the LabSuite Music authorization window.`
       });
       const tokenResponse = await this._request(`${BASE_URL}/api/v1/auth/request`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ appId: APP_ID, code }), timeoutMs: 35000
       });
       if (tokenResponse.status < 200 || tokenResponse.status >= 300) {
-        throw this._apiError(tokenResponse, 'YTMDesktop pairing failed.');
+        throw this._apiError(tokenResponse, 'LabSuite Music pairing failed.');
       }
       const token = validateToken(tokenResponse.body?.token);
       await this._setCredential(token);
@@ -650,7 +657,7 @@ class YTMDesktopProvider {
       if (this._state.status === 'pairing') {
         this._patchState({
           status: error?.code === 'authorizationDisabled' ? 'requiresPairing' : 'error',
-          message: safeText(error?.message || 'YTMDesktop pairing failed.', 240), pairingCode: '', paired: false
+          message: safeText(error?.message || 'LabSuite Music pairing failed.', 240), pairingCode: '', paired: false
         });
       }
       throw error;
@@ -668,24 +675,24 @@ class YTMDesktopProvider {
     this._token = '';
     this._rawPlayerState = null;
     this._queueLength = 0;
-    this._rejectPendingCommands(new YTMDesktopError('forgotten', 'YTMDesktop connection was forgotten.'));
+    this._rejectPendingCommands(new YTMDesktopError('forgotten', 'LabSuite Music connection was forgotten.'));
     await this._deleteCredential().catch(() => {});
     this._patchState({
       status: 'requiresPairing', paired: false, pairingCode: '', playback: emptyPlayback(), capabilities: emptyCapabilities(),
-      queue: unavailableQueue('Pair YTMDesktop to restore its live queue.'),
-      message: 'LabMedia forgot its token. Remove LabSuite from YTMDesktop’s Authorized companions list to revoke it there.'
+      queue: unavailableQueue('Pair LabSuite Music to restore its live queue.'),
+      message: 'LabMedia forgot its token. Remove LabSuite from LabSuite Music’s Authorized companions list to revoke it there.'
     });
     return this.getState();
   }
 
   async launch() {
     const executablePath = this._findExecutable();
-    if (!executablePath || !fs.existsSync(executablePath) || !/^youtube-music-desktop-app\.exe$/i.test(path.basename(executablePath))) {
-      throw new YTMDesktopError('notInstalled', 'YTMDesktop is not installed in a trusted location.');
+    if (!executablePath || !this._validateExecutable(executablePath)) {
+      throw new YTMDesktopError('notInstalled', 'LabSuite Music is not available in a trusted LabSuite location.');
     }
     const child = this._spawn(executablePath, [], { detached: true, stdio: 'ignore', windowsHide: true, shell: false });
     child?.unref?.();
-    this._patchState({ installed: true, message: 'Starting YTMDesktop…' });
+    this._patchState({ installed: true, message: 'Starting LabSuite Music…' });
     return true;
   }
 
@@ -694,53 +701,16 @@ class YTMDesktopProvider {
   }
 
   async install() {
-    if (this._platform !== 'win32') throw new YTMDesktopError('unsupported', 'YTMDesktop installation is supported only on Windows.');
-    if (this._installPromise) return this._installPromise;
-    this._installPromise = new Promise((resolve, reject) => {
-      this._patchState({ installing: true, installProgress: 'Starting winget…', message: 'Installing YTMDesktop with winget…' });
-      let child;
-      let settled = false;
-      try {
-        child = this._spawn('winget.exe', [
-          'install', '--exact', '--id', 'Ytmdesktop.Ytmdesktop', '--source', 'winget',
-          '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'
-        ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false });
-      } catch (error) {
-        Promise.resolve(this._openExternal('https://github.com/ytmdesktop/ytmdesktop/releases')).catch(() => {});
-        this._patchState({ installing: false, installProgress: '', status: 'error', message: 'winget could not start; the official releases page was opened.' });
-        reject(new YTMDesktopError('wingetUnavailable', 'winget could not start. The official YTMDesktop releases page was opened.', { cause: error }));
-        return;
-      }
-      let receivedProgress = false;
-      const capture = chunk => {
-        if (receivedProgress || !String(chunk || '').trim()) return;
-        receivedProgress = true;
-        this._patchState({ installing: true, installProgress: 'winget is installing YTMDesktop…' });
-      };
-      child.stdout?.on('data', capture);
-      child.stderr?.on('data', capture);
-      child.once('error', error => {
-        if (settled) return;
-        settled = true;
-        Promise.resolve(this._openExternal('https://github.com/ytmdesktop/ytmdesktop/releases')).catch(() => {});
-        this._patchState({ installing: false, installProgress: '', status: 'error', message: 'winget failed to start; the official releases page was opened.' });
-        reject(new YTMDesktopError('wingetUnavailable', 'winget failed to start. The official releases page was opened.', { cause: error }));
-      });
-      child.once('exit', async code => {
-        if (settled) return;
-        settled = true;
-        if (Number(code) !== 0) {
-          await Promise.resolve(this._openExternal('https://github.com/ytmdesktop/ytmdesktop/releases')).catch(() => {});
-          this._patchState({ installing: false, installProgress: '', status: 'error', message: `winget installation failed (${Number(code)}); the official releases page was opened.` });
-          reject(new YTMDesktopError('installFailed', `YTMDesktop installation failed with exit code ${Number(code)}.`));
-          return;
-        }
-        this._patchState({ installing: false, installProgress: 'Installation completed.', installed: true, message: 'YTMDesktop was installed. Launch it and enable the Companion server.' });
-        await this.refreshStatus({ connect: false }).catch(() => {});
-        resolve(this.getState());
-      });
-    }).finally(() => { this._installPromise = null; });
-    return this._installPromise;
+    if (this._platform !== 'win32') throw new YTMDesktopError('unsupported', 'LabSuite Music is supported only on Windows.');
+    const executablePath = this._findExecutable();
+    if (!executablePath || !this._validateExecutable(executablePath)) {
+      throw new YTMDesktopError(
+        'notInstalled',
+        'The hardened LabSuite Music build is missing. Run scripts/build-labsuite-music.ps1 before packaging LabSuite.'
+      );
+    }
+    this._patchState({ installing: false, installProgress: '', installed: true, message: 'LabSuite Music is ready to launch.' });
+    return this.getState();
   }
 
   _commandBody(action, payload = {}) {
@@ -776,11 +746,11 @@ class YTMDesktopProvider {
       if (!videoId && !playlistId) throw new YTMDesktopError('invalidCommand', 'A validated video or playlist ID is required.');
       return { command: action, data: { ...(videoId ? { videoId } : {}), ...(playlistId ? { playlistId } : {}) } };
     }
-    throw new YTMDesktopError('invalidCommand', 'Unsupported YTMDesktop command.');
+    throw new YTMDesktopError('invalidCommand', 'Unsupported LabSuite Music command.');
   }
 
   sendCommand(action, payload = {}) {
-    if (!this.isConnected()) return Promise.reject(new YTMDesktopError('notConnected', 'YTMDesktop is not connected.'));
+    if (!this.isConnected()) return Promise.reject(new YTMDesktopError('notConnected', 'LabSuite Music is not connected.'));
     const body = this._commandBody(String(action || ''), payload);
     const coalesceKey = ['setVolume', 'seekTo'].includes(body.command) ? body.command : '';
     return new Promise((resolve, reject) => {
@@ -809,7 +779,7 @@ class YTMDesktopProvider {
             body: JSON.stringify(entry.body), timeoutMs: 5000
           });
           this._lastCommandAt = this._now();
-          if (response.status < 200 || response.status >= 300) throw this._apiError(response, 'YTMDesktop command failed.');
+          if (response.status < 200 || response.status >= 300) throw this._apiError(response, 'LabSuite Music command failed.');
           entry.waiters.forEach(({ resolve }) => resolve(true));
         } catch (error) {
           entry.waiters.forEach(({ reject }) => reject(error));
@@ -855,6 +825,7 @@ module.exports = {
     validatePlaylistId,
     isYTMDesktopSession,
     defaultRequest,
-    defaultFindExecutable
+    defaultFindExecutable,
+    isTrustedExecutable
   }
 };
