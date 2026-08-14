@@ -1,0 +1,8 @@
+# Force binary files to be checked out byte-for-byte without CRLF translation
+*.exe binary
+*.dll binary
+*.zip binary
+*.tar.gz binary
+*.png binary
+*.ico binary
+*.manifest.json text eol=lf

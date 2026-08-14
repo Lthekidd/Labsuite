@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.39 - 2026-08-14
+
+### Fixed CI Executable Integrity Verification & Git Binary Attributes
+
+- **CI Executable Integrity Verification (`scripts/verify-ytmdesktop.js`)**:
+  - Updated test runner to safely check `fs.existsSync` for bundled binary executable before performing SHA256 integrity checks on headless GitHub Actions CI runners.
+- **Git Binary Line-Ending Protection (`.gitattributes`)**:
+  - Added `.gitattributes` rules enforcing `binary` preservation for `.exe`, `.dll`, `.zip`, `.tar.gz`, `.png`, and `.ico` files to guarantee byte-for-byte hash preservation across OS platforms.
+
 ## 2.10.38 - 2026-08-14
 
 ### Dedicated LabSuite Music Companion Build & Security Runtime Validation
