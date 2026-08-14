@@ -596,8 +596,8 @@ namespace LabMediaWidget
             // play/pause when "Always visible" is selected.
             ControlsRail.Width = showSecondary || reserveSecondary ? 84 : 34;
             SetSecondaryControlState(BtnPrev, _config.Controls.Previous, showSecondary, reserveSecondary);
-            SetSecondaryControlState(BtnNext, _config.Controls.Next, showSecondary, reserveSecondary);
             BtnPlayPause.Visibility = _config.Controls.PlayPause ? Visibility.Visible : Visibility.Collapsed;
+            SetSecondaryControlState(BtnNext, _config.Controls.Next, showSecondary, reserveSecondary);
         }
 
         private static void SetSecondaryControlState(

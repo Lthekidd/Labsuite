@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.10.42 - 2026-08-14
+
+### Fixed Mouse Wheel Volume Control Regression
+
+- **Root Cause**: In `v2.10.36`, `BtnLike`, `BtnRewind`, and `BtnForward` were added to the 40px taskbar `ControlsRail` without updating the fixed `Width` constraint (was `84`, needed `174`). The overflow buttons rendered as invisible zero-opacity elements that still consumed mouse hit-testing area, blocking `PreviewMouseWheel` events from reaching the window and silently swallowing scroll input.
+- **Fix (`MainWindow.xaml`, `MainWindow.xaml.cs`)**: Removed `BtnLike`, `BtnRewind`, and `BtnForward` from the taskbar strip — these secondary controls belong exclusively in the expanded flyout panel. Restored the `ControlsRail` to the correct 3-button layout (`BtnPrev`, `BtnPlayPause`, `BtnNext`) with the correct `84 / 34 DIP` width constraint. Mouse wheel volume control fully restored.
+
 ## 2.10.41 - 2026-08-14
 
 ### Fixed Post-Sign Hook Blocking Builds Without Bundled Companion Binary
