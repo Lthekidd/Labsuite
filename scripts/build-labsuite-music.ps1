@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$SourcePath = "",
+  [string]$ExpectedCommit = "",
   [switch]$SkipBuild
 )
 
@@ -21,15 +22,30 @@ if ($package.name -ne "labsuite-music" -or $package.license -ne "GPL-3.0-only") 
   throw "The selected source is not the LabSuite Music GPL companion."
 }
 
+$sourceCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
+  throw "Could not resolve the LabSuite Music source commit."
+}
+if ($ExpectedCommit -and $sourceCommit -ne $ExpectedCommit.ToLowerInvariant()) {
+  throw "LabSuite Music source commit $sourceCommit does not match pinned commit $ExpectedCommit."
+}
+
 if (-not $SkipBuild) {
-  & corepack yarn --cwd $sourceRoot install --immutable
-  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music dependency installation failed." }
-  & corepack yarn --cwd $sourceRoot verify:security
-  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music security verification failed." }
-  & corepack yarn --cwd $sourceRoot lint
-  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music lint failed." }
-  & corepack yarn --cwd $sourceRoot package --platform win32 --arch x64
-  if ($LASTEXITCODE -ne 0) { throw "LabSuite Music packaging failed." }
+  Push-Location $sourceRoot
+  try {
+    # Corepack selects packageManager from the current directory. Enter the
+    # fork first so CI uses its pinned Yarn 4 release rather than Yarn Classic.
+    & corepack yarn install --immutable
+    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music dependency installation failed." }
+    & corepack yarn verify:security
+    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music security verification failed." }
+    & corepack yarn lint
+    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music lint failed." }
+    & corepack yarn package --platform win32 --arch x64
+    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music packaging failed." }
+  } finally {
+    Pop-Location
+  }
 }
 
 $packageRoot = Join-Path $sourceRoot "out\LabSuite Music-win32-x64"
@@ -66,7 +82,6 @@ foreach ($relativeFile in $sourceFiles) {
   Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
 }
 
-$sourceCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
 $manifest = [ordered]@{
   product = "LabSuite Music"
   version = $package.version
