@@ -122,6 +122,14 @@ namespace LabMediaWidget
 
             YTMDesktopPlaybackState playback = _ytmdState.Playback ?? new YTMDesktopPlaybackState();
             YTMDesktopCapabilities capabilities = _ytmdState.Capabilities ?? new YTMDesktopCapabilities();
+            TxtSource.Text = "YTmusic";
+            if (playback.HasTrack)
+            {
+                TxtTitle.Text = string.IsNullOrWhiteSpace(playback.Title) ? "Unknown track" : playback.Title;
+                TxtArtist.Text = string.IsNullOrWhiteSpace(playback.Artist) ? "Unknown artist" : playback.Artist;
+                TxtAlbum.Text = playback.Album ?? string.Empty;
+                TxtAlbum.Visibility = string.IsNullOrWhiteSpace(playback.Album) ? Visibility.Collapsed : Visibility.Visible;
+            }
             double duration = Math.Max(0, playback.DurationSeconds);
             TimelineSlider.Maximum = Math.Max(1, duration);
             TimelineSlider.Value = Math.Clamp(playback.PositionSeconds, 0, TimelineSlider.Maximum);
@@ -176,8 +184,8 @@ namespace LabMediaWidget
             if (_queueState.Status == QueueStatuses.RequiresAuth)
             {
                 bool isYTMDesktop = string.Equals(_queueState.Provider, "ytmdesktop", StringComparison.Ordinal);
-                BtnQueueAction.Content = isYTMDesktop ? "Set up in LabSuite" : "Connect Spotify";
-                BtnQueueAction.Tag = isYTMDesktop ? "ytmd:openSettings" : "connectSpotify";
+                BtnQueueAction.Content = isYTMDesktop ? "Connect YTmusic" : "Connect Spotify";
+                BtnQueueAction.Tag = isYTMDesktop ? "ytmd:connect" : "connectSpotify";
                 BtnQueueAction.Visibility = Visibility.Visible;
             }
             else if (_queueState.Status == QueueStatuses.Error)

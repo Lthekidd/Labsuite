@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.10.44 - 2026-08-15
+
+### Unified LabMedia and YTmusic Integration
+
+- Renamed the user-facing hardened YTMDesktop fork to **YTmusic** while retaining stable internal executable, profile, credential, and protocol identifiers for compatibility.
+- Added one-click YTmusic startup and local authorization from LabMedia, including automatic companion-service enablement and a time-limited approval window.
+- Connected YouTube Library playback directly to a paired YTmusic instance, with the selected browser kept only as a fallback when YTmusic is unavailable.
+- Fed YTmusic playback metadata and live queue state into the native flyout, and replaced the old settings redirect with a direct **Connect YTmusic** action.
+- Forced UTF-8 for the native helper IPC stream to prevent mojibake such as `Starting LabSuite Musicâ€¦`.
+- Pinned Windows release builds to the public [YTmusic fork](https://github.com/Lthekidd/YTmusic) at reviewed commit `fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb`.
+
 ## 2.10.43 - 2026-08-15
 
 ### Packaged LabSuite Music Companion in Windows Releases

@@ -517,17 +517,26 @@ async function handleYTMDesktopProviderAction(action, data = {}) {
     navigateMainWindow('labmedia');
     return true;
   }
-  if (action === 'open') return ytmDesktopProvider.openRecommendations();
-  if (action === 'refresh') return ytmDesktopProvider.refreshStatus({ connect: true });
+  if (action === 'open' || action === 'refresh' || action === 'connect') {
+    const result = action === 'open'
+      ? await ytmDesktopProvider.openRecommendations()
+      : action === 'connect'
+        ? await ytmDesktopProvider.pair()
+        : await ytmDesktopProvider.refreshStatus({ connect: true });
+    updateQueueForSession(lastSessionInfo);
+    updateYTMDesktopRuntime();
+    notifyStatusChanged();
+    return result;
+  }
 
   const state = ytmDesktopProvider.getState(lastSessionInfo);
-  if (!state.active) throw new Error('LabSuite Music is not the active LabMedia session.');
+  if (!state.active) throw new Error('YTmusic is not the active LabMedia session.');
   const allowed = new Set([
     'playPause', 'play', 'pause', 'next', 'previous', 'mute', 'unmute',
     'shuffle', 'toggleLike', 'toggleDislike', 'setVolume', 'seekTo',
     'repeatMode', 'playQueueIndex'
   ]);
-  if (!allowed.has(action)) throw new Error('Unsupported LabSuite Music provider action.');
+  if (!allowed.has(action)) throw new Error('Unsupported YTmusic provider action.');
   const payload = {
     value: data.value,
     queueIndex: data.queueIndex

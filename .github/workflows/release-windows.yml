@@ -17,11 +17,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Check out pinned LabSuite Music source
+      - name: Check out pinned YTmusic source
         uses: actions/checkout@v4
         with:
-          repository: Lthekidd/LabSuiteMusic
-          ref: 1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad
+          repository: Lthekidd/YTmusic
+          ref: fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb
           path: LabSuiteMusic
           persist-credentials: false
 
@@ -42,14 +42,14 @@ jobs:
       - name: Download verified rclone binary
         run: npm run download-rclone
 
-      - name: Build hardened LabSuite Music companion
+      - name: Build hardened YTmusic companion
         shell: pwsh
         run: |
           ./scripts/build-labsuite-music.ps1 `
             -SourcePath "$env:GITHUB_WORKSPACE\LabSuiteMusic" `
-            -ExpectedCommit '1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad'
+            -ExpectedCommit 'fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb'
 
-      - name: Verify LabSuite Music runtime boundary
+      - name: Verify YTmusic runtime boundary
         run: npm run verify:labsuite-music-runtime
 
       - name: Verify tag matches package version

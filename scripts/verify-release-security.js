@@ -168,7 +168,7 @@ function checkLabSuiteMusicBundle(bundlePath, label) {
   }
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
-  if (manifest.product !== 'LabSuite Music' || manifest.securityProfile !== 'labsuite-hardened-v1' || manifest.correspondingSource !== 'source') {
+  if (manifest.product !== 'YTmusic' || manifest.securityProfile !== 'labsuite-hardened-v1' || manifest.correspondingSource !== 'source') {
     fail(`${label} has invalid hardened companion metadata.`);
   }
   const executableHash = crypto.createHash('sha256').update(fs.readFileSync(executablePath)).digest('hex').toUpperCase();
@@ -189,7 +189,7 @@ function main() {
   if (process.argv.includes('--labsuite-music-only')) {
     checkLabSuiteMusicBundle(
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabSuiteMusic'),
-      'packaged LabSuite Music'
+      'packaged YTmusic'
     );
     return;
   }
@@ -200,7 +200,7 @@ function main() {
   checkDatabaseFileName();
   checkNoWorkspaceRcloneSecrets();
   checkElectronVersion();
-  if (process.platform === 'win32') checkLabSuiteMusicBundle(path.join(ROOT, 'bin', 'LabSuiteMusic'), 'bundled LabSuite Music');
+  if (process.platform === 'win32') checkLabSuiteMusicBundle(path.join(ROOT, 'bin', 'LabSuiteMusic'), 'bundled YTmusic');
 
   const packagedApp = path.join(ROOT, 'dist-packaged', 'win-unpacked', 'LabSuite.exe');
   if (fs.existsSync(packagedApp)) {
@@ -214,7 +214,7 @@ function main() {
     );
     checkLabSuiteMusicBundle(
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'bin', 'LabSuiteMusic'),
-      'packaged LabSuite Music'
+      'packaged YTmusic'
     );
     checkMediaWidgetHelper(
       path.join(ROOT, 'dist-packaged', 'win-unpacked', 'resources', 'THIRD_PARTY_NOTICES.md'),

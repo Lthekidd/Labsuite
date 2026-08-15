@@ -15,7 +15,7 @@ const ROOT = path.join(__dirname, '..');
 const TOKEN = 'a'.repeat(512);
 const HARDENED_METADATA = {
   apiVersions: ['v1'],
-  product: 'LabSuite Music',
+  product: 'YTmusic',
   securityProfile: 'labsuite-hardened-v1',
   transport: 'loopback-only'
 };
@@ -96,6 +96,7 @@ async function testPairingRealtimeCommandsAndForget() {
   let deleted = false;
   let socketUrl = '';
   let socketOptions = null;
+  let spawnArgs = null;
   const socket = new FakeSocket();
   const commands = [];
   let now = 1000;
@@ -128,6 +129,8 @@ async function testPairingRealtimeCommandsAndForget() {
     setCredential: async token => { storedToken = token; },
     deleteCredential: async () => { deleted = true; },
     findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
+    validateExecutable: () => true,
+    spawn: (_executable, args) => { spawnArgs = args; return { unref() {} }; },
     isProcessRunning: async () => true,
     socketFactory: (url, options) => { socketUrl = url; socketOptions = options; return socket; },
     now: () => now,
@@ -139,6 +142,7 @@ async function testPairingRealtimeCommandsAndForget() {
   assert.strictEqual(provider.getState().status, 'requiresPairing');
   const pairPromise = provider.pair();
   await pairPromise;
+  assert.deepStrictEqual(spawnArgs, ['labsuite-music://pair'], 'Connect must open YTmusic with one-time approval enabled');
   assert.strictEqual(storedToken, TOKEN);
   assert.strictEqual(socketUrl, REALTIME_URL);
   assert.deepStrictEqual(socketOptions.transports, ['websocket']);
@@ -168,7 +172,7 @@ async function testPairingRealtimeCommandsAndForget() {
   assert.deepStrictEqual(commands.at(-1), { command: 'changeVideo', data: { videoId: 'abcdefghijk', playlistId: 'PL_test' } });
 
   socket.emit('state-update', { ...playerState(), video: { ...playerState().video, title: 'Socket update' } });
-  assert.strictEqual(provider.getState({ sourceApp: 'LabSuite Music' }).playback.title, 'Socket update');
+  assert.strictEqual(provider.getState({ sourceApp: 'YTmusic' }).playback.title, 'Socket update');
 
   await provider.forget();
   assert.strictEqual(deleted, true);
@@ -232,11 +236,48 @@ async function testBundledHardenedInstall() {
   assert.strictEqual(spawnCalled, false, 'Install must never invoke Winget or an upstream installer');
 }
 
+async function testLibraryStartsAndHandsOffToYTmusic() {
+  let companionReady = false;
+  let spawnArgs = null;
+  const commands = [];
+  const provider = new YTMDesktopProvider({
+    request: async (urlValue, options = {}) => {
+      const url = new URL(urlValue);
+      if (!companionReady) throw new Error('companion is not ready');
+      if (url.pathname === '/metadata') return response(200, HARDENED_METADATA);
+      if (url.pathname === '/api/v1/state') return response(200, playerState());
+      if (url.pathname === '/api/v1/command') {
+        commands.push(JSON.parse(options.body));
+        return response(204, {});
+      }
+      throw new Error(`Unexpected request ${url}`);
+    },
+    getCredential: async () => TOKEN,
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
+    validateExecutable: () => true,
+    isProcessRunning: async () => true,
+    spawn: (_executable, args) => {
+      spawnArgs = args;
+      companionReady = true;
+      return { unref() {} };
+    },
+    socketFactory: () => new FakeSocket(),
+    sleep: async () => {}
+  });
+
+  const initial = await provider.initialize();
+  assert.strictEqual(initial.status, 'serverDisabled');
+  const handled = await provider.playLibraryItem({ playlistId: 'PL_test', videoId: 'abcdefghijk' });
+  assert.strictEqual(handled, true, 'YouTube Library items must hand playback to a paired YTmusic install');
+  assert.deepStrictEqual(spawnArgs, ['labsuite-music://pair'], 'A disabled local service must be re-enabled through the hardened protocol');
+  assert.deepStrictEqual(commands, [{ command: 'changeVideo', data: { videoId: 'abcdefghijk', playlistId: 'PL_test' } }]);
+}
+
 function testBundledExecutableIntegrity() {
   const bundled = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.exe');
   const manifest = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.manifest.json');
   if (fs.existsSync(bundled) && fs.existsSync(manifest)) {
-    assert.strictEqual(__private.isTrustedExecutable(bundled), true, 'Staged LabSuite Music must match its hardened manifest hash');
+    assert.strictEqual(__private.isTrustedExecutable(bundled), true, 'Staged YTmusic must match its hardened manifest hash');
   }
 
   if (fs.existsSync(manifest)) {
@@ -273,18 +314,18 @@ function testStaticSecurityContract() {
   const afterSignSource = fs.readFileSync(path.join(ROOT, 'scripts', 'after-sign-labsuite-music.js'), 'utf8');
   const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-labsuite-music.ps1'), 'utf8');
   const releaseWorkflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release-windows.yml'), 'utf8');
-  const pinnedCommit = '1b6313fbb5e2d2342fe5c22ec8e459eafaae06ad';
+  const pinnedCommit = 'fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb';
   assert.ok(rendererSource.includes('labsuite-hardened-v1')
-    && rendererSource.includes('upstream YTMDesktop builds are rejected'),
+    && rendererSource.includes('unreviewed upstream builds are rejected'),
     'LabMedia settings must disclose the hardened companion trust boundary');
   assert.ok(!providerSource.includes('winget.exe') && !providerSource.includes('Ytmdesktop.Ytmdesktop'));
   assert.ok(!providerSource.includes('github.com/ytmdesktop/ytmdesktop/releases'));
   assert.ok(builderConfig.includes('afterSign: scripts/after-sign-labsuite-music.js'));
-  assert.ok(releaseWorkflow.includes('repository: Lthekidd/LabSuiteMusic')
+  assert.ok(releaseWorkflow.includes('repository: Lthekidd/YTmusic')
     && releaseWorkflow.includes(`ref: ${pinnedCommit}`)
     && releaseWorkflow.includes(`-ExpectedCommit '${pinnedCommit}'`),
     'Windows releases must build the public hardened fork at an exact reviewed commit');
-  assert.ok(releaseWorkflow.indexOf('Build hardened LabSuite Music companion')
+  assert.ok(releaseWorkflow.indexOf('Build hardened YTmusic companion')
     < releaseWorkflow.indexOf('npx electron-builder --win --publish never'),
     'The hardened companion must be staged before electron-builder packages the installer');
   assert.ok(releaseWorkflow.includes('node scripts/verify-release-security.js --labsuite-music-only'),
@@ -296,6 +337,9 @@ function testStaticSecurityContract() {
     && afterSignSource.includes("createHash('sha256')"),
     'Windows packaging must refresh the manifest after Authenticode changes the sidecar bytes');
   assert.ok(supervisorSource.includes("type: 'ytmd:update'"));
+  assert.ok(supervisorSource.includes("action === 'connect'")
+    && nativeSource.includes('Console.InputEncoding = Encoding.UTF8'),
+    'The native flyout must support one-click YTmusic connection and UTF-8 runtime messages');
   assert.ok(!nativeSource.includes('Authorization') && !nativeSource.includes('companion token'));
   for (const action of ['ytmdInstall', 'ytmdLaunch', 'ytmdPair', 'ytmdReconnect', 'ytmdForget', 'ytmdRefresh']) {
     assert.ok(preloadSource.includes(`labmedia:${action}`));
@@ -311,9 +355,10 @@ async function main() {
   await testRevokedCredential();
   await testRejectsUpstreamService();
   await testBundledHardenedInstall();
+  await testLibraryStartsAndHandsOffToYTmusic();
   testBundledExecutableIntegrity();
   testStaticSecurityContract();
-  console.log('All LabMedia LabSuite Music companion tests passed cleanly!');
+  console.log('All LabMedia YTmusic companion tests passed cleanly!');
 }
 
 main().catch(error => {

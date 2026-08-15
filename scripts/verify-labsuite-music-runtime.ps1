@@ -25,7 +25,7 @@ if ($CleanupOnly) {
   Get-ChildItem -LiteralPath $tempRoot -Directory -Filter "labsuite-music-runtime-*" | ForEach-Object {
     Remove-LabSuiteMusicTestProfile $_.FullName
   }
-  Write-Output "Removed LabSuite Music temporary runtime-test profiles."
+  Write-Output "Removed YTmusic temporary runtime-test profiles."
   exit 0
 }
 
@@ -35,7 +35,7 @@ if (-not $ExecutablePath) {
 }
 $executable = [System.IO.Path]::GetFullPath($ExecutablePath)
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-  throw "LabSuite Music executable not found at $executable"
+  throw "YTmusic executable not found at $executable"
 }
 
 $testProfile = Join-Path $tempRoot ("labsuite-music-runtime-" + [guid]::NewGuid().ToString("N"))
@@ -51,8 +51,8 @@ try {
       Start-Sleep -Milliseconds 250
     }
   }
-  if (-not $metadata) { throw "LabSuite Music companion did not start within 15 seconds." }
-  if ($metadata.product -ne "LabSuite Music" -or $metadata.securityProfile -ne "labsuite-hardened-v1" -or $metadata.transport -ne "loopback-only") {
+  if (-not $metadata) { throw "YTmusic did not start within 15 seconds." }
+  if ($metadata.product -ne "YTmusic" -or $metadata.securityProfile -ne "labsuite-hardened-v1" -or $metadata.transport -ne "loopback-only") {
     throw "The companion returned an unexpected security profile."
   }
   Write-Output ("METADATA " + ($metadata | ConvertTo-Json -Compress))
@@ -88,4 +88,4 @@ try {
   Remove-LabSuiteMusicTestProfile $testProfile
 }
 
-Write-Output "LabSuite Music runtime security checks passed."
+Write-Output "YTmusic runtime security checks passed."

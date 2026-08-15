@@ -14,20 +14,20 @@ if (-not $SourcePath) {
 $sourceRoot = [System.IO.Path]::GetFullPath($SourcePath)
 $sourcePackage = Join-Path $sourceRoot "package.json"
 if (-not (Test-Path -LiteralPath $sourcePackage -PathType Leaf)) {
-  throw "LabSuite Music source was not found at $sourceRoot"
+  throw "YTmusic source was not found at $sourceRoot"
 }
 
 $package = Get-Content -LiteralPath $sourcePackage -Raw | ConvertFrom-Json
 if ($package.name -ne "labsuite-music" -or $package.license -ne "GPL-3.0-only") {
-  throw "The selected source is not the LabSuite Music GPL companion."
+  throw "The selected source is not the YTmusic GPL companion."
 }
 
 $sourceCommit = (& git -C $sourceRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
-  throw "Could not resolve the LabSuite Music source commit."
+  throw "Could not resolve the YTmusic source commit."
 }
 if ($ExpectedCommit -and $sourceCommit -ne $ExpectedCommit.ToLowerInvariant()) {
-  throw "LabSuite Music source commit $sourceCommit does not match pinned commit $ExpectedCommit."
+  throw "YTmusic source commit $sourceCommit does not match pinned commit $ExpectedCommit."
 }
 
 if (-not $SkipBuild) {
@@ -36,22 +36,22 @@ if (-not $SkipBuild) {
     # Corepack selects packageManager from the current directory. Enter the
     # fork first so CI uses its pinned Yarn 4 release rather than Yarn Classic.
     & corepack yarn install --immutable
-    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music dependency installation failed." }
+    if ($LASTEXITCODE -ne 0) { throw "YTmusic dependency installation failed." }
     & corepack yarn verify:security
-    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music security verification failed." }
+    if ($LASTEXITCODE -ne 0) { throw "YTmusic security verification failed." }
     & corepack yarn lint
-    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music lint failed." }
+    if ($LASTEXITCODE -ne 0) { throw "YTmusic lint failed." }
     & corepack yarn package --platform win32 --arch x64
-    if ($LASTEXITCODE -ne 0) { throw "LabSuite Music packaging failed." }
+    if ($LASTEXITCODE -ne 0) { throw "YTmusic packaging failed." }
   } finally {
     Pop-Location
   }
 }
 
-$packageRoot = Join-Path $sourceRoot "out\LabSuite Music-win32-x64"
+$packageRoot = Join-Path $sourceRoot "out\YTmusic-win32-x64"
 $sourceExecutable = Join-Path $packageRoot "labsuite-music.exe"
 if (-not (Test-Path -LiteralPath $sourceExecutable -PathType Leaf)) {
-  throw "The packaged LabSuite Music executable was not found at $sourceExecutable"
+  throw "The packaged YTmusic executable was not found at $sourceExecutable"
 }
 
 $binRoot = [System.IO.Path]::GetFullPath((Join-Path $labSuiteRoot "bin"))
@@ -72,7 +72,7 @@ Copy-Item -Path (Join-Path $packageRoot "*") -Destination $destination -Recurse 
 $sourceDestination = Join-Path $destination "source"
 New-Item -ItemType Directory -Path $sourceDestination -Force | Out-Null
 $sourceFiles = & git -C $sourceRoot ls-files --cached --others --exclude-standard
-if ($LASTEXITCODE -ne 0 -or -not $sourceFiles) { throw "Could not enumerate LabSuite Music corresponding source." }
+if ($LASTEXITCODE -ne 0 -or -not $sourceFiles) { throw "Could not enumerate YTmusic corresponding source." }
 foreach ($relativeFile in $sourceFiles) {
   $sourceFile = Join-Path $sourceRoot $relativeFile
   if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { continue }
@@ -83,7 +83,7 @@ foreach ($relativeFile in $sourceFiles) {
 }
 
 $manifest = [ordered]@{
-  product = "LabSuite Music"
+  product = "YTmusic"
   version = $package.version
   securityProfile = "labsuite-hardened-v1"
   sourceCommit = $sourceCommit
@@ -92,5 +92,5 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination "labsuite-music.manifest.json") -Encoding UTF8
 
-Write-Output "LabSuite Music staged at $destination"
+Write-Output "YTmusic staged at $destination"
 Write-Output "SHA256 $($manifest.executableSha256)"

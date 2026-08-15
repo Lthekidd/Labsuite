@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,12 @@ namespace LabMediaWidget
 
         public MainWindow()
         {
+            try
+            {
+                Console.InputEncoding = Encoding.UTF8;
+                Console.OutputEncoding = new UTF8Encoding(false);
+            }
+            catch { }
             InitializeComponent();
             _smtc = new SmtcManager();
             _panel = new NowPlayingPanel(_smtc)

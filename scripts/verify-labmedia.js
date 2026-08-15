@@ -227,6 +227,13 @@ function testNativeSourceIntegrity() {
     'Flyout must dismiss on outside focus and Escape');
   assert.ok(!panelXaml.includes('Owner=') && !panelSource.includes('Owner ='),
     'Flyout must remain a separate LabMedia window without an Explorer owner');
+  assert.ok(panelSource.includes('Connect YTmusic') && panelSource.includes('"ytmd:connect"'),
+    'The flyout must connect YTmusic directly instead of sending users back to settings');
+  assert.ok(mainWinSource.includes('Console.InputEncoding = Encoding.UTF8')
+    && mainWinSource.includes('new UTF8Encoding(false)'),
+    'Native helper IPC must decode and emit UTF-8 without mojibake');
+  assert.ok(!panelSource.includes('Set up in LabSuite'),
+    'The flyout must not show the obsolete LabSuite Music setup action');
 
   console.log('labmedia-test: native source integrity tests passed.');
 }

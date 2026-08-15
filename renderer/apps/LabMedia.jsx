@@ -141,8 +141,8 @@ export default function LabMedia({ active = true }) {
   };
 
   const ytmdAction = async (action) => {
-    if (action === 'install' && !window.confirm('Check for the bundled GPL-licensed LabSuite Music hardened build?')) return;
-    if (action === 'forget' && !window.confirm('Forget LabMedia’s LabSuite Music token? To revoke it inside LabSuite Music too, remove LabSuite from its Authorized companions list.')) return;
+    if (action === 'install' && !window.confirm('Check for the bundled GPL-licensed YTmusic build?')) return;
+    if (action === 'forget' && !window.confirm('Forget LabMedia’s YTmusic token? To revoke it inside YTmusic too, remove LabSuite from its Authorized companions list.')) return;
     const channels = {
       install: 'labmedia:ytmdInstall',
       launch: 'labmedia:ytmdLaunch',
@@ -155,7 +155,7 @@ export default function LabMedia({ active = true }) {
     const channel = channels[action];
     if (!channel) return;
     setIsBusy(true);
-    await invokeAndSetStatus(channel, undefined, `Failed to ${action} LabSuite Music`);
+    await invokeAndSetStatus(channel, undefined, `Failed to ${action} YTmusic`);
     setIsBusy(false);
   };
 
@@ -339,25 +339,25 @@ export default function LabMedia({ active = true }) {
             </p>
           </SectionCard>
 
-      <SectionCard title="LabSuite Music" description="Hardened YouTube Music playback, genuine live queue data, and richer controls through LabSuite’s audited GPL companion.">
+      <SectionCard title="YTmusic" description="A community-maintained, hardened fork of YTMDesktop that provides live YouTube Music playback, queue data, and richer controls.">
             <YTMDesktopConnection state={ytmd} busy={isBusy} onAction={ytmdAction} />
             <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
-              LabMedia accepts only the <code>labsuite-hardened-v1</code> service on <code>127.0.0.1:9863</code>. Browser-origin requests, network clients, and upstream YTMDesktop builds are rejected. Personalized recommendations remain inside LabSuite Music.
+              YTmusic is a fork of YTMDesktop, not an official LabSuite or Google product. LabMedia accepts only its <code>labsuite-hardened-v1</code> service on <code>127.0.0.1:9863</code>; browser-origin requests, network clients, and unreviewed upstream builds are rejected.
             </p>
           </SectionCard>
 
           <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Music from the flyout, then hand playback to YouTube Music.">
             <YouTubeConnection state={youtube} busy={isBusy} onAction={youtubeAction} />
             <div style={{ marginTop: 16 }}>
-              <SettingBlock title="Playback App Window Mode" description="Choose which browser app window to launch when playing playlists or tracks.">
+              <SettingBlock title="Browser fallback" description="If YTmusic is not connected, choose which browser app window should play playlists or tracks.">
                 <ChoiceGrid
                   value={settings.youtubePlaybackApp || 'auto'}
                   disabled={!settings.enabled}
                   onChange={(val) => updateSetting('youtubePlaybackApp', val)}
                   options={[
-                    { id: 'auto', label: 'Automatic', description: 'Prefer Edge, then Chrome, using your saved profile.' },
-                    { id: 'edge', label: 'Microsoft Edge', description: 'Launch standalone YouTube Music app in Edge.' },
-                    { id: 'chrome', label: 'Google Chrome', description: 'Launch standalone YouTube Music app in Chrome.' }
+                    { id: 'auto', label: 'Automatic', description: 'Prefer Edge, then Chrome, only when YTmusic is unavailable.' },
+                    { id: 'edge', label: 'Microsoft Edge', description: 'Use an Edge app window as the fallback.' },
+                    { id: 'chrome', label: 'Google Chrome', description: 'Use a Chrome app window as the fallback.' }
                   ]}
                 />
               </SettingBlock>
@@ -483,6 +483,7 @@ function QueueCapability({ state = {} }) {
 function YTMDesktopConnection({ state = {}, busy, onAction }) {
   const labels = {
     notInstalled: 'Not installed',
+    starting: 'Starting…',
     stopped: 'Installed · Not running',
     serverDisabled: 'Companion server disabled',
     requiresPairing: 'Pairing required',
@@ -493,14 +494,14 @@ function YTMDesktopConnection({ state = {}, busy, onAction }) {
     error: 'Connection interrupted'
   };
   const healthy = state.status === 'connected';
-  const warning = ['notInstalled', 'stopped', 'serverDisabled', 'requiresPairing', 'pairing'].includes(state.status);
+  const warning = ['notInstalled', 'starting', 'stopped', 'serverDisabled', 'requiresPairing', 'pairing'].includes(state.status);
   const color = healthy ? '#34d399' : warning ? '#fbbf24' : '#f87171';
   return <div style={{ padding: 14, borderRadius: 10, border: `1px solid ${color}40`, background: `${color}0c` }}>
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 }}>
       <div style={{ minWidth: 0 }}>
         <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[state.status] || 'Unavailable'}</div>
         <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, marginTop: 4, lineHeight: 1.4 }}>
-          {state.message || 'LabSuite Music status is unavailable.'}
+          {state.message || 'YTmusic status is unavailable.'}
         </div>
         {state.pairingCode && <div aria-live="polite" style={{ marginTop: 9, fontSize: 22, fontWeight: 900, letterSpacing: 6, color: '#f8fafc' }}>
           {state.pairingCode}
@@ -510,20 +511,19 @@ function YTMDesktopConnection({ state = {}, busy, onAction }) {
         </div>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7, maxWidth: 330 }}>
-        {state.status === 'notInstalled' && <button type="button" disabled={busy || state.installing} onClick={() => onAction('install')} style={primaryAction}>Check hardened build</button>}
-        {state.status === 'stopped' && <button type="button" disabled={busy} onClick={() => onAction('launch')} style={primaryAction}>Launch</button>}
-        {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('open')} style={secondaryAction}>Open LabSuite Music</button>}
-        {['requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('pair')} style={primaryAction}>Pair</button>}
-        {['connected', 'error'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction(state.status === 'connected' ? 'open' : 'reconnect')} style={primaryAction}>{state.status === 'connected' ? 'Open LabSuite Music' : 'Reconnect'}</button>}
-        {state.status !== 'notInstalled' && state.status !== 'pairing' && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh status</button>}
+        {state.status === 'notInstalled' && <button type="button" disabled={busy || state.installing} onClick={() => onAction('install')} style={primaryAction}>Check installation</button>}
+        {state.status === 'stopped' && <button type="button" disabled={busy} onClick={() => onAction('launch')} style={primaryAction}>Start YTmusic</button>}
+        {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('pair')} style={primaryAction}>Connect YTmusic</button>}
+        {['connected', 'error'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction(state.status === 'connected' ? 'open' : 'reconnect')} style={primaryAction}>{state.status === 'connected' ? 'Open YTmusic' : 'Reconnect'}</button>}
+        {!['notInstalled', 'starting', 'pairing'].includes(state.status) && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh status</button>}
         {(state.paired || state.status === 'reauthRequired') && <button type="button" disabled={busy} onClick={() => onAction('forget')} style={secondaryAction}>Forget connection</button>}
       </div>
     </div>
     {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 10 }}>
-      In LabSuite Music Settings → Integrations, enable <strong>Companion server</strong>, then temporarily enable <strong>Companion authorization</strong> before pressing Pair. Authorization closes automatically after approval.
+      Connect starts YTmusic, enables its loopback companion service for approval, and opens a one-time authorization window. Confirm the matching code in YTmusic; approval closes automatically.
     </div>}
     {healthy && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 8 }}>
-      LabSuite Music does not expose the signed-in Gmail address to LabSuite, so confirm it uses the same account as the official YouTube Library connection.
+      YTmusic does not expose the signed-in Gmail address to LabSuite, so confirm it uses the same account as the optional YouTube Library connection.
     </div>}
   </div>;
 }
