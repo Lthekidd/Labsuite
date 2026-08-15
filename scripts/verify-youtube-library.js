@@ -154,20 +154,19 @@ async function testConnectedLibraryFlow() {
   assert.strictEqual(state.library.items[1].available, false);
   assert.strictEqual(state.library.items[1].title, 'Private or unavailable video');
 
-  const spawnedArgs = [];
-  provider._spawn = (exe, args) => { spawnedArgs.push([exe, ...args]); return { unref: () => {} }; };
-  provider._openExternal = async url => { openedUrls.push(url); };
+  let playbackRequest = null;
+  provider._openPlayback = async req => { playbackRequest = req; return true; };
   await provider.openTrack('PL_owned', 'abcdefghijk');
-  assert.ok(spawnedArgs.length > 0, 'Must attempt browser app window launching');
-  assert.ok(spawnedArgs.at(-1).some(arg => arg.includes('--app=https://music.youtube.com/watch?v=abcdefghijk&list=PL_owned')),
-    'App window argument must target allowlisted music.youtube.com URL');
-  assert.ok(spawnedArgs.at(-1).includes('--start-minimized'),
-    'App window must include --start-minimized flag when startMinimized is active');
-  const browserLaunchCount = spawnedArgs.length;
-  provider._openPlayback = async () => true;
-  await provider.openTrack('PL_owned', 'abcdefghijk');
-  assert.strictEqual(spawnedArgs.length, browserLaunchCount,
-    'A YTmusic-handled item must not also open the browser fallback');
+  assert.deepStrictEqual(playbackRequest, { playlistId: 'PL_owned', videoId: 'abcdefghijk' },
+    'YouTube Library must route playback directly through the YTmusic companion player');
+
+  await provider.openPlaylist('PL_owned');
+  assert.deepStrictEqual(playbackRequest, { playlistId: 'PL_owned', videoId: '' },
+    'YouTube Library playlists must route directly through the YTmusic companion player');
+
+  provider._openPlayback = null;
+  await assert.rejects(() => provider.openTrack('PL_owned', 'abcdefghijk'), /ytmusic/i,
+    'Without YTmusic companion, playback must reject rather than opening arbitrary browsers');
   await assert.rejects(() => provider.openTrack('PL_owned', 'zzzzzzzzzzz'), /unavailable/i);
 
   offline = true;

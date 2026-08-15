@@ -274,18 +274,33 @@ async function testLibraryStartsAndHandsOffToYTmusic() {
 }
 
 async function testLibrarySelectsOnlyOnePlaybackTarget() {
+  let missingExecutableProvider = new YTMDesktopProvider({
+    getCredential: async () => null,
+    findExecutable: () => null,
+    validateExecutable: () => false,
+    spawn: () => { return { unref() {} }; },
+    isProcessRunning: async () => false,
+    request: async () => { throw new Error('not running'); }
+  });
+  await missingExecutableProvider.initialize();
+  assert.strictEqual(await missingExecutableProvider.playLibraryItem({ videoId: 'abcdefghijk' }), false,
+    'When no YTmusic companion executable exists, playLibraryItem must return false');
+
   let unpairedSpawned = false;
+  let spawnArgs = [];
   const unpaired = new YTMDesktopProvider({
     getCredential: async () => null,
     findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
     validateExecutable: () => true,
-    spawn: () => { unpairedSpawned = true; return { unref() {} }; },
+    spawn: (exe, args) => { unpairedSpawned = true; spawnArgs = args; return { unref() {} }; },
     isProcessRunning: async () => false,
     request: async () => { throw new Error('not running'); }
   });
   await unpaired.initialize();
-  assert.strictEqual(await unpaired.playLibraryItem({ videoId: 'abcdefghijk' }), false);
-  assert.strictEqual(unpairedSpawned, false, 'An unpaired Library fallback must not also launch YTmusic');
+  assert.strictEqual(await unpaired.playLibraryItem({ videoId: 'abcdefghijk' }), true,
+    'An unpaired library item must auto-launch YTmusic in pairing mode');
+  assert.strictEqual(unpairedSpawned, true);
+  assert.deepStrictEqual(spawnArgs, ['labsuite-music://pair']);
 
   let pairedSpawned = false;
   let companionReady = false;
@@ -308,7 +323,7 @@ async function testLibrarySelectsOnlyOnePlaybackTarget() {
   });
   await paired.initialize();
   assert.strictEqual(await paired.playLibraryItem({ videoId: 'abcdefghijk' }), true,
-    'Once a paired YTmusic launch begins, the browser fallback must remain suppressed');
+    'Once a paired YTmusic launch begins, playLibraryItem returns true');
   assert.strictEqual(pairedSpawned, true);
   assert.strictEqual(paired.getState().status, 'error');
 }

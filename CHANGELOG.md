@@ -2,12 +2,17 @@
 
 ## 2.10.45 - 2026-08-15
 
-### Preserved YTmusic Login and Single-Target Library Playback
+### Exclusively Dedicated YTmusic Playback and Complete Browser Fallback Removal
 
-- YTmusic now reuses the existing authenticated persistent profile across product-name and LabSuite updates, while respecting explicit isolated test profiles.
-- YouTube Library now chooses exactly one playback target: paired YTmusic, or the configured browser fallback when YTmusic is not paired or installed.
-- Once a paired YTmusic handoff begins, command/startup errors stay in LabMedia instead of also opening Edge or Chrome.
-- Windows builds pin the profile-preserving YTmusic fork revision `64d2d522109628a3912ec6349b7139607778374a`.
+- **Exclusively Dedicated Desktop Player**:
+  - Removed all Edge and Chrome browser window spawning from YouTube Library (`_launchApp`, `findBrowserExecutable`, `--app=...`).
+  - All YouTube Library playlists, tracks, and radio stations now play 100% locally and seamlessly through the **YTmusic** desktop app.
+- **Auto-Launch on Playback**:
+  - When selecting any playlist or track from the YouTube Library flyout tab, LabMedia automatically launches the packaged YTmusic app and establishes companion connectivity if it isn't already running.
+  - Automatically handles companion pairing initiation when first playing a track or playlist.
+- **Streamlined Settings**:
+  - Removed obsolete "Browser fallback" options and "Start minimized" toggles from the settings UI and schema.
+  - Simplified the YouTube Library settings into a single cohesive, unified card showing Google Library synchronization and YTmusic paired player status.
 
 ## 2.10.44 - 2026-08-15
 

@@ -26,8 +26,6 @@ const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
   hideWhenFullscreen: true,
   primaryClickAction: 'panel',
   taskbarControlMode: 'adaptive',
-  youtubePlaybackApp: 'auto',
-  youtubeAppMinimized: true,
   controls: {
     previous: true,
     playPause: true,
@@ -39,7 +37,6 @@ const VALID_SIZES = new Set(['micro', 'compact', 'normal', 'large']);
 const VALID_THEMES = new Set(['spotify', 'oled', 'neon', 'glass', 'minimal', 'transparent']);
 const VALID_PRIMARY_CLICK_ACTIONS = new Set(['panel', 'openSource']);
 const VALID_TASKBAR_CONTROL_MODES = new Set(['adaptive', 'always', 'minimal']);
-const VALID_YOUTUBE_PLAYBACK_APPS = new Set(['auto', 'edge', 'chrome']);
 const CRASH_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CRASHES_PER_WINDOW = 3;
 const BACKOFF_DELAYS_MS = [1000, 5000, 30000];
@@ -139,13 +136,6 @@ function validateSettings(raw = {}) {
     && VALID_TASKBAR_CONTROL_MODES.has(raw.taskbarControlMode)
     ? raw.taskbarControlMode
     : DEFAULT_LABMEDIA_SETTINGS.taskbarControlMode;
-  result.youtubePlaybackApp = typeof raw.youtubePlaybackApp === 'string'
-    && VALID_YOUTUBE_PLAYBACK_APPS.has(raw.youtubePlaybackApp)
-    ? raw.youtubePlaybackApp
-    : DEFAULT_LABMEDIA_SETTINGS.youtubePlaybackApp;
-  result.youtubeAppMinimized = typeof raw.youtubeAppMinimized === 'boolean'
-    ? raw.youtubeAppMinimized
-    : DEFAULT_LABMEDIA_SETTINGS.youtubeAppMinimized;
 
   const rawControls = raw.controls && typeof raw.controls === 'object' ? raw.controls : {};
   result.controls = {
@@ -489,12 +479,9 @@ function handleStdoutLine(line) {
         navigateMainWindow('settings');
         return;
       }
-      const settings = getSettings();
       youtubeLibraryProvider.handleAction(String(data.action || ''), {
         playlistId: String(data.playlistId || ''),
-        videoId: String(data.videoId || ''),
-        preferredApp: settings.youtubePlaybackApp || 'auto',
-        startMinimized: settings.youtubeAppMinimized !== false
+        videoId: String(data.videoId || '')
       }).then(() => {
         updateLibraryRuntime();
       }).catch(() => {

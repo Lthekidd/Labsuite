@@ -346,32 +346,10 @@ export default function LabMedia({ active = true }) {
             </p>
           </SectionCard>
 
-          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Music from the flyout, then hand playback to YouTube Music.">
+          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Music from the flyout, then play seamlessly in the native YTmusic app.">
             <YouTubeConnection state={youtube} busy={isBusy} onAction={youtubeAction} />
-            <div style={{ marginTop: 16 }}>
-              <SettingBlock title="Browser fallback" description="If YTmusic is not connected, choose which browser app window should play playlists or tracks.">
-                <ChoiceGrid
-                  value={settings.youtubePlaybackApp || 'auto'}
-                  disabled={!settings.enabled}
-                  onChange={(val) => updateSetting('youtubePlaybackApp', val)}
-                  options={[
-                    { id: 'auto', label: 'Automatic', description: 'Prefer Edge, then Chrome, only when YTmusic is unavailable.' },
-                    { id: 'edge', label: 'Microsoft Edge', description: 'Use an Edge app window as the fallback.' },
-                    { id: 'chrome', label: 'Google Chrome', description: 'Use a Chrome app window as the fallback.' }
-                  ]}
-                />
-              </SettingBlock>
-              <div style={{ marginTop: 12 }}>
-                <ToggleRow
-                  label="Start YouTube Music app window minimized to taskbar"
-                  checked={settings.youtubeAppMinimized !== false}
-                  onChange={(val) => updateSetting('youtubeAppMinimized', val)}
-                  disabled={!settings.enabled}
-                />
-              </div>
-            </div>
             <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
-              LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. It does not reuse or modify the Drive token, and playlist content is kept only in memory.
+              LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. Tracks and playlists selected in the library play directly through the paired YTmusic companion with zero browser popups.
             </p>
           </SectionCard>
         </>

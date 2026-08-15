@@ -155,31 +155,6 @@ function missingRequiredScopes(scopeValue) {
   return missing;
 }
 
-function findBrowserExecutable(appChoice = 'auto') {
-  const edgeCandidates = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null,
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : null
-  ].filter(Boolean);
-
-  const chromeCandidates = [
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe') : null,
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe') : null
-  ].filter(Boolean);
-
-  const findFirst = candidates => candidates.find(candidate => fs.existsSync(candidate));
-
-  if (appChoice === 'edge') return findFirst(edgeCandidates) || null;
-  if (appChoice === 'chrome') return findFirst(chromeCandidates) || null;
-
-  return findFirst(edgeCandidates) || findFirst(chromeCandidates) || null;
-}
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -806,56 +781,21 @@ class YouTubeLibraryProvider {
     return selectedId ? this.selectPlaylist(selectedId, { force: true }) : this.refreshLibrary({ force: true });
   }
 
-  _launchApp(url, preferredApp = 'auto', startMinimized = true) {
-    const exePath = findBrowserExecutable(preferredApp);
-    if (!exePath) {
-      throw new YouTubeLibraryError('browserNotFound', 'Neither Microsoft Edge nor Google Chrome could be found to launch YouTube Music app windows.');
-    }
-    if (process.platform === 'win32' && startMinimized) {
-      const child = this._spawn('cmd.exe', ['/c', 'start', '/min', '""', exePath, `--app=${url}`, '--start-minimized'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true,
-        shell: false
-      });
-      if (child && typeof child.unref === 'function') child.unref();
-      return true;
-    }
-
-    const args = [`--app=${url}`];
-    if (startMinimized) args.push('--start-minimized');
-    const child = this._spawn(exePath, args, {
-      detached: true,
-      stdio: 'ignore',
-      shell: false
-    });
-    if (child && typeof child.unref === 'function') child.unref();
-    return true;
-  }
-
-  async openPlaylist(playlistId, preferredApp = 'auto', startMinimized = true) {
+  async openPlaylist(playlistId) {
     const id = validatePlaylistId(playlistId);
     const isRadio = id === 'RADIO_STATIONS';
     if (!isRadio && !this._state.library.playlists.some(item => item.id === id)) throw new YouTubeLibraryError('unknownPlaylist', 'Unknown YouTube playlist.');
-    const url = isRadio ? 'https://music.youtube.com/watch?v=jfKfPfyJRdk' : `https://music.youtube.com/playlist?list=${encodeURIComponent(id)}`;
     if (this._openPlayback) {
-      try {
-        const handled = await this._openPlayback({
-          playlistId: isRadio ? '' : id,
-          videoId: isRadio ? 'jfKfPfyJRdk' : ''
-        });
-        if (handled) return this.getState();
-      } catch (_) {}
+      const handled = await this._openPlayback({
+        playlistId: isRadio ? '' : id,
+        videoId: isRadio ? 'jfKfPfyJRdk' : ''
+      });
+      if (handled) return this.getState();
     }
-    try {
-      this._launchApp(url, preferredApp, startMinimized);
-    } catch (_) {
-      await this._openExternal(url);
-    }
-    return this.getState();
+    throw new YouTubeLibraryError('ytmusicUnavailable', 'YTmusic desktop player is required to play YouTube playlists.');
   }
 
-  async openTrack(playlistId, videoId, preferredApp = 'auto', startMinimized = true) {
+  async openTrack(playlistId, videoId) {
     const playlist = validatePlaylistId(playlistId);
     const video = validateVideoId(videoId);
     const isRadio = playlist === 'RADIO_STATIONS';
@@ -863,19 +803,11 @@ class YouTubeLibraryProvider {
       ? CURATED_RADIO_ITEMS.find(entry => entry.videoId === video)
       : this._state.library.items.find(entry => entry.videoId === video && entry.available);
     if ((!isRadio && this._state.library.selectedPlaylist?.id !== playlist) || !item) throw new YouTubeLibraryError('unknownTrack', 'Unknown or unavailable YouTube track.');
-    const url = isRadio ? `https://music.youtube.com/watch?v=${encodeURIComponent(video)}` : `https://music.youtube.com/watch?v=${encodeURIComponent(video)}&list=${encodeURIComponent(playlist)}`;
     if (this._openPlayback) {
-      try {
-        const handled = await this._openPlayback({ playlistId: isRadio ? '' : playlist, videoId: video });
-        if (handled) return this.getState();
-      } catch (_) {}
+      const handled = await this._openPlayback({ playlistId: isRadio ? '' : playlist, videoId: video });
+      if (handled) return this.getState();
     }
-    try {
-      this._launchApp(url, preferredApp, startMinimized);
-    } catch (_) {
-      await this._openExternal(url);
-    }
-    return this.getState();
+    throw new YouTubeLibraryError('ytmusicUnavailable', 'YTmusic desktop player is required to play YouTube tracks.');
   }
 
   async handleAction(action, payload = {}) {
@@ -889,8 +821,8 @@ class YouTubeLibraryProvider {
         case 'loadMore': return this.loadMore();
         case 'selectPlaylist': return this.selectPlaylist(payload.playlistId);
         case 'backToPlaylists': return this.backToPlaylists();
-        case 'openPlaylist': return this.openPlaylist(payload.playlistId, payload.preferredApp, payload.startMinimized);
-        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId, payload.preferredApp, payload.startMinimized);
+        case 'openPlaylist': return this.openPlaylist(payload.playlistId);
+        case 'openTrack': return this.openTrack(payload.playlistId, payload.videoId);
         default: throw new YouTubeLibraryError('invalidAction', 'Unsupported YouTube Library action.');
       }
     };

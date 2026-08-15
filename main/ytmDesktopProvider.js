@@ -809,18 +809,14 @@ class YTMDesktopProvider {
   }
 
   async playLibraryItem({ playlistId = '', videoId = '' } = {}) {
-    // Pick exactly one playback target. Without an existing LabMedia token,
-    // leave the request untouched so YouTube Library can use its browser fallback
-    // without also launching YTmusic.
-    if (!this._token) return false;
     if (!this.isConnected()) {
       const executablePath = this._findExecutable();
       if (!executablePath || !this._validateExecutable(executablePath)) return false;
-    }
-
-    if (!this.isConnected()) {
       try {
-        await this.launch({ pairing: this._state.status === 'serverDisabled', connect: true });
+        await this.launch({
+          pairing: !this._token || this._state.status === 'serverDisabled' || this._state.status === 'requiresAuth',
+          connect: true
+        });
       } catch (error) {
         this._patchState({
           status: 'error',
@@ -830,6 +826,7 @@ class YTMDesktopProvider {
         return true;
       }
     }
+
     if (!this.isConnected()) return true;
     try {
       await this.sendCommand('changeVideo', { playlistId, videoId });
