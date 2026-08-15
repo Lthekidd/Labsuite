@@ -163,6 +163,11 @@ async function testConnectedLibraryFlow() {
     'App window argument must target allowlisted music.youtube.com URL');
   assert.ok(spawnedArgs.at(-1).includes('--start-minimized'),
     'App window must include --start-minimized flag when startMinimized is active');
+  const browserLaunchCount = spawnedArgs.length;
+  provider._openPlayback = async () => true;
+  await provider.openTrack('PL_owned', 'abcdefghijk');
+  assert.strictEqual(spawnedArgs.length, browserLaunchCount,
+    'A YTmusic-handled item must not also open the browser fallback');
   await assert.rejects(() => provider.openTrack('PL_owned', 'zzzzzzzzzzz'), /unavailable/i);
 
   offline = true;

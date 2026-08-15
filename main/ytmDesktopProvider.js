@@ -809,11 +809,39 @@ class YTMDesktopProvider {
   }
 
   async playLibraryItem({ playlistId = '', videoId = '' } = {}) {
+    // Pick exactly one playback target. Without an existing LabMedia token,
+    // leave the request untouched so YouTube Library can use its browser fallback
+    // without also launching YTmusic.
+    if (!this._token) return false;
     if (!this.isConnected()) {
-      try { await this.launch({ pairing: this._state.status === 'serverDisabled', connect: true }); } catch (_) { return false; }
+      const executablePath = this._findExecutable();
+      if (!executablePath || !this._validateExecutable(executablePath)) return false;
     }
-    if (!this.isConnected()) return false;
-    await this.sendCommand('changeVideo', { playlistId, videoId });
+
+    if (!this.isConnected()) {
+      try {
+        await this.launch({ pairing: this._state.status === 'serverDisabled', connect: true });
+      } catch (error) {
+        this._patchState({
+          status: 'error',
+          message: safeText(error?.message || 'YTmusic could not start this Library item.', 240),
+          queue: unavailableQueue(error?.message)
+        });
+        return true;
+      }
+    }
+    if (!this.isConnected()) return true;
+    try {
+      await this.sendCommand('changeVideo', { playlistId, videoId });
+    } catch (error) {
+      if (this._state.status !== 'reauthRequired') {
+        this._patchState({
+          status: 'error',
+          message: safeText(error?.message || 'YTmusic could not play this Library item.', 240),
+          queue: unavailableQueue(error?.message)
+        });
+      }
+    }
     return true;
   }
 
