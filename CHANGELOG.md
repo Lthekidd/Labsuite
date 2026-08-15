@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.45 - 2026-08-15
+
+### Preserved YTmusic Login and Single-Target Library Playback
+
+- YTmusic now reuses the existing authenticated persistent profile across product-name and LabSuite updates, while respecting explicit isolated test profiles.
+- YouTube Library now chooses exactly one playback target: paired YTmusic, or the configured browser fallback when YTmusic is not paired or installed.
+- Once a paired YTmusic handoff begins, command/startup errors stay in LabMedia instead of also opening Edge or Chrome.
+- Windows builds pin the profile-preserving YTmusic fork revision `64d2d522109628a3912ec6349b7139607778374a`.
+
 ## 2.10.44 - 2026-08-15
 
 ### Unified LabMedia, YTmusic Integration, and Now Playing UI Overhaul

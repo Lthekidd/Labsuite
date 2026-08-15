@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Lthekidd/YTmusic
-          ref: fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb
+          ref: 64d2d522109628a3912ec6349b7139607778374a
           path: LabSuiteMusic
           persist-credentials: false
 
@@ -47,7 +47,7 @@ jobs:
         run: |
           ./scripts/build-labsuite-music.ps1 `
             -SourcePath "$env:GITHUB_WORKSPACE\LabSuiteMusic" `
-            -ExpectedCommit 'fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb'
+            -ExpectedCommit '64d2d522109628a3912ec6349b7139607778374a'
 
       - name: Verify YTmusic runtime boundary
         run: npm run verify:labsuite-music-runtime

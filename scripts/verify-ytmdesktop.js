@@ -273,6 +273,46 @@ async function testLibraryStartsAndHandsOffToYTmusic() {
   assert.deepStrictEqual(commands, [{ command: 'changeVideo', data: { videoId: 'abcdefghijk', playlistId: 'PL_test' } }]);
 }
 
+async function testLibrarySelectsOnlyOnePlaybackTarget() {
+  let unpairedSpawned = false;
+  const unpaired = new YTMDesktopProvider({
+    getCredential: async () => null,
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
+    validateExecutable: () => true,
+    spawn: () => { unpairedSpawned = true; return { unref() {} }; },
+    isProcessRunning: async () => false,
+    request: async () => { throw new Error('not running'); }
+  });
+  await unpaired.initialize();
+  assert.strictEqual(await unpaired.playLibraryItem({ videoId: 'abcdefghijk' }), false);
+  assert.strictEqual(unpairedSpawned, false, 'An unpaired Library fallback must not also launch YTmusic');
+
+  let pairedSpawned = false;
+  let companionReady = false;
+  const paired = new YTMDesktopProvider({
+    getCredential: async () => TOKEN,
+    findExecutable: () => 'C:\\Trusted\\labsuite-music.exe',
+    validateExecutable: () => true,
+    spawn: () => { pairedSpawned = true; companionReady = true; return { unref() {} }; },
+    isProcessRunning: async () => companionReady,
+    request: async urlValue => {
+      const url = new URL(urlValue);
+      if (!companionReady) throw new Error('not running');
+      if (url.pathname === '/metadata') return response(200, HARDENED_METADATA);
+      if (url.pathname === '/api/v1/state') return response(200, playerState());
+      if (url.pathname === '/api/v1/command') return response(500, { message: 'playback failed' });
+      throw new Error(`Unexpected request ${url}`);
+    },
+    socketFactory: () => new FakeSocket(),
+    sleep: async () => {}
+  });
+  await paired.initialize();
+  assert.strictEqual(await paired.playLibraryItem({ videoId: 'abcdefghijk' }), true,
+    'Once a paired YTmusic launch begins, the browser fallback must remain suppressed');
+  assert.strictEqual(pairedSpawned, true);
+  assert.strictEqual(paired.getState().status, 'error');
+}
+
 function testBundledExecutableIntegrity() {
   const bundled = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.exe');
   const manifest = path.join(ROOT, 'bin', 'LabSuiteMusic', 'labsuite-music.manifest.json');
@@ -314,7 +354,7 @@ function testStaticSecurityContract() {
   const afterSignSource = fs.readFileSync(path.join(ROOT, 'scripts', 'after-sign-labsuite-music.js'), 'utf8');
   const buildScript = fs.readFileSync(path.join(ROOT, 'scripts', 'build-labsuite-music.ps1'), 'utf8');
   const releaseWorkflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release-windows.yml'), 'utf8');
-  const pinnedCommit = 'fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb';
+  const pinnedCommit = '64d2d522109628a3912ec6349b7139607778374a';
   assert.ok(rendererSource.includes('labsuite-hardened-v1')
     && rendererSource.includes('unreviewed upstream builds are rejected'),
     'LabMedia settings must disclose the hardened companion trust boundary');
@@ -356,6 +396,7 @@ async function main() {
   await testRejectsUpstreamService();
   await testBundledHardenedInstall();
   await testLibraryStartsAndHandsOffToYTmusic();
+  await testLibrarySelectsOnlyOnePlaybackTarget();
   testBundledExecutableIntegrity();
   testStaticSecurityContract();
   console.log('All LabMedia YTmusic companion tests passed cleanly!');
