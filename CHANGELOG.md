@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.10.45 - 2026-08-15
+## 2.10.46 - 2026-08-15
 
 ### Exclusively Dedicated YTmusic Playback and Complete Browser Fallback Removal
 
