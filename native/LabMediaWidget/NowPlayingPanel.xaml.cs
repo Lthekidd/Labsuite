@@ -18,6 +18,9 @@ namespace LabMediaWidget
 {
     public partial class NowPlayingPanel : Window
     {
+        private static readonly Geometry SpeakerHighGeometry = Geometry.Parse("M 3,9 V 15 H 7 L 12,20 V 4 L 7,9 H 3 Z M 16.5,12 C 16.5,10.23 15.48,8.71 14,7.97 V 16.02 C 15.48,15.29 16.5,13.77 16.5,12 Z M 14,3.23 V 5.29 C 16.89,6.15 19,8.83 19,12 C 19,15.17 16.89,17.85 14,18.71 V 20.77 C 18.01,19.86 21,16.28 21,12 C 21,7.72 18.01,4.14 14,3.23 Z");
+        private static readonly Geometry SpeakerMutedGeometry = Geometry.Parse("M 3,9 V 15 H 7 L 12,20 V 4 L 7,9 H 3 Z M 16,9 L 21,14 M 21,9 L 16,14");
+
         private readonly SmtcManager _smtc;
         private readonly DispatcherTimer _volumeCommitTimer;
         private MediaSessionState _state = new MediaSessionState();
@@ -28,6 +31,7 @@ namespace LabMediaWidget
         private bool _updatingSession;
         private bool _updatingVolume;
         private bool _opening;
+        private bool _isMuted;
         private int _thumbnailGeneration;
         private CancellationTokenSource _thumbnailCancellation = new CancellationTokenSource();
         private readonly Dictionary<string, ImageSource> _thumbnailCache = new Dictionary<string, ImageSource>();
@@ -91,7 +95,7 @@ namespace LabMediaWidget
             BtnRepeat.Background = state.RepeatMode != "none" ? AccentBrush() : NeutralBrush();
             BtnLike.Background = state.LikeState == "liked" ? AccentBrush() : NeutralBrush();
             BtnDislike.Background = state.LikeState == "disliked" ? WithOpacity(AccentBrush(), 0.35) : NeutralBrush();
-            TxtRepeat.Text = state.RepeatMode == "track" ? "Repeat 1" : "Repeat";
+            TxtRepeat.Text = state.RepeatMode == "track" ? "1" : string.Empty;
 
             _updatingSession = true;
             SessionPicker.ItemsSource = state.Sessions.ToList();
@@ -155,12 +159,12 @@ namespace LabMediaWidget
             BtnRepeat.Background = playback.RepeatMode != "none" ? AccentBrush() : NeutralBrush();
             BtnLike.Background = playback.LikeState == "liked" ? AccentBrush() : NeutralBrush();
             BtnDislike.Background = playback.LikeState == "disliked" ? WithOpacity(AccentBrush(), 0.35) : NeutralBrush();
-            TxtRepeat.Text = playback.RepeatMode == "one" ? "Repeat 1" : "Repeat";
+            TxtRepeat.Text = playback.RepeatMode == "one" ? "1" : string.Empty;
 
             _updatingVolume = true;
             VolumeSlider.Value = Math.Clamp(playback.Volume, 0, 100);
             TxtVolume.Text = $"{Math.Round(VolumeSlider.Value):0}%";
-            TxtMuteIcon.Text = playback.Muted ? "MUTE" : "VOL";
+            UpdateMuteVisuals(playback.Muted);
             _updatingVolume = false;
         }
 
@@ -378,10 +382,18 @@ namespace LabMediaWidget
                     _updatingVolume = true;
                     VolumeSlider.Value = Math.Clamp(level * 100, 0, 100);
                     TxtVolume.Text = $"{Math.Round(VolumeSlider.Value):0}%";
-                    TxtMuteIcon.Text = muted ? "MUTE" : "VOL";
+                    UpdateMuteVisuals(muted);
                     _updatingVolume = false;
                 });
             });
+        }
+
+        private void UpdateMuteVisuals(bool muted)
+        {
+            _isMuted = muted;
+            TxtMuteIcon.Text = muted ? "MUTE" : "VOL";
+            PathMuteIcon.Data = muted ? SpeakerMutedGeometry : SpeakerHighGeometry;
+            BtnMute.ToolTip = muted ? "Unmute application" : "Mute application";
         }
 
         private async void SessionPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -402,6 +414,55 @@ namespace LabMediaWidget
             if (providerSeek) RequestYTMDesktopAction("seekTo", target);
             else await _smtc.SeekToAsync(target);
             e.Handled = true;
+        }
+
+        private void VolumeSlider_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (VolumeSlider.ActualWidth <= 0) return;
+            Point point = e.GetPosition(VolumeSlider);
+            double target = Math.Clamp((point.X / VolumeSlider.ActualWidth) * VolumeSlider.Maximum, VolumeSlider.Minimum, VolumeSlider.Maximum);
+            VolumeSlider.Value = target;
+        }
+
+        private void VolumeSlider_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            AdjustPanelVolume(e.Delta > 0 ? 5.0 : -5.0);
+            e.Handled = true;
+        }
+
+        private void Window_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (IsVisualDescendantOf(e.OriginalSource as DependencyObject, QueueItemsScroll)
+                || IsVisualDescendantOf(e.OriginalSource as DependencyObject, LibraryScroll)
+                || IsVisualDescendantOf(e.OriginalSource as DependencyObject, SessionPicker))
+            {
+                return;
+            }
+
+            AdjustPanelVolume(e.Delta > 0 ? 5.0 : -5.0);
+            e.Handled = true;
+        }
+
+        private void AdjustPanelVolume(double deltaPercent)
+        {
+            double target = Math.Clamp(VolumeSlider.Value + deltaPercent, 0, 100);
+            VolumeSlider.Value = target;
+        }
+
+        private static bool IsVisualDescendantOf(DependencyObject? node, DependencyObject? targetParent)
+        {
+            if (node == null || targetParent == null) return false;
+            while (node != null)
+            {
+                if (ReferenceEquals(node, targetParent)) return true;
+                if (node is Visual || node is System.Windows.Media.Media3D.Visual3D)
+                    node = VisualTreeHelper.GetParent(node);
+                else if (node is FrameworkContentElement contentElement)
+                    node = contentElement.Parent;
+                else
+                    break;
+            }
+            return false;
         }
 
         private async void BtnPrevious_Click(object sender, RoutedEventArgs e)
@@ -500,7 +561,7 @@ namespace LabMediaWidget
                 return;
             }
             string source = VolumeProcessHint();
-            bool mute = TxtMuteIcon.Text != "MUTE";
+            bool mute = !_isMuted;
             _ = Task.Run(() =>
             {
                 AppVolume.SetMediaMute(source, mute);

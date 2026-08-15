@@ -2,14 +2,27 @@
 
 ## 2.10.44 - 2026-08-15
 
-### Unified LabMedia and YTmusic Integration
+### Unified LabMedia, YTmusic Integration, and Now Playing UI Overhaul
 
-- Renamed the user-facing hardened YTMDesktop fork to **YTmusic** while retaining stable internal executable, profile, credential, and protocol identifiers for compatibility.
-- Added one-click YTmusic startup and local authorization from LabMedia, including automatic companion-service enablement and a time-limited approval window.
-- Connected YouTube Library playback directly to a paired YTmusic instance, with the selected browser kept only as a fallback when YTmusic is unavailable.
-- Fed YTmusic playback metadata and live queue state into the native flyout, and replaced the old settings redirect with a direct **Connect YTmusic** action.
-- Forced UTF-8 for the native helper IPC stream to prevent mojibake such as `Starting LabSuite Musicâ€¦`.
-- Pinned Windows release builds to the public [YTmusic fork](https://github.com/Lthekidd/YTmusic) at reviewed commit `fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb`.
+- **Now Playing Flyout UI Overhaul**:
+  - Replaced the default Windows classic scrollbar with a sleek, 6px translucent dark scrollbar matching the theme (no bulky arrow buttons, smooth rounded thumb).
+  - Optimized vertical layout spacing and padding so the default Now Playing view fits cleanly without triggering unnecessary scrolling.
+  - Replaced plain text and emoji buttons with crisp SVG vector icons for Shuffle, -10s Rewind dial, Skip Previous, Play/Pause (46x46 circular button), Skip Next, +10s Fast Forward dial, Repeat (with single-track repeat badge), and Volume/Mute.
+  - Redesigned track action buttons with a prominent pill Like button and compact vector buttons for Dislike, Open in app, and Copy.
+- **Volume & Timeline Slider Upgrades**:
+  - Implemented custom `ModernSlider` styling with a sleek 4px track, active filled progress, and circular white thumb with hover enlargement and drop shadow.
+  - Enabled `IsMoveToPointEnabled="True"` and direct click-to-seek handlers (`VolumeSlider_PreviewMouseLeftButtonDown`), allowing instant jump-to-position by clicking anywhere along the volume or timeline bar.
+- **Scroll Wheel Volume Fix**:
+  - Added `PreviewMouseWheel` volume adjustment in 5% increments to the Now Playing flyout panel and volume slider.
+  - Extended taskbar widget scroll wheel volume handling to support YTmusic / YTMDesktop as well as SMTC sessions.
+  - Enhanced audio session process matching in `AppVolume.cs` to resolve mismatched audio session identities across desktop players and browsers.
+- **YTmusic Integration**:
+  - Renamed the user-facing hardened YTMDesktop fork to **YTmusic** while retaining stable internal executable, profile, credential, and protocol identifiers for compatibility.
+  - Added one-click YTmusic startup and local authorization from LabMedia, including automatic companion-service enablement and a time-limited approval window.
+  - Connected YouTube Library playback directly to a paired YTmusic instance, with the selected browser kept only as a fallback when YTmusic is unavailable.
+  - Fed YTmusic playback metadata and live queue state into the native flyout, and replaced the old settings redirect with a direct **Connect YTmusic** action.
+  - Forced UTF-8 for the native helper IPC stream to prevent mojibake.
+  - Pinned Windows release builds to the public [YTmusic fork](https://github.com/Lthekidd/YTmusic) at reviewed commit `fad6e9ae4d1136be8253ecf4ea0c57ef588dbbdb`.
 
 ## 2.10.43 - 2026-08-15
 

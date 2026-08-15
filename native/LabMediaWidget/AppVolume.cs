@@ -234,11 +234,11 @@ namespace LabMediaWidget
         private static bool IsMediaProcess(string processName, string activeAppHint)
         {
             if (string.IsNullOrWhiteSpace(processName)) return false;
-            string name = processName.ToLowerInvariant();
+            string name = processName.ToLowerInvariant().Replace(".exe", "").Trim();
 
             if (!string.IsNullOrWhiteSpace(activeAppHint))
             {
-                string hint = activeAppHint.Trim().ToLowerInvariant();
+                string hint = activeAppHint.Trim().ToLowerInvariant().Replace(".exe", "");
                 if (hint.Contains("spotify") && name.Contains("spotify")) return true;
                 if ((hint.Contains("edge") || hint.Contains("msedge")) && name.Contains("msedge")) return true;
                 if (hint.Contains("firefox") && name.Contains("firefox")) return true;
@@ -247,6 +247,9 @@ namespace LabMediaWidget
                 if (hint.Contains("vlc") && name.Contains("vlc")) return true;
                 if (hint.Contains("chrome") && name.Contains("chrome")) return true;
                 if (hint.Contains("youtube") && !HasBrowserIdentity(hint) && IsBrowserProcess(name)) return true;
+                if ((hint.Contains("youtube") || hint.Contains("ytmusic") || hint.Contains("ytmdesktop") || hint.Contains("labsuite-music"))
+                    && (name.Contains("ytm") || name.Contains("youtube") || name.Contains("labsuite-music") || IsBrowserProcess(name)))
+                    return true;
                 return name.Contains(hint) || hint.Contains(name);
             }
 

@@ -8,11 +8,157 @@
         ShowInTaskbar="False" Topmost="True" ResizeMode="NoResize"
         WindowStartupLocation="Manual"
         FontFamily="Segoe UI Variable, Segoe UI, sans-serif"
-        Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown">
+        Deactivated="Window_Deactivated" PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewMouseWheel="Window_PreviewMouseWheel">
     <Window.Resources>
+        <!-- Sleek Minimal Modern ScrollBar for Dark Theme -->
+        <Style x:Key="ScrollBarThumb" TargetType="{x:Type Thumb}">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                        <Border x:Name="ThumbBorder" Background="#35FFFFFF" CornerRadius="3" Margin="1,0" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#5EFFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#85FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type ScrollBar}">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="6" />
+                    <Setter Property="Height" Value="Auto" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Grid Background="Transparent" SnapsToDevicePixels="True">
+                                    <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                        <Track.Thumb>
+                                            <Thumb Style="{StaticResource ScrollBarThumb}" />
+                                        </Track.Thumb>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="6" />
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Grid Background="Transparent" SnapsToDevicePixels="True">
+                                    <Track x:Name="PART_Track" IsDirectionReversed="False">
+                                        <Track.Thumb>
+                                            <Thumb Style="{StaticResource ScrollBarThumb}" />
+                                        </Track.Thumb>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Modern Slider with Instant Click-To-Seek and Circular Thumb -->
+        <Style x:Key="ModernSliderThumb" TargetType="{x:Type Thumb}">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                        <Grid Width="14" Height="14">
+                            <Ellipse x:Name="ThumbCircle" Fill="#F8FAFC" Width="12" Height="12"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect Color="#000000" BlurRadius="4" ShadowDepth="1" Opacity="0.45" />
+                                </Ellipse.Effect>
+                            </Ellipse>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbCircle" Property="Width" Value="14" />
+                                <Setter TargetName="ThumbCircle" Property="Height" Value="14" />
+                                <Setter TargetName="ThumbCircle" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbCircle" Property="Width" Value="14" />
+                                <Setter TargetName="ThumbCircle" Property="Height" Value="14" />
+                                <Setter TargetName="ThumbCircle" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModernSlider" TargetType="{x:Type Slider}">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Slider}">
+                        <Grid VerticalAlignment="Center">
+                            <Border x:Name="TrackBackground" Height="4" CornerRadius="2"
+                                    Background="#24FFFFFF" VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track" VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.DecreaseLarge}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="{x:Type RepeatButton}">
+                                                <Border Height="4" CornerRadius="2,0,0,2" Background="#1DB954" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ModernSliderThumb}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.IncreaseLarge}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="{x:Type RepeatButton}">
+                                                <Border Background="Transparent" Height="4" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Circular Action & Transport Buttons -->
         <Style x:Key="PanelIconButton" TargetType="Button">
-            <Setter Property="Width" Value="40" />
-            <Setter Property="Height" Value="40" />
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Foreground" Value="#E5E7EB" />
             <Setter Property="Background" Value="#14FFFFFF" />
@@ -24,15 +170,50 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Surface" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="20">
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="17" SnapsToDevicePixels="True">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                                <Setter TargetName="Surface" Property="BorderBrush" Value="#38FFFFFF" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="Surface" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.32" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PanelPrimaryButton" TargetType="Button" BasedOn="{StaticResource PanelIconButton}">
+            <Setter Property="Width" Value="46" />
+            <Setter Property="Height" Value="46" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="#1DB954" />
+            <Setter Property="BorderBrush" Value="#1DB954" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="23" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.9" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.75" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Surface" Property="Opacity" Value="0.35" />
@@ -43,12 +224,70 @@
             </Setter>
         </Style>
 
-        <Style x:Key="PanelPrimaryButton" TargetType="Button" BasedOn="{StaticResource PanelIconButton}">
-            <Setter Property="Width" Value="48" />
-            <Setter Property="Height" Value="48" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="Background" Value="#1DB954" />
-            <Setter Property="BorderBrush" Value="#1DB954" />
+        <Style x:Key="CompactActionButton" TargetType="Button" BasedOn="{StaticResource PanelIconButton}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="14" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                                <Setter TargetName="Surface" Property="BorderBrush" Value="#38FFFFFF" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.32" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PillActionButton" TargetType="Button">
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Background" Value="#14FFFFFF" />
+            <Setter Property="BorderBrush" Value="#24FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#E5E7EB" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="14" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                                <Setter TargetName="Surface" Property="BorderBrush" Value="#38FFFFFF" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.32" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="TextActionButton" TargetType="Button">
@@ -59,51 +298,76 @@
             <Setter Property="Foreground" Value="#E5E7EB" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="FontSize" Value="11" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Surface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                                <Setter TargetName="Surface" Property="BorderBrush" Value="#38FFFFFF" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.72" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Surface" Property="Opacity" Value="0.32" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
-    <Border x:Name="PanelBorder" Margin="8" Padding="18"
+    <Border x:Name="PanelBorder" Margin="8" Padding="16,14"
             Background="#FF111318" BorderBrush="#38FFFFFF"
             BorderThickness="1" CornerRadius="16">
         <Border.Effect>
             <DropShadowEffect Color="#000000" BlurRadius="28" ShadowDepth="8" Opacity="0.55" />
         </Border.Effect>
         <DockPanel LastChildFill="True">
-            <Border DockPanel.Dock="Top" Background="#0FFFFFFF" CornerRadius="9" Padding="3" Margin="0,0,0,12">
+            <!-- Top Tab Bar -->
+            <Border DockPanel.Dock="Top" Background="#0FFFFFFF" CornerRadius="9" Padding="3" Margin="0,0,0,10">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
                     <Button x:Name="BtnNowPlayingTab" Grid.Column="0" Style="{StaticResource TextActionButton}"
-                            Content="Now Playing" Height="32" Click="BtnNowPlayingTab_Click"
+                            Content="Now Playing" Height="30" Click="BtnNowPlayingTab_Click"
                             automation:AutomationProperties.Name="Show Now Playing" />
                     <Button x:Name="BtnLibraryTab" Grid.Column="1" Style="{StaticResource TextActionButton}"
-                            Content="Library" Height="32" Margin="4,0,0,0" Click="BtnLibraryTab_Click"
+                            Content="Library" Height="30" Margin="4,0,0,0" Click="BtnLibraryTab_Click"
                             automation:AutomationProperties.Name="Show YouTube Library" />
                 </Grid>
             </Border>
             <Grid>
-                <ScrollViewer x:Name="NowPlayingContent" MaxHeight="408" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer x:Name="NowPlayingContent" MaxHeight="416" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
             <!-- Source and session selection -->
-            <Grid Margin="0,0,0,14">
+            <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Border x:Name="SourceBadge" Background="#231DB954" CornerRadius="10" Padding="9,5" VerticalAlignment="Center">
+                <Border x:Name="SourceBadge" Background="#231DB954" CornerRadius="10" Padding="8,4" VerticalAlignment="Center">
                     <TextBlock x:Name="TxtSource" Text="Media Player" Foreground="#4ADE80" FontSize="11" FontWeight="Bold" />
                 </Border>
-                <ComboBox x:Name="SessionPicker" Grid.Column="1" Margin="10,0" Height="30"
+                <ComboBox x:Name="SessionPicker" Grid.Column="1" Margin="8,0" Height="28"
                           DisplayMemberPath="DisplayLabel" SelectedValuePath="SessionId"
                           SelectionChanged="SessionPicker_SelectionChanged"
                           automation:AutomationProperties.Name="Active media player" />
-                <Button x:Name="BtnOverflow" Grid.Column="2" Style="{StaticResource PanelIconButton}"
-                        Width="32" Height="32" Click="BtnOverflow_Click"
-                        automation:AutomationProperties.Name="More LabMedia actions">
-                    <TextBlock Text="•••" FontWeight="Bold" Margin="0,-5,0,0" />
+                <Button x:Name="BtnOverflow" Grid.Column="2" Style="{StaticResource CompactActionButton}"
+                        Click="BtnOverflow_Click" automation:AutomationProperties.Name="More LabMedia actions">
+                    <TextBlock Text="•••" FontWeight="Bold" Margin="0,-4,0,0" FontSize="11" />
                     <Button.ContextMenu>
                         <ContextMenu>
                             <MenuItem x:Name="MenuItemOpenYTMDesktop" Header="Open YTmusic"
@@ -116,114 +380,168 @@
             </Grid>
 
             <!-- Now playing hero -->
-            <Grid Margin="0,0,0,14">
+            <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="96" />
+                    <ColumnDefinition Width="86" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Border Width="88" Height="88" CornerRadius="10" ClipToBounds="True"
+                <Border Width="80" Height="80" CornerRadius="10" ClipToBounds="True"
                         Background="#18FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Top">
                     <Grid>
                         <Image x:Name="ImgArtwork" Stretch="UniformToFill" />
-                        <Path x:Name="FallbackArtwork" Data="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z M 12,16.5 C 9.51,16.5 7.5,14.49 7.5,12 C 7.5,9.51 9.51,7.5 12,7.5 C 14.49,7.5 16.5,9.51 16.5,12 C 16.5,14.49 14.49,16.5 12,16.5 Z" Fill="#1DB954" Width="38" Height="38" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Path x:Name="FallbackArtwork" Data="M 12,2 C 6.48,2 2,6.48 2,12 C 2,17.52 6.48,22 12,22 C 17.52,22 22,17.52 22,12 C 22,6.48 17.52,2 12,2 Z M 12,16.5 C 9.51,16.5 7.5,14.49 7.5,12 C 7.5,9.51 9.51,7.5 12,7.5 C 14.49,7.5 16.5,9.51 16.5,12 C 16.5,14.49 14.49,16.5 12,16.5 Z" Fill="#1DB954" Width="36" Height="36" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
                     <TextBlock x:Name="TxtTitle" Text="No media playing" Foreground="#F8FAFC"
-                               FontSize="17" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                               FontSize="16" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="TxtArtist" Text="Start playback in a supported app" Foreground="#A7B0BC"
-                               FontSize="12" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
-                    <TextBlock x:Name="TxtAlbum" Foreground="#707B88" FontSize="11" Margin="0,2,0,0"
+                               FontSize="12" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="TxtAlbum" Foreground="#707B88" FontSize="10.5" Margin="0,2,0,0"
                                TextTrimming="CharacterEllipsis" />
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                        <Button x:Name="BtnLike" Style="{StaticResource TextActionButton}" Content="♥ Like" Margin="0,0,5,0" Click="BtnLike_Click"
-                                ToolTip="Like track" automation:AutomationProperties.Name="Like track" />
-                        <Button x:Name="BtnDislike" Style="{StaticResource TextActionButton}" Content="👎" Margin="0,0,5,0" Click="BtnDislike_Click"
-                                ToolTip="Dislike track" automation:AutomationProperties.Name="Dislike track" />
-                        <Button Style="{StaticResource TextActionButton}" Content="Open source ↗" Click="BtnOpenSource_Click"
-                                automation:AutomationProperties.Name="Open source application" />
-                        <Button Style="{StaticResource TextActionButton}" Content="Copy" Margin="5,0,0,0" Click="MenuItem_Copy_Click"
-                                automation:AutomationProperties.Name="Copy artist and title" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button x:Name="BtnLike" Style="{StaticResource PillActionButton}" Margin="0,0,5,0" Click="BtnLike_Click"
+                                ToolTip="Like track" automation:AutomationProperties.Name="Like track">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Path x:Name="PathLikeHeart" Data="M 12,21.35 L 10.55,20.03 C 5.4,15.36 2,12.27 2,8.5 C 2,5.41 4.42,3 7.5,3 C 9.24,3 10.91,3.81 12,5.08 C 13.09,3.81 14.76,3 16.5,3 C 19.58,3 22,5.41 22,8.5 C 22,12.27 18.6,15.36 13.45,20.03 L 12,21.35 Z"
+                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,4,0" />
+                                <TextBlock Text="Like" FontSize="11" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="BtnDislike" Style="{StaticResource CompactActionButton}" Margin="0,0,5,0" Click="BtnDislike_Click"
+                                ToolTip="Dislike track" automation:AutomationProperties.Name="Dislike track">
+                            <Path Data="M 15,3 H 6 C 5.2,3 4.5,3.5 4.2,4.2 L 1.1,11.3 C 1,11.5 1,11.8 1,12 V 14 C 1,15.1 1.9,16 3,16 H 8.3 L 7.5,19.9 L 7.5,20.2 C 7.5,20.6 7.7,21 8,21.3 L 8.7,22 L 14.4,16.3 C 14.8,15.9 15,15.5 15,15 V 3 Z M 17,3 V 15 H 21 V 3 H 17 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="11" Height="11" Stretch="Uniform" />
+                        </Button>
+                        <Button x:Name="BtnOpenSource" Style="{StaticResource CompactActionButton}" Margin="0,0,5,0" Click="BtnOpenSource_Click"
+                                ToolTip="Open source application" automation:AutomationProperties.Name="Open source application">
+                            <Path Data="M 19,19 H 5 V 5 H 12 V 3 H 5 C 3.89,3 3,3.89 3,5 V 19 C 3,20.1 3.89,21 5,21 H 19 C 20.1,21 21,20.1 21,19 V 12 H 19 V 19 Z M 14,3 V 5 H 17.59 L 7.76,14.83 L 9.17,16.24 L 19,6.41 V 10 H 21 V 3 H 14 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="11" Height="11" Stretch="Uniform" />
+                        </Button>
+                        <Button Style="{StaticResource CompactActionButton}" Click="MenuItem_Copy_Click"
+                                ToolTip="Copy artist and title" automation:AutomationProperties.Name="Copy artist and title">
+                            <Path Data="M 16,1 H 4 C 2.9,1 2,1.9 2,3 V 17 H 4 V 3 H 16 V 1 Z M 19,5 H 8 C 6.9,5 6,5.9 6,7 V 21 C 6,22.1 6.9,23 8,23 H 19 C 20.1,23 21,22.1 21,21 V 7 C 21,5.9 20.1,5 19,5 Z M 19,21 H 8 V 7 H 19 V 21 Z"
+                                  Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="11" Height="11" Stretch="Uniform" />
+                        </Button>
                     </StackPanel>
                 </StackPanel>
             </Grid>
 
             <!-- Timeline -->
-            <Grid Margin="0,0,0,12">
+            <Grid Margin="0,0,0,10">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <Slider x:Name="TimelineSlider" Minimum="0" Maximum="100" Height="22"
+                <Slider x:Name="TimelineSlider" Style="{StaticResource ModernSlider}" Minimum="0" Maximum="100" Height="20"
                         PreviewMouseLeftButtonDown="TimelineSlider_PreviewMouseLeftButtonDown"
+                        IsMoveToPointEnabled="True"
                         automation:AutomationProperties.Name="Playback position" />
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="1" Margin="0,2,0,0">
                     <TextBlock x:Name="TxtElapsed" Text="0:00" Foreground="#7C8794" FontSize="10" />
                     <TextBlock x:Name="TxtDuration" Text="0:00" Foreground="#7C8794" FontSize="10" HorizontalAlignment="Right" />
                 </Grid>
             </Grid>
 
             <!-- Transport controls -->
-            <Grid Margin="10,0,10,14">
+            <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Button x:Name="BtnShuffle" Grid.Column="0" Style="{StaticResource PanelIconButton}" Click="BtnShuffle_Click"
                         ToolTip="Shuffle" automation:AutomationProperties.Name="Toggle shuffle">
-                    <TextBlock Text="Shuffle" FontSize="8" FontWeight="SemiBold" />
+                    <Path Data="M 16,3 H 21 V 8 M 4,20 L 21,3 M 21,16 V 21 H 16 M 15,15 L 21,21 M 4,4 L 9,9"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                          Width="13" Height="13" Stretch="Uniform" />
                 </Button>
                 <Button x:Name="BtnRewind" Grid.Column="1" Style="{StaticResource PanelIconButton}" Click="BtnRewind_Click"
                         ToolTip="Rewind 10s" automation:AutomationProperties.Name="Rewind 10 seconds">
-                    <TextBlock Text="-10s" FontSize="8.5" FontWeight="Bold" />
+                    <Grid Width="20" Height="20">
+                        <Path Data="M 10,3 V 0 L 5,3.5 L 10,7 V 4 C 13.9,4 17,7.1 17,11 C 17,14.9 13.9,18 10,18 C 6.1,18 3,14.9 3,11 C 3,9.6 3.4,8.3 4.1,7.2"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.8" StrokeStartLineCap="Round" Width="18" Height="18" Stretch="Uniform" />
+                        <TextBlock Text="10" FontSize="7" FontWeight="Bold" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                    </Grid>
                 </Button>
                 <Button x:Name="BtnPrevious" Grid.Column="2" Style="{StaticResource PanelIconButton}" Click="BtnPrevious_Click"
                         ToolTip="Previous" automation:AutomationProperties.Name="Previous track">
-                    <Path Data="M 15,5 L 8,12 L 15,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="8" Height="13" Stretch="Uniform" />
+                    <Path Data="M 6,5 V 19 M 18,5.5 L 8.5,12 L 18,18.5"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                          Width="12" Height="12" Stretch="Uniform" />
                 </Button>
-                <Button x:Name="BtnPlayPause" Grid.Column="3" Style="{StaticResource PanelPrimaryButton}" Click="BtnPlayPause_Click"
+                <Button x:Name="BtnPlayPause" Grid.Column="3" Style="{StaticResource PanelPrimaryButton}" Margin="4,0" Click="BtnPlayPause_Click"
                         ToolTip="Play or pause" automation:AutomationProperties.Name="Play or pause">
-                    <Path x:Name="PathPlayPause" Data="M 7,5 L 18,12 L 7,19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="13" Height="14" Stretch="Uniform" />
+                    <Path x:Name="PathPlayPause" Data="M 7,5 L 18,12 L 7,19 Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="14" Height="15" Stretch="Uniform" />
                 </Button>
                 <Button x:Name="BtnNext" Grid.Column="4" Style="{StaticResource PanelIconButton}" Click="BtnNext_Click"
                         ToolTip="Next" automation:AutomationProperties.Name="Next track">
-                    <Path Data="M 9,5 L 16,12 L 9,19" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Width="8" Height="13" Stretch="Uniform" />
+                    <Path Data="M 18,5 V 19 M 6,5.5 L 15.5,12 L 6,18.5"
+                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                          Width="12" Height="12" Stretch="Uniform" />
                 </Button>
                 <Button x:Name="BtnForward" Grid.Column="5" Style="{StaticResource PanelIconButton}" Click="BtnForward_Click"
                         ToolTip="Fast forward 10s" automation:AutomationProperties.Name="Fast forward 10 seconds">
-                    <TextBlock Text="+10s" FontSize="8.5" FontWeight="Bold" />
+                    <Grid Width="20" Height="20">
+                        <Path Data="M 10,3 V 0 L 15,3.5 L 10,7 V 4 C 6.1,4 3,7.1 3,11 C 3,14.9 6.1,18 10,18 C 13.9,18 17,14.9 17,11 C 17,9.6 16.6,8.3 15.9,7.2"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.8" StrokeStartLineCap="Round" Width="18" Height="18" Stretch="Uniform" />
+                        <TextBlock Text="10" FontSize="7" FontWeight="Bold" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                    </Grid>
                 </Button>
                 <Button x:Name="BtnRepeat" Grid.Column="6" Style="{StaticResource PanelIconButton}" Click="BtnRepeat_Click"
                         ToolTip="Repeat" automation:AutomationProperties.Name="Change repeat mode">
-                    <TextBlock x:Name="TxtRepeat" Text="Repeat" FontSize="8" FontWeight="SemiBold" />
+                    <Grid Width="18" Height="18">
+                        <Path Data="M 15,2 L 19,5.5 L 15,9 M 3,10 V 8.5 C 3,6.6 4.6,5 6.5,5 H 19 M 5,20 L 1,16.5 L 5,13 M 17,12 V 13.5 C 17,15.4 15.4,17 13.5,17 H 1"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                              Width="14" Height="14" Stretch="Uniform" />
+                        <TextBlock x:Name="TxtRepeat" Text="" FontSize="7.5" FontWeight="Bold"
+                                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-0.5,0,0" />
+                    </Grid>
                 </Button>
             </Grid>
 
             <!-- Per-app volume -->
-            <Grid Margin="0,0,0,14">
+            <Grid Margin="0,0,0,10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="42" />
+                    <ColumnDefinition Width="40" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="BtnMute" Style="{StaticResource PanelIconButton}" Width="40" Height="40"
+                <Button x:Name="BtnMute" Style="{StaticResource PanelIconButton}" Width="34" Height="34"
                         Click="BtnMute_Click" ToolTip="Mute this app" automation:AutomationProperties.Name="Mute active application">
-                    <TextBlock x:Name="TxtMuteIcon" Text="VOL" FontSize="8" FontWeight="Bold" />
+                    <Grid>
+                        <Path x:Name="PathMuteIcon"
+                              Data="M 3,9 V 15 H 7 L 12,20 V 4 L 7,9 H 3 Z M 16.5,12 C 16.5,10.23 15.48,8.71 14,7.97 V 16.02 C 15.48,15.29 16.5,13.77 16.5,12 Z M 14,3.23 V 5.29 C 16.89,6.15 19,8.83 19,12 C 19,15.17 16.89,17.85 14,18.71 V 20.77 C 18.01,19.86 21,16.28 21,12 C 21,7.72 18.01,4.14 14,3.23 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Width="13" Height="13" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TxtMuteIcon" Text="VOL" Visibility="Collapsed" />
+                    </Grid>
                 </Button>
-                <Slider x:Name="VolumeSlider" Grid.Column="1" Minimum="0" Maximum="100" Margin="10,0"
-                        ValueChanged="VolumeSlider_ValueChanged" automation:AutomationProperties.Name="Application volume" />
+                <Slider x:Name="VolumeSlider" Grid.Column="1" Style="{StaticResource ModernSlider}"
+                        Minimum="0" Maximum="100" Margin="10,0" Height="20"
+                        ValueChanged="VolumeSlider_ValueChanged"
+                        PreviewMouseLeftButtonDown="VolumeSlider_PreviewMouseLeftButtonDown"
+                        PreviewMouseWheel="VolumeSlider_PreviewMouseWheel"
+                        IsMoveToPointEnabled="True"
+                        automation:AutomationProperties.Name="Application volume" />
                 <TextBlock x:Name="TxtVolume" Grid.Column="2" Text="100%" Foreground="#A7B0BC" FontSize="11"
                            FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" />
             </Grid>
 
-            <Separator Background="#20FFFFFF" Margin="0,0,0,12" />
+            <Separator Background="#18FFFFFF" Margin="0,0,0,10" />
 
             <!-- Provider-neutral queue -->
             <Grid Margin="0,0,0,8">
@@ -231,31 +549,31 @@
                 <TextBlock x:Name="TxtQueueAttribution" HorizontalAlignment="Right" Foreground="#707B88" FontSize="10" />
             </Grid>
             <Border x:Name="QueueStatusBorder" Background="#0FFFFFFF" BorderBrush="#1FFFFFFF"
-                    BorderThickness="1" CornerRadius="9" Padding="12">
+                    BorderThickness="1" CornerRadius="9" Padding="10">
                 <StackPanel>
                     <TextBlock x:Name="TxtQueueStatus" Text="Up Next is not shared by this player."
                                Foreground="#98A3B1" FontSize="11" TextWrapping="Wrap" />
-                    <Button x:Name="BtnQueueAction" Style="{StaticResource TextActionButton}" Margin="0,10,0,0"
+                    <Button x:Name="BtnQueueAction" Style="{StaticResource TextActionButton}" Margin="0,8,0,0"
                             HorizontalAlignment="Left" Visibility="Collapsed" Click="BtnQueueAction_Click" />
                 </StackPanel>
             </Border>
-            <ScrollViewer x:Name="QueueItemsScroll" MaxHeight="154" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+            <ScrollViewer x:Name="QueueItemsScroll" MaxHeight="146" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                 <ItemsControl x:Name="QueueItems">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Button Style="{StaticResource TextActionButton}" Margin="0,4" Padding="4"
+                            <Button Style="{StaticResource TextActionButton}" Margin="0,3" Padding="4"
                                     HorizontalContentAlignment="Stretch" Tag="{Binding}" IsEnabled="{Binding Available}"
                                     Click="QueueItem_Click" automation:AutomationProperties.Name="{Binding Title}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="38" />
+                                    <ColumnDefinition Width="36" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Border Width="32" Height="32" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                <Border Width="30" Height="30" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
                                     <Image Source="{Binding ArtworkUrl}" Stretch="UniformToFill" />
                                 </Border>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
                                     <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                     <TextBlock Text="{Binding Artist}" Foreground="#7C8794" FontSize="10" TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
@@ -269,7 +587,7 @@
                 </StackPanel>
                 </ScrollViewer>
 
-                <Grid x:Name="LibraryContent" MaxHeight="408" Visibility="Collapsed">
+                <Grid x:Name="LibraryContent" MaxHeight="416" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -277,7 +595,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <Grid Margin="0,0,0,10">
+                    <Grid Margin="0,0,0,8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -286,9 +604,9 @@
                         <Button x:Name="BtnLibraryBack" Style="{StaticResource TextActionButton}" Content="Back"
                                 Visibility="Collapsed" Click="BtnLibraryBack_Click"
                                 automation:AutomationProperties.Name="Back to playlists" />
-                        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
                             <TextBlock x:Name="TxtLibraryTitle" Text="YouTube Library" Foreground="#F8FAFC"
-                                       FontSize="15" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
+                                       FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="TxtLibraryAccount" Foreground="#7C8794" FontSize="10"
                                        TextTrimming="CharacterEllipsis" />
                         </StackPanel>
@@ -298,11 +616,11 @@
                     </Grid>
 
                     <Border x:Name="LibraryStatusBorder" Grid.Row="1" Background="#0FFFFFFF"
-                            BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,8">
+                            BorderBrush="#1FFFFFFF" BorderThickness="1" CornerRadius="9" Padding="10" Margin="0,0,0,6">
                         <StackPanel>
                             <TextBlock x:Name="TxtLibraryStatus" Foreground="#A7B0BC" FontSize="11" TextWrapping="Wrap" />
                             <Button x:Name="BtnLibraryConnect" Style="{StaticResource TextActionButton}"
-                                    HorizontalAlignment="Left" Margin="0,9,0,0" Visibility="Collapsed"
+                                    HorizontalAlignment="Left" Margin="0,8,0,0" Visibility="Collapsed"
                                     Click="BtnLibraryConnect_Click" automation:AutomationProperties.Name="Connect YouTube account" />
                         </StackPanel>
                     </Border>
@@ -313,30 +631,30 @@
                             <ItemsControl x:Name="LibraryPlaylists">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="0,3">
+                                        <Grid Margin="0,2">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <Button Style="{StaticResource TextActionButton}" Padding="7" HorizontalContentAlignment="Stretch"
+                                            <Button Style="{StaticResource TextActionButton}" Padding="6" HorizontalContentAlignment="Stretch"
                                                     Tag="{Binding Id}" Click="LibraryPlaylist_Click"
                                                     automation:AutomationProperties.Name="{Binding Title}">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="46" />
+                                                        <ColumnDefinition Width="42" />
                                                         <ColumnDefinition Width="*" />
                                                     </Grid.ColumnDefinitions>
-                                                    <Border Width="40" Height="40" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                                    <Border Width="36" Height="36" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
                                                         <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
                                                     </Border>
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
                                                         <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11"
                                                                    FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                         <TextBlock Text="{Binding ItemCountLabel}" Foreground="#7C8794" FontSize="10" />
                                                     </StackPanel>
                                                 </Grid>
                                             </Button>
-                                            <Button Grid.Column="1" Style="{StaticResource TextActionButton}" Content="Play" Margin="6,0,0,0"
+                                            <Button Grid.Column="1" Style="{StaticResource TextActionButton}" Content="Play" Margin="4,0,0,0"
                                                     Tag="{Binding Id}" Click="LibraryPlaylistOpen_Click"
                                                     automation:AutomationProperties.Name="Play playlist in YouTube Music" />
                                         </Grid>
@@ -347,27 +665,27 @@
                             <ItemsControl x:Name="LibraryTracks" Visibility="Collapsed">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Button Style="{StaticResource TextActionButton}" Padding="7" Margin="0,3"
+                                        <Button Style="{StaticResource TextActionButton}" Padding="6" Margin="0,2"
                                                 HorizontalContentAlignment="Stretch" IsEnabled="{Binding Available}"
                                                 Tag="{Binding VideoId}" Click="LibraryTrack_Click"
                                                 ToolTip="{Binding UnavailableReason}"
                                                 automation:AutomationProperties.Name="{Binding Title}">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="46" />
+                                                    <ColumnDefinition Width="42" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <Border Width="40" Height="40" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
+                                                <Border Width="36" Height="36" CornerRadius="5" Background="#14FFFFFF" ClipToBounds="True">
                                                     <Image Source="{Binding ThumbnailImage}" Stretch="UniformToFill" />
                                                 </Border>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0">
                                                     <TextBlock Text="{Binding Title}" Foreground="#E5E7EB" FontSize="11"
                                                                FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                     <TextBlock Text="{Binding Artist}" Foreground="#7C8794" FontSize="10" TextTrimming="CharacterEllipsis" />
                                                 </StackPanel>
                                                 <TextBlock Grid.Column="2" Text="{Binding DurationLabel}" Foreground="#7C8794"
-                                                           FontSize="10" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                           FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0" />
                                             </Grid>
                                         </Button>
                                     </DataTemplate>
@@ -376,7 +694,7 @@
                         </Grid>
                     </ScrollViewer>
 
-                    <Grid Grid.Row="3" Margin="0,10,0,0">
+                    <Grid Grid.Row="3" Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -386,7 +704,7 @@
                                 Content="Disconnect" Visibility="Collapsed" Click="BtnLibraryDisconnect_Click"
                                 automation:AutomationProperties.Name="Disconnect YouTube from LabMedia" />
                         <Button x:Name="BtnLibraryOpenPlaylist" Grid.Column="1" Style="{StaticResource TextActionButton}"
-                                Content="Play playlist" Margin="8,0" Visibility="Collapsed" HorizontalAlignment="Left"
+                                Content="Play playlist" Margin="6,0" Visibility="Collapsed" HorizontalAlignment="Left"
                                 Click="BtnLibraryOpenPlaylist_Click" automation:AutomationProperties.Name="Play selected playlist in YouTube Music" />
                         <Button x:Name="BtnLibraryLoadMore" Grid.Column="2" Style="{StaticResource TextActionButton}"
                                 Content="Load more" Visibility="Collapsed" Click="BtnLibraryLoadMore_Click"

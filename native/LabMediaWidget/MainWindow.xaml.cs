@@ -75,6 +75,20 @@ namespace LabMediaWidget
         {
             try
             {
+                if (_ytmdState.Active)
+                {
+                    double current = _ytmdState.Playback?.Volume ?? 50.0;
+                    double next = Math.Clamp(current + (e.Delta > 0 ? 5.0 : -5.0), 0.0, 100.0);
+                    EmitEvent("providerAction", new { action = "ytmd:setVolume", value = next });
+                    if (_ytmdState.Playback != null) _ytmdState.Playback.Volume = next;
+                    TxtVolToast.Text = $"{Math.Round(next):0}%";
+                    VolToastBorder.Visibility = Visibility.Visible;
+                    _volToastTimer.Stop();
+                    _volToastTimer.Start();
+                    e.Handled = true;
+                    return;
+                }
+
                 MediaSessionState state = _smtc?.CurrentSessionState ?? new MediaSessionState();
                 if (!state.HasSession) return;
                 float delta = e.Delta > 0 ? 0.05f : -0.05f;
