@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.43 - 2026-08-15
+
+### Packaged LabSuite Music Companion in Windows Releases
+
+- **`release-windows.yml`**: Added CI step to build and bundle `LabSuite Music 2.0.11-labsuite.1` into the packaged installer under `resources/bin/LabSuiteMusic/`.
+- **`build-labsuite-music.ps1`**: Improved build script with cleaner staging, better error handling, and source-bundle assembly for GPL compliance.
+- **`verify-ytmdesktop.js`**: Extended companion verification to assert that the bundled binary SHA256 matches the manifest before a release is marked clean.
+- **`verify-release-security.js`**: Made the rclone upstream-version advisory a warning rather than a hard failure — version pinning is intentional for binary hash verification and an upstream release should not block builds.
+
 ## 2.10.42 - 2026-08-14
 
 ### Fixed Mouse Wheel Volume Control Regression

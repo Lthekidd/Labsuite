@@ -114,7 +114,8 @@ function checkRcloneBinary(binaryPath, label) {
     fail(`${label} is ${yours || 'unknown'}, expected ${REQUIRED_RCLONE_VERSION}.`);
   }
   if (latest && latest !== yours) {
-    fail(`${label} is ${yours}, but rclone latest is ${latest}.`);
+    // We pin rclone to a verified binary hash — a newer upstream release is advisory only.
+    console.warn(`release-security: note: rclone ${yours} is pinned; upstream has ${latest} (update separately when hash-verified).`);
   }
   console.log(`release-security: ${label} ${yours} ok.`);
 }
