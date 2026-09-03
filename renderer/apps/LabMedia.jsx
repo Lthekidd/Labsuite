@@ -124,22 +124,6 @@ export default function LabMedia({ active = true }) {
     setIsBusy(false);
   };
 
-  const youtubeAction = async (action) => {
-    if (action === 'disconnect' && !window.confirm('Disconnect YouTube from LabMedia? This removes the LabMedia grant but does not delete anything from YouTube.')) return;
-    const channels = {
-      connect: 'labmedia:youtubeConnect',
-      reconnect: 'labmedia:youtubeReconnect',
-      disconnect: 'labmedia:youtubeDisconnect',
-      refresh: 'labmedia:youtubeRefresh',
-      setup: 'labmedia:openYouTubeOAuthSettings'
-    };
-    const channel = channels[action];
-    if (!channel) return;
-    setIsBusy(true);
-    await invokeAndSetStatus(channel, undefined, `Failed to ${action} YouTube`);
-    setIsBusy(false);
-  };
-
   const ytmdAction = async (action) => {
     if (action === 'install' && !window.confirm('Check for the bundled GPL-licensed YTmusic build?')) return;
     if (action === 'forget' && !window.confirm('Forget LabMedia’s YTmusic token? To revoke it inside YTmusic too, remove LabSuite from its Authorized companions list.')) return;
@@ -173,7 +157,6 @@ export default function LabMedia({ active = true }) {
   const controls = settings.controls || {};
   const session = status.session || {};
   const queue = status.queue || {};
-  const youtube = status.youtubeLibrary || {};
   const ytmd = status.ytmDesktop || {};
   const theme = THEME_STYLES[settings.theme] || THEME_STYLES.spotify;
   const badge = statusBadge(status.state);
@@ -345,13 +328,6 @@ export default function LabMedia({ active = true }) {
               YTmusic is a fork of YTMDesktop, not an official LabSuite or Google product. LabMedia accepts only its <code>labsuite-hardened-v1</code> service on <code>127.0.0.1:9863</code>; browser-origin requests, network clients, and unreviewed upstream builds are rejected.
             </p>
           </SectionCard>
-
-          <SectionCard title="YouTube Library" description="Browse owned playlists and Liked Music from the flyout, then play seamlessly in the native YTmusic app.">
-            <YouTubeConnection state={youtube} busy={isBusy} onAction={youtubeAction} />
-            <p style={{ margin: '12px 0 0', color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.55 }}>
-              LabMedia uses a separate read-only YouTube grant for the same Gmail account as Drive. Tracks and playlists selected in the library play directly through the paired YTmusic companion with zero browser popups.
-            </p>
-          </SectionCard>
         </>
       )}
 
@@ -414,10 +390,6 @@ function PanelPreview({ session, queue, theme }) {
   const queueReady = queue.status === 'ready' && Array.isArray(queue.items) && queue.items.length > 0;
   return (
     <div style={{ width: 384, maxWidth: '100%', boxSizing: 'border-box', borderRadius: 16, padding: 18, background: theme.bg, border: `1px solid ${theme.border}`, boxShadow: '0 20px 45px rgba(0,0,0,.58)', color: theme.text }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, padding: 3, borderRadius: 8, background: 'rgba(255,255,255,.04)', marginBottom: 12, fontSize: 11, fontWeight: 750, textAlign: 'center' }}>
-        <span style={{ padding: 6, borderRadius: 6, background: `${theme.accent}22`, color: theme.accent }}>Now Playing</span>
-        <span style={{ padding: 6, color: '#8c98a7' }}>Library</span>
-      </div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
         <span style={{ padding: '5px 9px', borderRadius: 10, background: `${theme.accent}20`, color: theme.accent, fontSize: 11, fontWeight: 800 }}>{session.sourceApp || 'Media Player'}</span>
         <span style={{ marginLeft: 9, color: '#8c98a7', fontSize: 11, flex: 1 }}>{session.sessionCount > 1 ? `${session.sessionCount} players available` : 'Now playing'}</span>
@@ -499,45 +471,6 @@ function YTMDesktopConnection({ state = {}, busy, onAction }) {
     </div>
     {['serverDisabled', 'requiresPairing', 'reauthRequired'].includes(state.status) && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 10 }}>
       Connect starts YTmusic, enables its loopback companion service for approval, and opens a one-time authorization window. Confirm the matching code in YTmusic; approval closes automatically.
-    </div>}
-    {healthy && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 8 }}>
-      YTmusic does not expose the signed-in Gmail address to LabSuite, so confirm it uses the same account as the optional YouTube Library connection.
-    </div>}
-  </div>;
-}
-
-function YouTubeConnection({ state = {}, busy, onAction }) {
-  const connection = state.connection || {};
-  const library = state.library || {};
-  const labels = {
-    requiresSetup: 'Setup required', requiresAuth: 'Not connected', connecting: 'Connecting…',
-    connected: 'Connected', reauthRequired: 'Reconnect required', error: 'Connection error'
-  };
-  const connected = connection.status === 'connected';
-  const color = connected ? '#34d399' : connection.status === 'error' || connection.status === 'reauthRequired' ? '#f87171' : '#fbbf24';
-  return <div style={{ padding: 14, borderRadius: 10, border: `1px solid ${color}40`, background: `${color}0c` }}>
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ color, fontWeight: 800, fontSize: 12 }}>{labels[connection.status] || 'Setup required'}</div>
-        <div style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {connection.channelTitle || connection.email || connection.message || 'YouTube Data API v3 is not configured.'}
-        </div>
-        {connection.email && connection.channelTitle && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 2 }}>{connection.email}</div>}
-        {connected && <div style={{ color: 'var(--text-secondary)', fontSize: 11.5, marginTop: 5 }}>
-          Library: {library.status || 'idle'}{Number.isFinite(library.playlistCount) ? ` · ${library.playlistCount} loaded` : ''}
-        </div>}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 7 }}>
-        {connection.status === 'requiresAuth' && <button type="button" disabled={busy} onClick={() => onAction('connect')} style={primaryAction}>Connect</button>}
-        {connection.status === 'requiresSetup' && <button type="button" disabled={busy} onClick={() => onAction('setup')} style={primaryAction}>Open OAuth setup</button>}
-        {['reauthRequired', 'error'].includes(connection.status) && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={primaryAction}>Reconnect</button>}
-        {connected && <button type="button" disabled={busy} onClick={() => onAction('refresh')} style={secondaryAction}>Refresh</button>}
-        {connected && <button type="button" disabled={busy} onClick={() => onAction('reconnect')} style={secondaryAction}>Reconnect</button>}
-        {(connected || connection.email) && <button type="button" disabled={busy} onClick={() => onAction('disconnect')} style={secondaryAction}>Disconnect</button>}
-      </div>
-    </div>
-    {connection.status === 'requiresSetup' && <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 9 }}>
-      In Suite Settings → Cloud Account &amp; Security → Google OAuth Client, enter a Desktop client ID and secret, save and reconnect Drive, then enable YouTube Data API v3 in that project.
     </div>}
   </div>;
 }

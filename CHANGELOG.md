@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.10.47 - 2026-09-03
+
+### LabMedia Polish: Reliable Volume Control, Fixed Like/Dislike, and YouTube Library Removal
+
+- **Reliable Mouse Wheel & Slider Volume Control**:
+  - Added typed COM `IAudioEndpointVolume` fallback to Windows master volume whenever an application-specific session cannot be mapped.
+  - Prioritized active audio playback sessions (`state == 1`, `AudioSessionStateActive`) over dormant browser tabs.
+  - Added Firefox numeric AUMID (`308046b0af4a39cb`) and Apple Music session matching.
+  - Real-time synchronization between taskbar widget mouse wheel, flyout volume slider, and on-screen volume toast.
+  - Fixed volume slider snapback defect where adjusting an unmapped volume level would snap back to 100%.
+- **Fixed Like & Dislike Action Handling**:
+  - Connected rating buttons to provider APIs (`ytmd:toggleLike`, `ytmd:toggleDislike`) for supported players (YTMDesktop / YTmusic).
+  - Eliminated fake in-memory rating state in `SmtcManager`.
+  - Gracefully disabled Like and Dislike buttons with informative tooltips on unsupported generic SMTC sessions.
+- **YouTube Library Removal**:
+  - Removed YouTube Library tab and content views from the native Now Playing flyout (`NowPlayingPanel.xaml`).
+  - Removed YouTube Library configuration cards and settings from `LabMedia.jsx`.
+  - Cleaned up obsolete YouTube Library IPC handlers and background sync logic in Electron main process.
+
 ## 2.10.46 - 2026-08-15
 
 ### Exclusively Dedicated YTmusic Playback and Complete Browser Fallback Removal

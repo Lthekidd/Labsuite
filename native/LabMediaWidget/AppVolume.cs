@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -94,6 +95,31 @@ namespace LabMediaWidget
         [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool muted);
     }
 
+    [ComImport]
+    [Guid("5BC64874-384D-4946-8098-220F49F31E00")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IAudioEndpointVolume
+    {
+        [PreserveSig] int RegisterControlChangeNotify(IntPtr client);
+        [PreserveSig] int UnregisterControlChangeNotify(IntPtr client);
+        [PreserveSig] int GetChannelCount(out uint channelCount);
+        [PreserveSig] int SetMasterVolumeLevel(float levelDb, [In] ref Guid eventContext);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float level, [In] ref Guid eventContext);
+        [PreserveSig] int GetMasterVolumeLevel(out float levelDb);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
+        [PreserveSig] int SetChannelVolumeLevel(uint channelNumber, float levelDb, [In] ref Guid eventContext);
+        [PreserveSig] int SetChannelVolumeLevelScalar(uint channelNumber, float level, [In] ref Guid eventContext);
+        [PreserveSig] int GetChannelVolumeLevel(uint channelNumber, out float levelDb);
+        [PreserveSig] int GetChannelVolumeLevelScalar(uint channelNumber, out float level);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool isMuted, [In] ref Guid eventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool isMuted);
+        [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+        [PreserveSig] int VolumeStepUp([In] ref Guid eventContext);
+        [PreserveSig] int VolumeStepDown([In] ref Guid eventContext);
+        [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
+        [PreserveSig] int GetVolumeRange(out float volumeMinDb, out float volumeMaxDb, out float volumeIncrementDb);
+    }
+
     public static class AppVolume
     {
         private static readonly object AudioGate = new object();
@@ -103,16 +129,38 @@ namespace LabMediaWidget
             lock (AudioGate)
             {
                 float adjustedLevel = -1.0f;
-                bool adjusted = VisitMatchingVolumes(activeAppHint, volume =>
+                bool adjusted = false;
+
+                if (!string.IsNullOrWhiteSpace(activeAppHint))
                 {
-                    if (volume.GetMasterVolume(out float current) < 0) return false;
+                    adjusted = VisitMatchingVolumes(activeAppHint, volume =>
+                    {
+                        if (volume.GetMasterVolume(out float current) < 0) return false;
+                        float next = Math.Clamp(current + delta, 0.0f, 1.0f);
+                        Guid context = Guid.Empty;
+                        if (volume.SetMasterVolume(next, ref context) < 0) return false;
+                        adjustedLevel = next;
+                        return true;
+                    });
+                }
+
+                if (adjusted)
+                {
+                    return adjustedLevel;
+                }
+
+                // Fallback to master volume
+                bool fallbackSuccess = WithMasterEndpointVolume(master =>
+                {
+                    if (master.GetMasterVolumeLevelScalar(out float current) < 0) return false;
                     float next = Math.Clamp(current + delta, 0.0f, 1.0f);
                     Guid context = Guid.Empty;
-                    if (volume.SetMasterVolume(next, ref context) < 0) return false;
+                    if (master.SetMasterVolumeLevelScalar(next, ref context) < 0) return false;
                     adjustedLevel = next;
                     return true;
                 });
-                return adjusted ? adjustedLevel : -1.0f;
+
+                return fallbackSuccess ? adjustedLevel : -1.0f;
             }
         }
 
@@ -121,13 +169,32 @@ namespace LabMediaWidget
             lock (AudioGate)
             {
                 float result = 1.0f;
-                VisitMatchingVolumes(activeAppHint, volume =>
+                bool found = false;
+
+                if (!string.IsNullOrWhiteSpace(activeAppHint))
                 {
-                    if (volume.GetMasterVolume(out float level) < 0) return false;
-                    result = level;
+                    found = VisitMatchingVolumes(activeAppHint, volume =>
+                    {
+                        if (volume.GetMasterVolume(out float level) < 0) return false;
+                        result = level;
+                        return true;
+                    }, stopAfterSuccess: true);
+                }
+
+                if (found)
+                {
+                    return result;
+                }
+
+                float masterLevel = 1.0f;
+                bool fallbackSuccess = WithMasterEndpointVolume(master =>
+                {
+                    if (master.GetMasterVolumeLevelScalar(out float level) < 0) return false;
+                    masterLevel = level;
                     return true;
-                }, stopAfterSuccess: true);
-                return result;
+                });
+
+                return fallbackSuccess ? masterLevel : 1.0f;
             }
         }
 
@@ -136,10 +203,26 @@ namespace LabMediaWidget
             lock (AudioGate)
             {
                 float clamped = Math.Clamp(level, 0.0f, 1.0f);
-                return VisitMatchingVolumes(activeAppHint, volume =>
+                bool applied = false;
+
+                if (!string.IsNullOrWhiteSpace(activeAppHint))
+                {
+                    applied = VisitMatchingVolumes(activeAppHint, volume =>
+                    {
+                        Guid context = Guid.Empty;
+                        return volume.SetMasterVolume(clamped, ref context) >= 0;
+                    });
+                }
+
+                if (applied)
+                {
+                    return true;
+                }
+
+                return WithMasterEndpointVolume(master =>
                 {
                     Guid context = Guid.Empty;
-                    return volume.SetMasterVolume(clamped, ref context) >= 0;
+                    return master.SetMasterVolumeLevelScalar(clamped, ref context) >= 0;
                 });
             }
         }
@@ -149,8 +232,20 @@ namespace LabMediaWidget
             lock (AudioGate)
             {
                 bool muted = false;
-                VisitMatchingVolumes(activeAppHint, volume => volume.GetMute(out muted) >= 0, stopAfterSuccess: true);
-                return muted;
+                bool found = false;
+
+                if (!string.IsNullOrWhiteSpace(activeAppHint))
+                {
+                    found = VisitMatchingVolumes(activeAppHint, volume => volume.GetMute(out muted) >= 0, stopAfterSuccess: true);
+                }
+
+                if (found)
+                {
+                    return muted;
+                }
+
+                bool fallbackSuccess = WithMasterEndpointVolume(master => master.GetMute(out muted) >= 0);
+                return fallbackSuccess ? muted : false;
             }
         }
 
@@ -158,11 +253,55 @@ namespace LabMediaWidget
         {
             lock (AudioGate)
             {
-                return VisitMatchingVolumes(activeAppHint, volume =>
+                bool applied = false;
+
+                if (!string.IsNullOrWhiteSpace(activeAppHint))
+                {
+                    applied = VisitMatchingVolumes(activeAppHint, volume =>
+                    {
+                        Guid context = Guid.Empty;
+                        return volume.SetMute(muted, ref context) >= 0;
+                    });
+                }
+
+                if (applied)
+                {
+                    return true;
+                }
+
+                return WithMasterEndpointVolume(master =>
                 {
                     Guid context = Guid.Empty;
-                    return volume.SetMute(muted, ref context) >= 0;
+                    return master.SetMute(muted, ref context) >= 0;
                 });
+            }
+        }
+
+        private static bool WithMasterEndpointVolume(Func<IAudioEndpointVolume, bool> action)
+        {
+            IMMDeviceEnumerator? deviceEnumerator = null;
+            IMMDevice? device = null;
+            object? endpointObject = null;
+            try
+            {
+                deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+                if (deviceEnumerator.GetDefaultAudioEndpoint(0, 0, out device) < 0 || device == null)
+                    return false;
+
+                Guid endpointId = typeof(IAudioEndpointVolume).GUID;
+                if (device.Activate(ref endpointId, 1, IntPtr.Zero, out endpointObject) < 0
+                    || endpointObject is not IAudioEndpointVolume masterVolume)
+                    return false;
+
+                return action(masterVolume);
+            }
+            catch (COMException) { return false; }
+            catch (InvalidCastException) { return false; }
+            finally
+            {
+                ReleaseComObject(endpointObject);
+                ReleaseComObject(device);
+                ReleaseComObject(deviceEnumerator);
             }
         }
 
@@ -176,6 +315,7 @@ namespace LabMediaWidget
             object? managerObject = null;
             IAudioSessionEnumerator? sessionEnumerator = null;
             bool anySuccess = false;
+            var candidates = new List<(IAudioSessionControl session, ISimpleAudioVolume volume, int state)>();
 
             try
             {
@@ -193,28 +333,39 @@ namespace LabMediaWidget
 
                 for (int i = 0; i < sessionCount; i++)
                 {
-                    IAudioSessionControl? session = null;
-                    try
-                    {
-                        if (sessionEnumerator.GetSession(i, out session) < 0 || session == null
-                            || session is not IAudioSessionControl2 session2
-                            || session is not ISimpleAudioVolume volume
-                            || session2.GetProcessId(out uint processId) < 0)
-                            continue;
+                    if (sessionEnumerator.GetSession(i, out IAudioSessionControl session) < 0 || session == null)
+                        continue;
 
-                        string processName = string.Empty;
-                        try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
-                        if (!IsMediaProcess(processName, activeAppHint)) continue;
-
-                        if (visitor(volume))
-                        {
-                            anySuccess = true;
-                            if (stopAfterSuccess) break;
-                        }
-                    }
-                    finally
+                    if (session is not IAudioSessionControl2 session2
+                        || session is not ISimpleAudioVolume volume
+                        || session2.GetProcessId(out uint processId) < 0)
                     {
                         ReleaseComObject(session);
+                        continue;
+                    }
+
+                    string processName = string.Empty;
+                    try { processName = Process.GetProcessById((int)processId).ProcessName; } catch { }
+                    if (!IsMediaProcess(processName, activeAppHint))
+                    {
+                        ReleaseComObject(session);
+                        continue;
+                    }
+
+                    int state = 0;
+                    session.GetState(out state);
+                    candidates.Add((session, volume, state));
+                }
+
+                bool hasActive = candidates.Exists(c => c.state == 1);
+                var targets = hasActive ? candidates.FindAll(c => c.state == 1) : candidates;
+
+                foreach (var candidate in targets)
+                {
+                    if (visitor(candidate.volume))
+                    {
+                        anySuccess = true;
+                        if (stopAfterSuccess) break;
                     }
                 }
             }
@@ -222,6 +373,10 @@ namespace LabMediaWidget
             catch (InvalidCastException) { }
             finally
             {
+                foreach (var candidate in candidates)
+                {
+                    ReleaseComObject(candidate.session);
+                }
                 ReleaseComObject(sessionEnumerator);
                 ReleaseComObject(managerObject);
                 ReleaseComObject(device);
@@ -241,11 +396,13 @@ namespace LabMediaWidget
                 string hint = activeAppHint.Trim().ToLowerInvariant().Replace(".exe", "");
                 if (hint.Contains("spotify") && name.Contains("spotify")) return true;
                 if ((hint.Contains("edge") || hint.Contains("msedge")) && name.Contains("msedge")) return true;
-                if (hint.Contains("firefox") && name.Contains("firefox")) return true;
+                if ((hint.Contains("firefox") || hint.Contains("308046b0af4a39cb") || hint.Contains("mozilla")) && name.Contains("firefox")) return true;
                 if (hint.Contains("brave") && name.Contains("brave")) return true;
                 if (hint.Contains("opera") && name.Contains("opera")) return true;
                 if (hint.Contains("vlc") && name.Contains("vlc")) return true;
                 if (hint.Contains("chrome") && name.Contains("chrome")) return true;
+                if ((hint.Contains("applemusic") || hint.Contains("apple music") || hint.Contains("apple.music"))
+                    && (name.Contains("applemusic") || name.Contains("apple music"))) return true;
                 if (hint.Contains("youtube") && !HasBrowserIdentity(hint) && IsBrowserProcess(name)) return true;
                 if ((hint.Contains("youtube") || hint.Contains("ytmusic") || hint.Contains("ytmdesktop") || hint.Contains("labsuite-music"))
                     && (name.Contains("ytm") || name.Contains("youtube") || name.Contains("labsuite-music") || IsBrowserProcess(name)))
@@ -255,21 +412,25 @@ namespace LabMediaWidget
 
             return name.Contains("spotify") || name.Contains("chrome") || name.Contains("msedge")
                 || name.Contains("firefox") || name.Contains("brave") || name.Contains("opera")
-                || name.Contains("vlc") || name.Contains("wmplayer");
+                || name.Contains("vlc") || name.Contains("wmplayer")
+                || name.Contains("applemusic") || name.Contains("apple music");
         }
 
         private static bool IsBrowserProcess(string processName)
         {
-            return processName.Contains("chrome") || processName.Contains("msedge")
-                || processName.Contains("firefox") || processName.Contains("brave")
-                || processName.Contains("opera");
+            string name = processName.ToLowerInvariant();
+            return name.Contains("chrome") || name.Contains("msedge")
+                || name.Contains("firefox") || name.Contains("brave")
+                || name.Contains("opera");
         }
 
         private static bool HasBrowserIdentity(string hint)
         {
-            return hint.Contains("chrome") || hint.Contains("edge")
-                || hint.Contains("firefox") || hint.Contains("brave")
-                || hint.Contains("opera");
+            string h = hint.ToLowerInvariant();
+            return h.Contains("chrome") || h.Contains("edge")
+                || h.Contains("firefox") || h.Contains("brave")
+                || h.Contains("opera") || h.Contains("308046b0af4a39cb")
+                || h.Contains("mozilla");
         }
 
         private static void ReleaseComObject(object? value)

@@ -6,7 +6,6 @@ const { spawn } = require('child_process');
 const readline = require('readline');
 const db = require('./database');
 const queueProvider = require('./labmediaQueue');
-const { YouTubeLibraryProvider } = require('./youtubeLibrary');
 const { YTMDesktopProvider } = require('./ytmDesktopProvider');
 
 const DEFAULT_LABMEDIA_SETTINGS = Object.freeze({
@@ -57,13 +56,6 @@ const ytmDesktopProvider = new YTMDesktopProvider({
   onChange: () => {
     updateQueueForSession(lastSessionInfo);
     updateYTMDesktopRuntime();
-    notifyStatusChanged();
-  }
-});
-const youtubeLibraryProvider = new YouTubeLibraryProvider({
-  openPlayback: request => ytmDesktopProvider.playLibraryItem(request),
-  onChange: state => {
-    sendRuntimeMessage({ type: 'library:update', library: state });
     notifyStatusChanged();
   }
 });
@@ -262,7 +254,6 @@ function getStatus() {
       error: 'LabMedia is supported only on Windows 11.',
       session: lastSessionInfo,
       queue: currentQueueState,
-      youtubeLibrary: getYouTubeSettingsStatus(),
       ytmDesktop: getYTMDesktopSettingsStatus()
     };
   }
@@ -276,20 +267,7 @@ function getStatus() {
     error: currentError,
     session: lastSessionInfo,
     queue: currentQueueState,
-    youtubeLibrary: getYouTubeSettingsStatus(),
     ytmDesktop: getYTMDesktopSettingsStatus()
-  };
-}
-
-function getYouTubeSettingsStatus() {
-  const state = youtubeLibraryProvider.getState();
-  return {
-    connection: state.connection,
-    library: {
-      status: state.library.status,
-      message: state.library.message,
-      playlistCount: state.library.playlists.length
-    }
   };
 }
 
@@ -359,12 +337,6 @@ function updateYTMDesktopRuntime(target = childProcess) {
   return state;
 }
 
-function updateLibraryRuntime(target = childProcess) {
-  const library = youtubeLibraryProvider.getState();
-  sendRuntimeMessage({ type: 'library:update', library }, target);
-  return library;
-}
-
 function handleStdoutLine(line) {
   if (!line || !line.trim()) return;
   try {
@@ -373,7 +345,6 @@ function handleStdoutLine(line) {
 
     if (data.event === 'ready') {
       updateQueueForSession(lastSessionInfo);
-      updateLibraryRuntime();
       updateYTMDesktopRuntime();
       if (currentState === 'starting') {
         currentState = currentError ? 'error' : 'no_session';
@@ -474,20 +445,6 @@ function handleStdoutLine(line) {
           });
           sendRuntimeMessage({ type: 'queue:update', queue: currentQueueState });
         });
-    } else if (data.event === 'libraryAction') {
-      if (String(data.action || '') === 'openOAuthSettings') {
-        navigateMainWindow('settings');
-        return;
-      }
-      youtubeLibraryProvider.handleAction(String(data.action || ''), {
-        playlistId: String(data.playlistId || ''),
-        videoId: String(data.videoId || '')
-      }).then(() => {
-        updateLibraryRuntime();
-      }).catch(() => {
-        updateLibraryRuntime();
-        notifyStatusChanged();
-      });
     } else if (data.event === 'error') {
       console.error('mediaWidget native helper error:', data.message);
       currentError = String(data.message || 'Unknown native helper error');
@@ -781,7 +738,6 @@ function initMediaWidget(getMainWindowArg) {
   if (initialized) return;
   initialized = true;
   ytmDesktopProvider.initialize().catch(() => {});
-  youtubeLibraryProvider.initialize().catch(() => {});
   if (!isSupported()) {
     currentState = 'unsupported';
     return;
@@ -794,35 +750,8 @@ function initMediaWidget(getMainWindowArg) {
 
   app.on('before-quit', () => {
     ytmDesktopProvider.shutdown();
-    youtubeLibraryProvider.shutdown();
     stopWidget();
   });
-}
-
-async function connectYouTube() {
-  await youtubeLibraryProvider.handleAction('connect');
-  return getStatus();
-}
-
-async function reconnectYouTube() {
-  await youtubeLibraryProvider.handleAction('reconnect');
-  return getStatus();
-}
-
-async function disconnectYouTube() {
-  await youtubeLibraryProvider.handleAction('disconnect');
-  return getStatus();
-}
-
-async function refreshYouTubeLibrary() {
-  await youtubeLibraryProvider.handleAction('refresh');
-  return getStatus();
-}
-
-async function refreshYouTubeSetupState() {
-  await youtubeLibraryProvider.initialize();
-  updateLibraryRuntime();
-  return getStatus();
 }
 
 async function installYTMDesktop() {
@@ -859,10 +788,6 @@ async function refreshYTMDesktop() {
   return getStatus();
 }
 
-function openYouTubeOAuthSettings() {
-  return navigateMainWindow('settings');
-}
-
 function sendMediaAction(action = 'playPause', params = {}) {
   if (process.platform !== 'win32') return false;
   const scriptPath = path.join(__dirname, 'controlSmtc.ps1');
@@ -892,12 +817,6 @@ module.exports = {
   writeConfigFile,
   getStatus,
   getHistory,
-  connectYouTube,
-  reconnectYouTube,
-  disconnectYouTube,
-  refreshYouTubeLibrary,
-  refreshYouTubeSetupState,
-  openYouTubeOAuthSettings,
   installYTMDesktop,
   launchYTMDesktop,
   pairYTMDesktop,

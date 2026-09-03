@@ -1556,7 +1556,6 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
         const detail = String(driveInfo?.error || 'Google Drive could not be reached with the refreshed authorization.');
         throw new Error(`Google authorization completed, but Drive verification failed: ${detail}`);
       }
-      await mediaWidget.refreshYouTubeSetupState();
       tray.refreshTrayHealth?.({ sampleRemote: false });
       return result;
     } finally {
@@ -2117,11 +2116,6 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
   ipcMain.handle('labmedia:updateSettings', async (_event, { updates } = {}) => mediaWidget.updateSettings(updates));
   ipcMain.handle('labmedia:resetSettings', async () => mediaWidget.resetSettings());
   ipcMain.handle('labmedia:restart', async () => mediaWidget.restartWidget());
-  ipcMain.handle('labmedia:youtubeConnect', async () => mediaWidget.connectYouTube());
-  ipcMain.handle('labmedia:youtubeReconnect', async () => mediaWidget.reconnectYouTube());
-  ipcMain.handle('labmedia:youtubeDisconnect', async () => mediaWidget.disconnectYouTube());
-  ipcMain.handle('labmedia:youtubeRefresh', async () => mediaWidget.refreshYouTubeLibrary());
-  ipcMain.handle('labmedia:openYouTubeOAuthSettings', async () => mediaWidget.openYouTubeOAuthSettings());
   ipcMain.handle('labmedia:ytmdInstall', async () => mediaWidget.installYTMDesktop());
   ipcMain.handle('labmedia:ytmdLaunch', async () => mediaWidget.launchYTMDesktop());
   ipcMain.handle('labmedia:ytmdPair', async () => mediaWidget.pairYTMDesktop());

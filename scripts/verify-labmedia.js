@@ -131,6 +131,8 @@ function testIpcChannelsAllowlist() {
   assert.ok(ipcSource.includes('handleInstalledAppsChanged'), 'App installation changes must control the LabMedia helper');
 
   const supervisorSource = fs.readFileSync(path.join(ROOT, 'main', 'mediaWidget.js'), 'utf8');
+  assert.ok(!preloadSource.includes('labmedia:youtube'), 'Preload INVOKE_CHANNELS must not include obsolete labmedia:youtube channels');
+  assert.ok(!ipcSource.includes('labmedia:youtube'), 'IPC must not register obsolete labmedia:youtube channels');
   assert.ok(supervisorSource.includes('intentionalStops'), 'Supervisor must track intentional stops per child process');
   assert.ok(supervisorSource.includes("spawnedProcess.once('error'"), 'Supervisor must handle child spawn errors');
   assert.ok(supervisorSource.includes('if (!isInstalled() || !settings.enabled)'), 'Supervisor must require installation before launch');
@@ -173,6 +175,11 @@ function testNativeSourceIntegrity() {
   const mainWinXaml = fs.readFileSync(path.join(nativeDir, 'MainWindow.xaml'), 'utf8');
   const panelSource = fs.readFileSync(path.join(nativeDir, 'NowPlayingPanel.xaml.cs'), 'utf8');
   const panelXaml = fs.readFileSync(path.join(nativeDir, 'NowPlayingPanel.xaml'), 'utf8');
+  const queueModelsSource = fs.readFileSync(path.join(nativeDir, 'QueueModels.cs'), 'utf8');
+  const supervisorSource = fs.readFileSync(path.join(ROOT, 'main', 'mediaWidget.js'), 'utf8');
+  const ipcSource = fs.readFileSync(path.join(ROOT, 'main', 'ipc.js'), 'utf8');
+  const preloadSource = fs.readFileSync(path.join(ROOT, 'main', 'preload.js'), 'utf8');
+  const rendererSource = fs.readFileSync(path.join(ROOT, 'renderer', 'apps', 'LabMedia.jsx'), 'utf8');
   assert.ok(configModelSource.includes('Theme'), 'ConfigModel must include Theme property');
   assert.ok(configModelSource.includes('PrimaryClickAction') && configModelSource.includes('TaskbarControlMode'),
     'ConfigModel must include progressive-disclosure schema-v2 settings');
@@ -235,6 +242,112 @@ function testNativeSourceIntegrity() {
   assert.ok(!panelSource.includes('Set up in LabSuite'),
     'The flyout must not show the obsolete LabSuite Music setup action');
 
+  // --- Volume & Master Fallback Architectural Contracts (R1) ---
+  assert.ok(appVolumeSource.includes('interface IAudioEndpointVolume'),
+    'AppVolume.cs must declare IAudioEndpointVolume');
+  assert.ok(appVolumeSource.includes('5BC64874-384D-4946-8098-220F49F31E00'),
+    'AppVolume.cs must declare IAudioEndpointVolume with GUID 5BC64874-384D-4946-8098-220F49F31E00');
+  assert.ok(appVolumeSource.includes('WithMasterEndpointVolume'),
+    'AppVolume.cs must define WithMasterEndpointVolume helper');
+
+  const adjustMethodIndex = appVolumeSource.indexOf('AdjustMediaVolume(');
+  const getMethodIndex = appVolumeSource.indexOf('GetMediaVolume(');
+  const setMethodIndex = appVolumeSource.indexOf('SetMediaVolume(');
+  assert.ok(adjustMethodIndex !== -1 && getMethodIndex !== -1 && setMethodIndex !== -1,
+    'AppVolume.cs must contain AdjustMediaVolume, GetMediaVolume, and SetMediaVolume methods');
+  const adjustChunk = appVolumeSource.slice(adjustMethodIndex, getMethodIndex);
+  assert.ok(adjustChunk.includes('WithMasterEndpointVolume'),
+    'AppVolume.cs AdjustMediaVolume must fall back to master volume via WithMasterEndpointVolume');
+  const getChunk = appVolumeSource.slice(getMethodIndex, setMethodIndex);
+  assert.ok(getChunk.includes('WithMasterEndpointVolume'),
+    'AppVolume.cs GetMediaVolume must fall back to master volume via WithMasterEndpointVolume');
+
+  assert.ok(panelSource.includes('SyncVolumeLevel(float level)'),
+    'NowPlayingPanel.xaml.cs must define SyncVolumeLevel(float level)');
+
+  assert.ok(mainWinSource.includes('_panel?.SyncVolumeLevel'),
+    'MainWindow.xaml.cs must call SyncVolumeLevel on mouse wheel scroll');
+  assert.ok(mainWinSource.includes('TxtVolToast.Text =') && mainWinSource.includes('VolToastBorder.Visibility = Visibility.Visible'),
+    'MainWindow.xaml.cs must display volume toast on mouse wheel scroll');
+
+  assert.ok(appVolumeSource.includes('308046b0af4a39cb'),
+    'AppVolume.cs must recognize Firefox numeric AUMID 308046b0af4a39cb');
+  assert.ok(smtcSource.includes('308046b0af4a39cb'),
+    'SmtcManager.cs must recognize Firefox numeric AUMID 308046b0af4a39cb');
+  assert.ok(appVolumeSource.includes('applemusic') && smtcSource.includes('applemusic'),
+    'Session matching in AppVolume.cs and SmtcManager.cs must recognize Apple Music');
+
+  assert.ok(appVolumeSource.includes('state == 1'),
+    'AppVolume.cs session matching must check for active audio session state (state == 1)');
+  assert.ok(appVolumeSource.includes('candidates.FindAll(c => c.state == 1)'),
+    'AppVolume.cs session matching must prioritize active sessions over inactive background tabs');
+
+  // --- Rating Actions & SMTC Disabling Architectural Contracts (R2) ---
+  assert.ok(!smtcSource.includes('LikeCurrentTrack'),
+    'SmtcManager.cs must contain zero occurrences of LikeCurrentTrack');
+  assert.ok(!smtcSource.includes('DislikeCurrentTrack'),
+    'SmtcManager.cs must contain zero occurrences of DislikeCurrentTrack');
+  assert.ok(!smtcSource.includes('LikeState'),
+    'MediaSessionState in SmtcManager.cs must contain zero occurrences of LikeState');
+
+  assert.ok(panelSource.includes('BtnLike.IsEnabled = false;') && panelSource.includes('BtnDislike.IsEnabled = false;'),
+    'NowPlayingPanel.xaml.cs must initialize rating buttons disabled');
+  assert.ok(panelSource.includes('BtnLike.ToolTip = "Ratings are not supported for this player"')
+    && panelSource.includes('BtnDislike.ToolTip = "Ratings are not supported for this player"'),
+    'NowPlayingPanel.xaml.cs must maintain rating buttons disabled on unsupported sessions with tooltip "Ratings are not supported for this player"');
+
+  assert.ok(panelSource.includes('_ytmdState.Active && (_ytmdState.Capabilities?.CanLike ?? false)'),
+    'NowPlayingPanel.xaml.cs BtnLike_Click must guard against dispatching when _ytmdState.Active is false or CanLike is missing');
+  assert.ok(panelSource.includes('_ytmdState.Active && (_ytmdState.Capabilities?.CanDislike ?? false)'),
+    'NowPlayingPanel.xaml.cs BtnDislike_Click must guard against dispatching when _ytmdState.Active is false or CanDislike is missing');
+
+  // --- YouTube Library Clean Removal Architectural Contracts (R3) ---
+  assert.ok(!panelXaml.includes('BtnLibraryTab'),
+    'NowPlayingPanel.xaml must contain no BtnLibraryTab');
+  assert.ok(!panelXaml.includes('LibraryContent'),
+    'NowPlayingPanel.xaml must contain no LibraryContent');
+
+  assert.ok(!panelSource.includes('YouTubeLibraryState'),
+    'NowPlayingPanel.xaml.cs must contain no YouTubeLibraryState field');
+  assert.ok(!panelSource.includes('UpdateLibraryState'),
+    'NowPlayingPanel.xaml.cs must contain no UpdateLibraryState method');
+  assert.ok(!panelSource.includes('BtnLibraryTab_Click'),
+    'NowPlayingPanel.xaml.cs must contain no BtnLibraryTab_Click handler');
+  assert.ok(!panelSource.includes('BtnLibraryConnect_Click'),
+    'NowPlayingPanel.xaml.cs must contain no BtnLibraryConnect_Click handler');
+
+  assert.ok(!mainWinSource.includes('SanitizeLibraryState'),
+    'MainWindow.xaml.cs must contain no SanitizeLibraryState');
+
+  assert.ok(!queueModelsSource.includes('YouTubeLibraryState'),
+    'QueueModels.cs must contain no YouTubeLibraryState');
+  assert.ok(!queueModelsSource.includes('LibraryContentState'),
+    'QueueModels.cs must contain no LibraryContentState');
+
+  assert.ok(!supervisorSource.includes('youtubeLibraryProvider'),
+    'main/mediaWidget.js must contain no youtubeLibraryProvider');
+  const ytExports = [
+    'connectYouTube',
+    'reconnectYouTube',
+    'disconnectYouTube',
+    'refreshYouTubeLibrary',
+    'refreshYouTubeSetupState',
+    'openYouTubeOAuthSettings'
+  ];
+  for (const exp of ytExports) {
+    assert.ok(!supervisorSource.includes(exp), `main/mediaWidget.js must contain no YouTube library export '${exp}'`);
+  }
+
+  assert.ok(!ipcSource.includes('labmedia:youtube'),
+    'main/ipc.js must contain no labmedia:youtube* channels');
+  assert.ok(!preloadSource.includes('labmedia:youtube'),
+    'main/preload.js must contain no labmedia:youtube* channels');
+
+  assert.ok(!rendererSource.includes('YouTubeConnection'),
+    'renderer/apps/LabMedia.jsx must contain no YouTubeConnection component');
+  assert.ok(!rendererSource.includes('YouTube Library'),
+    'renderer/apps/LabMedia.jsx must contain no YouTube Library settings card');
+
   console.log('labmedia-test: native source integrity tests passed.');
 }
 
@@ -286,6 +399,10 @@ function testSettingsInformationArchitecture() {
     'Settings UI must configure schema-v2 progressive disclosure controls');
   assert.ok(rendererSource.includes('Queue data is provider-controlled'),
     'Expanded Panel settings must explain honest provider queue availability');
+  assert.ok(!rendererSource.includes('YouTubeConnection'),
+    'Settings must not include obsolete YouTubeConnection component');
+  assert.ok(!rendererSource.includes('YouTube Library'),
+    'Settings must not include YouTube Library card');
 
   console.log('labmedia-test: settings information architecture tests passed.');
 }

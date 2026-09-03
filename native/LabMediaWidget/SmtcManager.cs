@@ -44,7 +44,6 @@ namespace LabMediaWidget
         public bool CanRepeat { get; set; }
         public bool ShuffleActive { get; set; }
         public string RepeatMode { get; set; } = "none";
-        public string LikeState { get; set; } = "none";
         public IReadOnlyList<MediaSessionSummary> Sessions { get; set; } = Array.Empty<MediaSessionSummary>();
         public int SessionCount => Sessions.Count;
     }
@@ -375,7 +374,8 @@ namespace LabMediaWidget
             if (lower.Contains("spotify")) return "Spotify";
             if (lower.Contains("chrome")) return "YouTube / Chrome";
             if (lower.Contains("msedge") || lower.Contains("edge")) return "YouTube / Edge";
-            if (lower.Contains("firefox")) return "YouTube / Firefox";
+            if (lower.Contains("firefox") || lower.Contains("308046b0af4a39cb") || lower.Contains("mozilla")) return "YouTube / Firefox";
+            if (lower.Contains("applemusic") || lower.Contains("apple music") || lower.Contains("apple.music")) return "Apple Music";
             if (lower.Contains("brave")) return "YouTube / Brave";
             if (lower.Contains("opera")) return "YouTube / Opera";
             if (lower.Contains("youtubemusic") || lower.Contains("youtube music")) return "YouTube Music";
@@ -421,19 +421,7 @@ namespace LabMediaWidget
             await SeekToAsync(target);
         }
 
-        public void LikeCurrentTrack()
-        {
-            if (_currentSession == null) return;
-            CurrentSessionState.LikeState = CurrentSessionState.LikeState == "liked" ? "none" : "liked";
-            SessionStateChanged?.Invoke(this, CurrentSessionState);
-        }
 
-        public void DislikeCurrentTrack()
-        {
-            if (_currentSession == null) return;
-            CurrentSessionState.LikeState = CurrentSessionState.LikeState == "disliked" ? "none" : "disliked";
-            SessionStateChanged?.Invoke(this, CurrentSessionState);
-        }
 
         public async Task ToggleShuffleAsync()
         {
@@ -473,7 +461,8 @@ namespace LabMediaWidget
             string targetProcess = "Spotify";
             if (appId.Contains("chrome")) targetProcess = "chrome";
             else if (appId.Contains("msedge") || appId.Contains("edge")) targetProcess = "msedge";
-            else if (appId.Contains("firefox")) targetProcess = "firefox";
+            else if (appId.Contains("firefox") || appId.Contains("308046b0af4a39cb") || appId.Contains("mozilla")) targetProcess = "firefox";
+            else if (appId.Contains("applemusic") || appId.Contains("apple music")) targetProcess = "AppleMusic";
             else if (appId.Contains("brave")) targetProcess = "brave";
             else if (appId.Contains("opera")) targetProcess = "opera";
             else if (appId.Contains("vlc")) targetProcess = "vlc";
