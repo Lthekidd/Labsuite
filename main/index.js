@@ -263,6 +263,24 @@ app.on('browser-window-created', (_event, win) => {
   attachWindowDiagnostics(win);
 });
 
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() === 'webview') {
+    contents.setWindowOpenHandler(({ url }) => {
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'cryptpad.fr' || parsed.hostname.endsWith('.cryptpad.fr') || parsed.hostname.endsWith('.cryptpad.info')) {
+          contents.loadURL(url);
+          return { action: 'deny' };
+        }
+      } catch (_) {}
+      if (url && (url.startsWith('http:') || url.startsWith('https:'))) {
+        electronShell.openExternal(url).catch(() => {});
+      }
+      return { action: 'deny' };
+    });
+  }
+});
+
 app.on('child-process-gone', (_event, details) => {
   console.error('LabSuite diagnostics: Electron child process gone.', details || {});
   crashMonitor.report('childProcessGone', new Error('Electron child process gone'), details || {});
@@ -526,10 +544,11 @@ function createAppWindow(appId, extraParams = {}) {
     return existing;
   }
 
+  const isCryptPad = appId === 'cryptpad';
   const appIconPath = resolveAppIconPath(appId);
   const win = new BrowserWindow({
-    width: 1100,
-    height: 700,
+    width: isCryptPad ? 1280 : 1100,
+    height: isCryptPad ? 820 : 700,
     minWidth: 800,
     minHeight: 500,
     icon: appIconPath,
@@ -540,6 +559,7 @@ function createAppWindow(appId, extraParams = {}) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webviewTag: isCryptPad,
       preload: path.join(__dirname, 'preload.js'),
     }
   });

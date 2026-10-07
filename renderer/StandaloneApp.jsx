@@ -15,12 +15,14 @@ const LabShot = lazy(() => import('./apps/LabShot'));
 const LabShotOverlay = lazy(() => import('./apps/LabShotOverlay'));
 const LabShotPin = lazy(() => import('./apps/LabShotPin'));
 const LabHWMonitor = lazy(() => import('./apps/LabHWMonitor'));
+const CryptPadSheets = lazy(() => import('./apps/CryptPadSheets'));
 
 const ipcRenderer = window.electron?.ipcRenderer;
 
 // ── App metadata for titlebars ──────────────────────────────────────────────
 const APP_META = {
   sheets:       { title: 'Encrypted Tables', icon: 'sheets', color: '#8b5cf6' },
+  cryptpad:     { title: 'CryptPad Sheets', icon: 'cryptpad', color: '#00a389' },
   notebook:     { title: 'Secure Notebook', icon: 'notebook', color: '#f59e0b' },
   todo:         { title: 'Task Board', icon: 'todo', color: '#ec4899' },
   lan:          { title: 'Network Drive', icon: 'lan', color: '#10b981' },
@@ -64,6 +66,8 @@ export default function StandaloneApp({ appId, filePath }) {
     switch (appId) {
       case 'sheets':
         return <LabSuiteSheets />;
+      case 'cryptpad':
+        return <CryptPadSheets />;
       case 'notebook':
         return <LabSuiteNotebook externalFilePath={filePath || null} />;
       case 'todo':

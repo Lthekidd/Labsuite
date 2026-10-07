@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.10.48 - 2026-10-07
+
+### CryptPad Sheets: Real-Time Collaborative Encrypted Spreadsheets
+
+- **CryptPad Sheets App Hub Integration**:
+  - Added **CryptPad Sheets** as an installable standalone productivity app in the App Hub on both Windows and macOS.
+  - Multi-user real-time live typing, collaboration, and cursor tracking with zero-knowledge end-to-end encryption.
+  - Full spreadsheet feature set powered by OnlyOffice (formulas, multi-tab workbooks, Excel `.xlsx`/`.csv` import/export, formatting).
+  - Isolated `<webview>` environment with persistent session storage (`partition="persist:cryptpad"`), preserving logins and sheets across app launches.
+  - Custom in-app toolbar featuring Back, Forward, Reload, New Sheet, CryptDrive folder navigation, external browser delegation, and live encryption status.
+  - Added Phosphor `FileXls` spreadsheet app icon and standalone window management with native titlebar controls.
+
 ## 2.10.47 - 2026-09-03
 
 ### LabMedia Polish: Reliable Volume Control, Fixed Like/Dislike, and YouTube Library Removal

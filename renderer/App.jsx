@@ -23,6 +23,7 @@ const WORKSPACE_LOADERS = {
   notebook: createModuleLoader(() => import('./apps/LabSuiteNotebook')),
   settings: createModuleLoader(() => import('./apps/LabSuiteSettings')),
   sheets: createModuleLoader(() => import('./apps/LabSuiteSheets')),
+  cryptpad: createModuleLoader(() => import('./apps/CryptPadSheets')),
   todo: createModuleLoader(() => import('./apps/LabSuiteTodo')),
   lan: createModuleLoader(() => import('./apps/LanPeerDrive')),
   'vm-protect': createModuleLoader(() => import('./apps/VMProtect')),
@@ -55,6 +56,7 @@ const WORKSPACE_REGISTRY = {
   hwmonitor: { id: 'hwmonitor', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.hwmonitor },
   lan: { id: 'lan', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.lan },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
+  cryptpad: { id: 'cryptpad', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.cryptpad },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
   'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] },
   wol: { id: 'wol', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.wol },
@@ -87,7 +89,7 @@ const SHUTDOWN_PRESETS = [
 const CORE_APP_IDS = new Set(['backup', 'telegram', 'crypto', 'settings']);
 
 // Apps that open in standalone windows (not embedded in sidebar content area)
-const STANDALONE_APP_IDS = new Set(['sheets', 'vm-protect', 'todo']);
+const STANDALONE_APP_IDS = new Set(['sheets', 'vm-protect', 'todo', 'cryptpad']);
 
 function parseInstalledApps(value) {
   try {

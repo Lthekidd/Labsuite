@@ -12,6 +12,7 @@ import { Table } from '@phosphor-icons/react/Table';
 import { TelegramLogo } from '@phosphor-icons/react/TelegramLogo';
 import { Power } from '@phosphor-icons/react/Power';
 import { MusicNotes } from '@phosphor-icons/react/MusicNotes';
+import { FileXls } from '@phosphor-icons/react/FileXls';
 import LabShotMark from './LabShotMark';
 import LabMediaMark from './LabMediaMark';
 
@@ -22,6 +23,7 @@ const APP_ICONS = {
   crypto: CurrencyBtc,
   notebook: Notebook,
   sheets: Table,
+  cryptpad: FileXls,
   lan: HardDrives,
   'vm-protect': DesktopTower,
   todo: Kanban,
