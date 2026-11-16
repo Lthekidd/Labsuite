@@ -537,6 +537,7 @@ export default function LabSuiteBackup({ active = true }) {
   const [historySize, setHistorySize] = useState(null);   // { bytes, count, loading, error }
   const [trashSize, setTrashSize] = useState(null);       // { bytes, count, loading, error }
   const [auditRunning, setAuditRunning] = useState(false);
+  const [pruningRetention, setPruningRetention] = useState(false);
 
   const [mountInfo, setMountInfo] = useState({ status: 'unmounted', drive: null, error: '' });
   const [showWinfspDialog, setShowWinfspDialog] = useState(false);
@@ -2446,6 +2447,56 @@ export default function LabSuiteBackup({ active = true }) {
       }
     } catch (err) {
       setTrashSize({ bytes: 0, count: 0, loading: false, error: err.message });
+    }
+  };
+
+  const handleUpdateRetentionSetting = async (key, val) => {
+    try {
+      await ipcRenderer.invoke('settings:set', { key, value: String(val) });
+      setSettings(prev => ({ ...prev, [key]: String(val) }));
+      invalidateResource('settings:get');
+    } catch (err) {
+      alert(`Failed to save retention setting: ${err.message}`);
+    }
+  };
+
+  const handleRunRetentionPrune = async () => {
+    const versionDays = Number(settings.backup_version_retention_days) || 30;
+    const trashDays = Number(settings.backup_trash_retention_days) || 30;
+    const maxVersions = Number(settings.backup_min_versions_per_file) || 2;
+
+    const confirmed = confirm(
+      `🛡️ RUN RETENTION PRUNE NOW?\n\n` +
+      `This will immediately purge:\n` +
+      `• Version History older than ${versionDays} days\n` +
+      `• Version History exceeding ${maxVersions} revision${maxVersions > 1 ? 's' : ''} per file (keeps 1 recent + 1 old)\n` +
+      `• Vault Trash older than ${trashDays} days\n\n` +
+      `Your active files and latest backups will NOT be affected.\n\n` +
+      `Proceed with retention cleanup?`
+    );
+    if (!confirmed) return;
+
+    setPruningRetention(true);
+    try {
+      const res = await ipcRenderer.invoke('storage:runRetentionPrune', { historyDays: versionDays, trashDays });
+      if (res && res.success) {
+        alert(
+          `✅ Retention prune completed successfully!\n\n` +
+          `• Expired history folders pruned: ${res.prunedHistoryDirs?.length || 0}\n` +
+          `• Expired trash folders pruned: ${res.prunedTrashDirs?.length || 0}\n\n` +
+          `Cloud storage reclaimed.`
+        );
+      } else {
+        alert(`Retention prune completed with issues: ${res?.error || 'Unknown error'}`);
+      }
+      handleMeasureHistorySize();
+      handleMeasureTrashSize();
+      invalidateResource('auth:getGDriveInfo');
+      loadAppConfigs();
+    } catch (err) {
+      alert(`Retention prune failed: ${err.message}`);
+    } finally {
+      setPruningRetention(false);
     }
   };
 
@@ -6201,6 +6252,152 @@ export default function LabSuiteBackup({ active = true }) {
                           </table>
                         </div>
                       )}
+                    </div>
+
+                    {/* Automatic Storage & Retention Policy Card */}
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>🛡️ Automatic Storage & Retention Policy</span>
+                          </h3>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                            Automatically prune old revisions and trash on backup completion, and receive desktop alerts before storage limits are reached.
+                          </p>
+                        </div>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '6px 14px', fontSize: '12px', fontWeight: 600, color: 'var(--accent-primary)', borderColor: 'rgba(59,130,246,0.3)' }}
+                          disabled={pruningRetention}
+                          onClick={handleRunRetentionPrune}
+                        >
+                          {pruningRetention ? '⏳ Pruning Retention...' : '🧹 Run Retention Prune Now'}
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', fontSize: '12px' }}>
+                        {/* 1. Version History Policy */}
+                        <div style={{ padding: '12px 14px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '8px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📜 Version History Retention</span>
+                          </div>
+
+                          <div style={{ marginBottom: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                              Max Revisions per File:
+                            </label>
+                            <select
+                              className="input"
+                              style={{ width: '100%', padding: '5px 8px', fontSize: '12px', background: 'var(--bg-dark)' }}
+                              value={settings.backup_min_versions_per_file || '2'}
+                              onChange={(e) => handleUpdateRetentionSetting('backup_min_versions_per_file', e.target.value)}
+                            >
+                              <option value="1">1 revision (Latest only)</option>
+                              <option value="2">2 revisions (1 recent + 1 old) [Recommended]</option>
+                              <option value="3">3 revisions</option>
+                              <option value="5">5 revisions</option>
+                              <option value="20">20 revisions (Legacy)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                              Keep Revisions For:
+                            </label>
+                            <select
+                              className="input"
+                              style={{ width: '100%', padding: '5px 8px', fontSize: '12px', background: 'var(--bg-dark)' }}
+                              value={settings.backup_version_retention_days || '30'}
+                              onChange={(e) => handleUpdateRetentionSetting('backup_version_retention_days', e.target.value)}
+                            >
+                              <option value="14">14 days</option>
+                              <option value="30">30 days [Recommended]</option>
+                              <option value="60">60 days</option>
+                              <option value="90">90 days</option>
+                              <option value="99999">Never (Keep indefinitely)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* 2. Vault Trash Policy */}
+                        <div style={{ padding: '12px 14px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '8px', color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>🗑️ Vault Trash Auto-Empty</span>
+                          </div>
+
+                          <div style={{ marginBottom: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                              Auto-Empty Trash Older Than:
+                            </label>
+                            <select
+                              className="input"
+                              style={{ width: '100%', padding: '5px 8px', fontSize: '12px', background: 'var(--bg-dark)' }}
+                              value={settings.backup_trash_retention_days || '30'}
+                              onChange={(e) => handleUpdateRetentionSetting('backup_trash_retention_days', e.target.value)}
+                            >
+                              <option value="7">7 days</option>
+                              <option value="14">14 days</option>
+                              <option value="30">30 days [Recommended]</option>
+                              <option value="60">60 days</option>
+                              <option value="99999">Never (Keep indefinitely)</option>
+                            </select>
+                          </div>
+
+                          <div style={{ marginTop: '14px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '11.5px', color: 'var(--text-main)' }}>
+                              <input
+                                type="checkbox"
+                                checked={settings.backup_auto_prune_enabled !== '0'}
+                                onChange={(e) => handleUpdateRetentionSetting('backup_auto_prune_enabled', e.target.checked ? '1' : '0')}
+                              />
+                              <span>Auto-prune on backup completion</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* 3. Storage Warning Triggers */}
+                        <div style={{ padding: '12px 14px', borderRadius: '6px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '8px', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>🔔 Storage Warning Triggers</span>
+                          </div>
+
+                          <div style={{ marginBottom: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                              Drive Usage Threshold:
+                            </label>
+                            <select
+                              className="input"
+                              style={{ width: '100%', padding: '5px 8px', fontSize: '12px', background: 'var(--bg-dark)' }}
+                              value={settings.storage_warning_percent || '85'}
+                              onChange={(e) => handleUpdateRetentionSetting('storage_warning_percent', e.target.value)}
+                            >
+                              <option value="80">80% capacity</option>
+                              <option value="85">85% capacity [Recommended]</option>
+                              <option value="90">90% capacity</option>
+                              <option value="95">95% capacity</option>
+                              <option value="0">Disabled</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                              Folder Size Warning:
+                            </label>
+                            <select
+                              className="input"
+                              style={{ width: '100%', padding: '5px 8px', fontSize: '12px', background: 'var(--bg-dark)' }}
+                              value={settings.storage_folder_warning_gib || '100'}
+                              onChange={(e) => handleUpdateRetentionSetting('storage_folder_warning_gib', e.target.value)}
+                            >
+                              <option value="50">50 GiB</option>
+                              <option value="100">100 GiB [Recommended]</option>
+                              <option value="200">200 GiB</option>
+                              <option value="500">500 GiB</option>
+                              <option value="0">Disabled</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>

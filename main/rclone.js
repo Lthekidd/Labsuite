@@ -2076,6 +2076,71 @@ async function getTrashSize() {
   return { success: true, bytes: totalBytes, count: totalCount, details };
 }
 
+/**
+ * Prunes version history and trash based on configured retention policies.
+ * @param {object} options
+ * @param {number} [options.historyDays] - Max age in days for version history
+ * @param {number} [options.trashDays] - Max age in days for vault trash
+ */
+async function pruneRetention(options = {}) {
+  const db = require('./database');
+  const historyDays = Number(options.historyDays ?? db.getSetting('backup_version_retention_days')) || 30;
+  const trashDays = Number(options.trashDays ?? db.getSetting('backup_trash_retention_days')) || 30;
+  const remote = getRemote();
+  const now = new Date();
+  const results = { prunedHistoryDirs: [], prunedTrashDirs: [], errors: [] };
+
+  // 1. Prune date-stamped history folders (.labsuite_history and .vaultsync_history)
+  for (const histFolder of ['.labsuite_history', '.vaultsync_history']) {
+    try {
+      const dirs = await listRemoteDir(histFolder);
+      for (const dir of dirs) {
+        if (!dir.IsDir) continue;
+        const dirDate = new Date(dir.Name);
+        if (isNaN(dirDate.getTime())) continue;
+        const diffDays = (now - dirDate) / (1000 * 60 * 60 * 24);
+        if (diffDays > historyDays) {
+          console.log(`pruneRetention: purging expired history folder ${histFolder}/${dir.Name} (${Math.round(diffDays)}d old > ${historyDays}d)`);
+          await runRclone(['purge', `${remote}:${histFolder}/${dir.Name}`], { timeoutMs: 120000 });
+          results.prunedHistoryDirs.push(`${histFolder}/${dir.Name}`);
+        }
+      }
+      await runRclone(['delete', '--min-age', `${historyDays}d`, `${remote}:${histFolder}`], { timeoutMs: 120000 }).catch(() => {});
+      await runRclone(['rmdirs', '--leave-root', `${remote}:${histFolder}`], { timeoutMs: 60000 }).catch(() => {});
+    } catch (err) {
+      if (!isNotFoundError(err)) {
+        results.errors.push({ folder: histFolder, error: err.message });
+      }
+    }
+  }
+
+  // 2. Prune date-stamped trash folders (.labsuite_trash and .vaultsync_trash)
+  for (const trashFolder of ['.labsuite_trash', '.vaultsync_trash']) {
+    try {
+      const dirs = await listRemoteDir(trashFolder);
+      for (const dir of dirs) {
+        if (!dir.IsDir) continue;
+        const dirDate = new Date(dir.Name);
+        if (isNaN(dirDate.getTime())) continue;
+        const diffDays = (now - dirDate) / (1000 * 60 * 60 * 24);
+        if (diffDays > trashDays) {
+          console.log(`pruneRetention: purging expired trash folder ${trashFolder}/${dir.Name} (${Math.round(diffDays)}d old > ${trashDays}d)`);
+          await runRclone(['purge', `${remote}:${trashFolder}/${dir.Name}`], { timeoutMs: 120000 });
+          results.prunedTrashDirs.push(`${trashFolder}/${dir.Name}`);
+        }
+      }
+      await runRclone(['delete', '--min-age', `${trashDays}d`, `${remote}:${trashFolder}`], { timeoutMs: 120000 }).catch(() => {});
+      await runRclone(['rmdirs', '--leave-root', `${remote}:${trashFolder}`], { timeoutMs: 60000 }).catch(() => {});
+    } catch (err) {
+      if (!isNotFoundError(err)) {
+        results.errors.push({ folder: trashFolder, error: err.message });
+      }
+    }
+  }
+
+  return { success: true, ...results };
+}
+
 function moveRemoteFile(remoteFilePath, destinationRemoteFilePath) {
   const remote = getRemote();
 
@@ -2878,6 +2943,7 @@ module.exports = {
   getVaultFolderSize,
   getHistorySize,
   getTrashSize,
+  pruneRetention,
   purgeGoogleDriveFolderById,
   moveRemoteFile,
   restore,

@@ -92,6 +92,8 @@ const INVOKE_CHANNELS = new Set([
   'storage:measureVaultFolderSize',
   'storage:measureHistory',
   'storage:measureTrash',
+  'storage:runRetentionPrune',
+  'storage:checkAlerts',
 
   // Filesystem API
   'filesystem:listDrives',

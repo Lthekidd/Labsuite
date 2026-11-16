@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.10.54 - 2026-11-16
+
+### Automatic Storage Retention Policy, 2-Revision Cap & Storage Warning Triggers
+
+- **Automatic Version History Retention (2-Revision Cap)**:
+  - Configurable maximum revisions per file, defaulting to **2 revisions** (1 recent + 1 previous revision).
+  - Automatically expires and prunes older revisions beyond the cap, permanently preventing runaway storage accumulation.
+  - Configurable revision age window (default: 30 days).
+- **Vault Trash Auto-Empty**:
+  - Automatically purges deleted files from `.labsuite_trash` and `.vaultsync_trash` older than a configurable threshold (default: 30 days).
+  - Auto-pruning runs seamlessly upon backup completion.
+- **Storage Warning Triggers & Desktop Alerts**:
+  - Monitors Google Drive storage capacity against an 85% threshold (configurable: 80%, 85%, 90%, 95%).
+  - Detects unusually large backup folders exceeding 100 GiB.
+  - Emits native desktop notifications debounced to once every 24 hours to prevent spam.
+- **🛡️ Automatic Storage & Retention Policy Manager**:
+  - Added dedicated policy management card in **Restore → 🧹 Vault Cleanup**.
+  - Includes interactive dropdowns for revisions count, age limits, auto-empty trash, and warning thresholds.
+  - Includes on-demand **`🧹 Run Retention Prune Now`** button with real-time feedback and automatic size re-measurement.
+
 ## 2.10.53 - 2026-11-16
 
 ### Direct Card Sizing & Storage Clarity for Version History and Trash

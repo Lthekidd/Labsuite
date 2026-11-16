@@ -369,6 +369,11 @@ class BackupWorker extends EventEmitter {
         db.setSetting('last_full_reconcile', new Date().toISOString());
       }
       await this.purgeExpiredHistory();
+      if (db.getSetting('backup_auto_prune_enabled') !== '0') {
+        await rclone.pruneRetention().catch(e => console.warn('BackupWorker: auto-prune skipped:', e.message));
+      }
+      const { checkStorageAlerts } = require('./storageAlerts');
+      checkStorageAlerts().catch(() => {});
       this.throwIfPauseBoundaryReached();
       await remoteCatalog.publish();
       this.throwIfPauseBoundaryReached();
@@ -2200,8 +2205,8 @@ class BackupWorker extends EventEmitter {
 
   async purgeExpiredHistory() {
     const versionDays = Number(db.getSetting('backup_version_retention_days')) || 30;
-    const deletedDays = Number(db.getSetting('backup_deleted_retention_days')) || 90;
-    const minVersions = Number(db.getSetting('backup_min_versions_per_file')) || 20;
+    const deletedDays = Number(db.getSetting('backup_deleted_retention_days')) || 30;
+    const minVersions = Number(db.getSetting('backup_min_versions_per_file')) || 2;
     const now = Date.now();
     const versionCutoff = now - (versionDays * 24 * 60 * 60 * 1000);
     const deletedCutoff = now - (deletedDays * 24 * 60 * 60 * 1000);
@@ -2222,9 +2227,9 @@ class BackupWorker extends EventEmitter {
           const created = new Date(version.created_at || 0).getTime();
           const cutoff = entry.status === 'deleted' ? deletedCutoff : versionCutoff;
           const isRecent = Number.isNaN(created) || created >= cutoff;
-          const isMinimum = index < minVersions;
+          const isWithinMaxCount = index < minVersions;
           const isOnlyDeletedCopy = entry.status === 'deleted' && versions.length <= 1;
-          if (isRecent || isMinimum || isOnlyDeletedCopy) keep.add(version.index);
+          if ((isWithinMaxCount && (isRecent || index === 0)) || isOnlyDeletedCopy) keep.add(version.index);
         });
 
         const retained = [];

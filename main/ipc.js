@@ -140,6 +140,11 @@ const RENDERER_WRITABLE_SETTINGS = new Set([
   'backup_version_retention_days',
   'backup_deleted_retention_days',
   'backup_min_versions_per_file',
+  'backup_trash_retention_days',
+  'backup_auto_prune_enabled',
+  'storage_warning_percent',
+  'storage_folder_warning_gib',
+  'storage_warning_notifications_enabled',
   'backup_transfer_profile',
   'pack_small_files_enabled',
   'pack_small_file_max_bytes',
@@ -2058,6 +2063,20 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   ipcMain.handle('storage:measureTrash', async () => {
     return await rclone.getTrashSize();
+  });
+
+  ipcMain.handle('storage:runRetentionPrune', async (event, { historyDays, trashDays } = {}) => {
+    const cloudResult = await rclone.pruneRetention({ historyDays, trashDays });
+    await backupWorker.purgeExpiredHistory().catch(() => {});
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    return { success: true, ...cloudResult };
+  });
+
+  ipcMain.handle('storage:checkAlerts', async () => {
+    const { checkStorageAlerts } = require('./storageAlerts');
+    await checkStorageAlerts();
+    return { success: true };
   });
 
   // Helper to push restore activity rows to the Activity feed
