@@ -2387,6 +2387,7 @@ export default function LabSuiteBackup({ active = true }) {
     setPurgingTrash(true);
     try {
       await ipcRenderer.invoke('storage:emptyAllTrash');
+      setTrashSize({ bytes: 0, count: 0, loading: false });
       invalidateResource('auth:getGDriveInfo');
       alert('Vault Trash emptied successfully. Cloud storage reclaimed.');
       loadAppConfigs();
@@ -2409,6 +2410,7 @@ export default function LabSuiteBackup({ active = true }) {
     setPurgingHistory(true);
     try {
       await ipcRenderer.invoke('storage:purgeHistory');
+      setHistorySize({ bytes: 0, count: 0, loading: false });
       invalidateResource('auth:getGDriveInfo');
       alert('Backup Version History purged successfully. Cloud storage reclaimed.');
       loadAppConfigs();
@@ -2419,31 +2421,39 @@ export default function LabSuiteBackup({ active = true }) {
     }
   };
 
-  const handleRunStorageAudit = async () => {
-    if (auditRunning) return;
-    setAuditRunning(true);
-    // Measure history size (fire and forget — results flow into state)
+  const handleMeasureHistorySize = async () => {
     setHistorySize(prev => ({ ...(prev || {}), loading: true }));
-    ipcRenderer.invoke('storage:measureHistory').then(res => {
+    try {
+      const res = await ipcRenderer.invoke('storage:measureHistory');
       if (res && res.success) {
         setHistorySize({ bytes: res.bytes, count: res.count, loading: false });
       } else {
         setHistorySize({ bytes: 0, count: 0, loading: false, error: res?.error || 'Failed' });
       }
-    }).catch(err => setHistorySize({ bytes: 0, count: 0, loading: false, error: err.message }))
-      .finally(() => setAuditRunning(false));
+    } catch (err) {
+      setHistorySize({ bytes: 0, count: 0, loading: false, error: err.message });
+    }
+  };
 
-    // Measure trash size
+  const handleMeasureTrashSize = async () => {
     setTrashSize(prev => ({ ...(prev || {}), loading: true }));
-    ipcRenderer.invoke('storage:measureTrash').then(res => {
+    try {
+      const res = await ipcRenderer.invoke('storage:measureTrash');
       if (res && res.success) {
         setTrashSize({ bytes: res.bytes, count: res.count, loading: false });
       } else {
         setTrashSize({ bytes: 0, count: 0, loading: false, error: res?.error || 'Failed' });
       }
-    }).catch(err => setTrashSize({ bytes: 0, count: 0, loading: false, error: err.message }));
+    } catch (err) {
+      setTrashSize({ bytes: 0, count: 0, loading: false, error: err.message });
+    }
+  };
 
-    // Scan drive roots if not already loaded
+  const handleRunStorageAudit = async () => {
+    if (auditRunning) return;
+    setAuditRunning(true);
+    handleMeasureHistorySize().finally(() => setAuditRunning(false));
+    handleMeasureTrashSize();
     if (driveRoots.length === 0 && !driveRootsLoading) {
       handleScanDriveRoots();
     }
@@ -6201,13 +6211,45 @@ export default function LabSuiteBackup({ active = true }) {
                             <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               🗑️ Vault Trash
                             </h3>
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
-                              Cloud Trash
-                            </span>
+                            {trashSize?.loading ? (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
+                                ⏳ Measuring...
+                              </span>
+                            ) : trashSize?.bytes !== undefined ? (
+                              <span style={{ fontSize: '12px', color: '#8b5cf6', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', padding: '2px 10px', borderRadius: '4px', fontWeight: 700 }}>
+                                {formatBytes(trashSize.bytes)}
+                              </span>
+                            ) : (
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '2px 8px', fontSize: '11px' }}
+                                onClick={handleMeasureTrashSize}
+                              >
+                                Calculate Size
+                              </button>
+                            )}
                           </div>
                           <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                             Permanently purge all deleted files and folders from <code style={{ color: 'var(--accent-primary)' }}>.labsuite_trash</code> and legacy <code style={{ color: 'var(--accent-primary)' }}>.vaultsync_trash</code> on Google Drive to immediately free up space.
                           </p>
+                          {trashSize && !trashSize.loading && trashSize.bytes > 0 && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#8b5cf6', background: 'rgba(139,92,246,0.08)', padding: '6px 10px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span>🗑️ <strong>{formatBytes(trashSize.bytes)}</strong> across {(trashSize.count || 0).toLocaleString()} deleted files</span>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '1px 6px', fontSize: '10px' }}
+                                onClick={handleMeasureTrashSize}
+                                title="Re-measure"
+                              >
+                                🔄
+                              </button>
+                            </div>
+                          )}
+                          {trashSize && !trashSize.loading && trashSize.bytes === 0 && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#10b981', background: 'rgba(16,185,129,0.08)', padding: '6px 10px', borderRadius: '4px' }}>
+                              ✅ Trash is currently empty (0 Bytes)
+                            </div>
+                          )}
                         </div>
                         <div style={{ marginTop: '16px' }}>
                           <button
@@ -6229,13 +6271,45 @@ export default function LabSuiteBackup({ active = true }) {
                             <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                               📜 Version History
                             </h3>
-                            <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                              Old Revisions
-                            </span>
+                            {historySize?.loading ? (
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
+                                ⏳ Measuring...
+                              </span>
+                            ) : historySize?.bytes !== undefined ? (
+                              <span style={{ fontSize: '12px', color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 10px', borderRadius: '4px', fontWeight: 700 }}>
+                                {formatBytes(historySize.bytes)}
+                              </span>
+                            ) : (
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '2px 8px', fontSize: '11px' }}
+                                onClick={handleMeasureHistorySize}
+                              >
+                                Calculate Size
+                              </button>
+                            )}
                           </div>
                           <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                             When modified files are synced, previous versions are archived into <code style={{ color: 'var(--accent-primary)' }}>.labsuite_history</code>. Purging deletes old snapshots while keeping all your latest backup files safe.
                           </p>
+                          {historySize && !historySize.loading && historySize.bytes > 0 && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#f59e0b', background: 'rgba(245,158,11,0.08)', padding: '6px 10px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span>📦 <strong>{formatBytes(historySize.bytes)}</strong> across {(historySize.count || 0).toLocaleString()} old revisions</span>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '1px 6px', fontSize: '10px' }}
+                                onClick={handleMeasureHistorySize}
+                                title="Re-measure"
+                              >
+                                🔄
+                              </button>
+                            </div>
+                          )}
+                          {historySize && !historySize.loading && historySize.bytes === 0 && (
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#10b981', background: 'rgba(16,185,129,0.08)', padding: '6px 10px', borderRadius: '4px' }}>
+                              ✅ No old revisions currently stored (0 Bytes)
+                            </div>
+                          )}
                         </div>
                         <div style={{ marginTop: '16px' }}>
                           <button
@@ -6258,12 +6332,15 @@ export default function LabSuiteBackup({ active = true }) {
                               🕒 Restore Points
                             </h3>
                             <span style={{ fontSize: '11px', color: 'var(--accent-primary)', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                              {restorePoints.length} recorded
+                              {restorePoints.length} checkpoints
                             </span>
                           </div>
                           <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                            Point-in-time restore points store historical metadata for completed backup runs. You can delete individual points below or clear all of them to tidy up your checkpoint list.
+                            Point-in-time restore points store historical metadata for completed backup runs. They are local index records (they do not consume cloud storage).
                           </p>
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', padding: '6px 10px', borderRadius: '4px' }}>
+                            ℹ️ Metadata only • <strong>0 B</strong> Google Drive storage used
+                          </div>
                         </div>
                         <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
                           <button

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.10.53 - 2026-11-16
+
+### Direct Card Sizing & Storage Clarity for Version History and Trash
+
+- **Version History Card Sizing**:
+  - Directly displays total gigabytes/terabytes and total file count inside the **Version History** card (`.labsuite_history` + `.vaultsync_history`).
+  - Added dedicated on-card **Calculate Size** and **🔄 Re-measure** actions.
+  - Automatically resets displayed size to `0 Bytes` upon purging history.
+- **Vault Trash Card Sizing**:
+  - Directly displays total size and file count inside the **Vault Trash** card (`.labsuite_trash` + `.vaultsync_trash`).
+  - Added on-card Calculate Size and Re-measure actions.
+  - Automatically resets displayed size to `0 Bytes` upon emptying trash.
+- **Restore Points Clarity**:
+  - Clarified that restore points are local point-in-time catalog checkpoints taking `0 B` of Google Drive storage.
+
 ## 2.10.52 - 2026-11-16
 
 ### Visual Storage Breakdown Audit & Anomaly Detection
