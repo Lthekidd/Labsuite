@@ -18,7 +18,7 @@ const CONTROL_FOLDER = `${UNIFIED_CLOUD_ROOT}/Control`;
 const PREVIOUS_ENCRYPTED_FOLDER = 'LabSuite-Encrypted';
 const LEGACY_ENCRYPTED_FOLDER = 'VaultSync-Encrypted';
 const RAW_REMOTE = 'gdrive';
-const RCLONE_VERSION = '1.74.4';
+const RCLONE_VERSION = '1.75.2';
 const operationContext = new AsyncLocalStorage();
 
 class RcloneOperationCancelledError extends Error {
@@ -1845,6 +1845,51 @@ function deleteRemotePath(remotePath) {
   });
 }
 
+function purgeRemotePath(remotePath) {
+  const normalized = String(remotePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized) throw new Error('A remote vault path is required.');
+  const remote = getRemote();
+
+  return runRclone([
+    'purge',
+    `${remote}:${normalized}`
+  ]).then(() => ({
+    purged: true,
+    remotePath: normalized
+  })).catch(err => {
+    if (isNotFoundError(err)) {
+      console.log(`purgeRemotePath: remote path already absent: ${normalized}`);
+      return { skipped: true, remotePath: normalized };
+    }
+    return runRclone([
+      'deletefile',
+      `${remote}:${normalized}`
+    ]).then(() => ({
+      purged: true,
+      remotePath: normalized
+    })).catch(fileErr => {
+      if (isNotFoundError(fileErr)) {
+        return { skipped: true, remotePath: normalized };
+      }
+      throw fileErr;
+    });
+  });
+}
+
+async function emptyVaultTrash() {
+  const trashDir = getVaultPath('trash');
+  const remote = getRemote();
+  try {
+    await runRclone(['purge', `${remote}:${trashDir}`]);
+    return { success: true, emptied: true };
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      return { success: true, emptied: true, skipped: true };
+    }
+    throw err;
+  }
+}
+
 function moveRemoteFile(remoteFilePath, destinationRemoteFilePath) {
   const remote = getRemote();
 
@@ -2147,7 +2192,7 @@ function cryptCheck(localPath, remotePath, onLog, extraExclusions = []) {
 }
 
 async function cryptCheckFiles(localPath, remotePath, relativePaths = [], onLog, extraExclusions = []) {
-  // rclone 1.74 rejects --files-from combined with normal filter flags.
+  // rclone rejects --files-from combined with normal filter flags.
   // The caller passes an explicit manifest-derived file list that is already
   // filtered, so targeted verification must use --files-from by itself.
   void extraExclusions;
@@ -2638,6 +2683,8 @@ module.exports = {
   moveFilesFrom,
   deleteFile,
   deleteRemotePath,
+  purgeRemotePath,
+  emptyVaultTrash,
   moveRemoteFile,
   restore,
   listRemoteDir,

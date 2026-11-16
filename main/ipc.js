@@ -1,4 +1,4 @@
-const { ipcMain, dialog, app, BrowserWindow } = require('electron');
+const { ipcMain, dialog, app, BrowserWindow, session } = require('electron');
 const fs = require('fs');
 
 function safeMkdirSync(dir, opts) {
@@ -148,6 +148,7 @@ const RENDERER_WRITABLE_SETTINGS = new Set([
   'pack_root_prune_interval_hours',
   'explorer_friendly_active_vault',
   'sidebar_hidden_features',
+  'sidebar_collapsed',
   'installed_apps',
   'crash_report_url'
 ]);
@@ -501,45 +502,110 @@ function setCachedDirectListing(folderRemotePath, items) {
   });
 }
 
-async function getCachedOrFreshGDriveInfo(options = {}) {
-  const cached = options.force === true ? null : db.getCache('gdrive_info', 60 * 1000);
-  if (cached && !isPlaceholderGDriveInfo(cached)) return cached;
+/**
+ * Create a structured Google Drive fallback object adhering to the IPC contract.
+ */
+function createDisconnectedGDriveInfo(errorMessage = null) {
+  return {
+    email: 'Disconnected',
+    accountEmail: '',
+    displayName: '',
+    used: 0,
+    total: 0,
+    free: 0,
+    error: errorMessage ? String(errorMessage) : null
+  };
+}
 
-  const stale = db.getCache('gdrive_info');
+/**
+ * Normalize any Google Drive info object to guarantee all required fields exist.
+ */
+function normalizeGDriveInfo(info, defaultError = null) {
+  if (!info || typeof info !== 'object') {
+    return createDisconnectedGDriveInfo(defaultError);
+  }
+  const email = (info.email && typeof info.email === 'string') ? info.email : 'Disconnected';
+  const accountEmail = (info.accountEmail && typeof info.accountEmail === 'string') ? info.accountEmail : '';
+  const displayName = (info.displayName && typeof info.displayName === 'string') ? info.displayName : '';
+  const used = Number(info.used) || 0;
+  const total = Number(info.total) || 0;
+  const free = Number(info.free) || 0;
+  const error = (info.error !== undefined && info.error !== null)
+    ? String(info.error)
+    : (defaultError ? String(defaultError) : null);
+
+  return {
+    email,
+    accountEmail,
+    displayName,
+    used,
+    total,
+    free,
+    error
+  };
+}
+
+async function getCachedOrFreshGDriveInfo(options = {}) {
+  const opts = (options && typeof options === 'object') ? options : {};
+  let cached = null;
+  let stale = null;
+  try {
+    cached = opts.force === true ? null : db.getCache('gdrive_info', 60 * 1000);
+    stale = db.getCache('gdrive_info');
+  } catch (cacheErr) {
+    console.warn('Failed to read gdrive_info from cache:', cacheErr.message);
+  }
+
+  if (cached && !isPlaceholderGDriveInfo(cached)) {
+    return normalizeGDriveInfo(cached);
+  }
+
   if (gDriveInfoRefresh) {
-    if (options.force !== true && stale && !isPlaceholderGDriveInfo(stale)) return stale;
+    if (opts.force !== true && stale && !isPlaceholderGDriveInfo(stale)) {
+      return normalizeGDriveInfo(stale);
+    }
     try {
       const inFlightInfo = await gDriveInfoRefresh;
       return isPlaceholderGDriveInfo(inFlightInfo) && stale && !isPlaceholderGDriveInfo(stale)
-        ? stale
-        : inFlightInfo;
+        ? normalizeGDriveInfo(stale)
+        : normalizeGDriveInfo(inFlightInfo);
     } catch (e) {
       return stale && !isPlaceholderGDriveInfo(stale)
-        ? stale
-        : { email: 'Disconnected', total: 0, used: 0 };
+        ? normalizeGDriveInfo(stale)
+        : createDisconnectedGDriveInfo(e?.message || String(e));
     }
   }
 
-  gDriveInfoRefresh = rclone.getGDriveInfo()
-    .then(info => {
+  // Ensure gDriveInfoRefresh handles rejections internally and never leaves an unhandled promise rejection
+  gDriveInfoRefresh = (async () => {
+    try {
+      const rawInfo = await rclone.getGDriveInfo();
+      const info = normalizeGDriveInfo(rawInfo);
       if (!isPlaceholderGDriveInfo(info)) {
-        db.setCache('gdrive_info', info);
+        try {
+          db.setCache('gdrive_info', info);
+        } catch (setErr) {
+          console.warn('Failed to cache gdrive_info in database:', setErr.message);
+        }
       }
       return info;
-    })
-    .finally(() => {
+    } catch (err) {
+      console.warn('rclone.getGDriveInfo failed:', err.message);
+      return createDisconnectedGDriveInfo(err.message || String(err));
+    } finally {
       gDriveInfoRefresh = null;
-    });
+    }
+  })();
 
   try {
     const fresh = await gDriveInfoRefresh;
     return isPlaceholderGDriveInfo(fresh) && stale && !isPlaceholderGDriveInfo(stale)
-      ? stale
-      : fresh;
+      ? normalizeGDriveInfo(stale)
+      : normalizeGDriveInfo(fresh);
   } catch (e) {
     return stale && !isPlaceholderGDriveInfo(stale)
-      ? stale
-      : { email: 'Disconnected', total: 0, used: 0 };
+      ? normalizeGDriveInfo(stale)
+      : createDisconnectedGDriveInfo(e?.message || String(e));
   }
 }
 
@@ -1024,6 +1090,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
         watcher.addPath(absolutePath);
       }
       await remoteCatalog.publish();
+      sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
       return { id: result.id, remotePath: result.remote_path, reconnected: true };
     }
 
@@ -1060,6 +1127,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     };
     db.updateFolderSyncProgress(folderId, startProgress);
     sendToRenderer('sync:folder-progress', startProgress);
+    sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
 
     return { id: folderId, remotePath };
   });
@@ -1104,6 +1172,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     backupWorker.runBackup([folderId], { manual: true, reason: 'single-file-added' }).catch(error => {
       console.error('Initial single-file backup failed:', error.message);
     });
+    sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
     return { id: folderId, remotePath, selectionPath: absoluteFilePath };
   });
 
@@ -1140,12 +1209,21 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       throw new Error(`This folder contains another configured backup: "${childFolder.local_path}". Please remove "${childFolder.local_path}" first.`);
     }
 
+    if (!fs.existsSync(absolutePath)) {
+      try {
+        fs.mkdirSync(absolutePath, { recursive: true });
+      } catch (err) {
+        throw new Error(`Folder does not exist and could not be created: ${absolutePath} (${err.message})`);
+      }
+    }
+
     const result = db.adoptFolder(folderId, absolutePath, localDevice);
     // Add path to live chokidar watcher only when backups are active.
     if (!backupsArePaused()) {
       watcher.addPath(absolutePath);
     }
     await remoteCatalog.publish();
+    sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
     return result;
   });
 
@@ -1159,6 +1237,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     remoteCatalog.publish().catch(error => {
       console.warn('LabSuite: Failed to publish remote catalog after folder removal:', error.message);
     });
+    sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
     return result;
   });
 
@@ -1174,6 +1253,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
         backupWorker.clearDirtyFolder(folderId);
       }
     }
+    sendToRenderer('status:change', { status: 'idle', details: 'Folders updated' });
     return true;
   });
 
@@ -1203,7 +1283,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     const win = getWin() || null;
     const result = await dialog.showOpenDialog(win, {
       title: 'Select Folder to Back Up',
-      properties: ['openDirectory']
+      properties: ['openDirectory', 'createDirectory']
     });
     if (result.canceled || result.filePaths.length === 0) {
       return null;
@@ -1659,8 +1739,15 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return true;
   });
 
-  ipcMain.handle('auth:getGDriveInfo', async (event, options = {}) => {
-    return getCachedOrFreshGDriveInfo(options);
+  ipcMain.handle('auth:getGDriveInfo', async (_event, options) => {
+    try {
+      const opts = (options && typeof options === 'object') ? options : {};
+      const info = await getCachedOrFreshGDriveInfo(opts);
+      return normalizeGDriveInfo(info);
+    } catch (error) {
+      console.warn('Unhandled exception in auth:getGDriveInfo handler:', error.message);
+      return createDisconnectedGDriveInfo(error.message || String(error));
+    }
   });
 
   ipcMain.handle('vault:destinations', async () => {
@@ -1744,6 +1831,17 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   ipcMain.handle('backup:restorePoints', async (event, { folderId } = {}) => {
     return db.getRestorePoints(folderId || null);
+  });
+
+  ipcMain.handle('backup:deleteRestorePoint', async (event, { pointId }) => {
+    if (!pointId) throw new Error('Restore point ID is required.');
+    const result = db.deleteRestorePoint(pointId);
+    return { success: result };
+  });
+
+  ipcMain.handle('backup:clearRestorePoints', async (event, { folderId } = {}) => {
+    const cleared = db.clearAllRestorePoints(folderId || null);
+    return { cleared };
   });
 
   ipcMain.handle('backup:planRestorePoint', async (event, { folderId, restoreTime }) => {
@@ -1864,6 +1962,38 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       console.warn('LabSuite: Failed to publish remote catalog after vault deletion:', error.message);
     });
     return { success: true, remotePath: normalizedPath, ...deleteResult, cleanup };
+  });
+
+  ipcMain.handle('restore:purgeRemote', async (event, { remotePath }) => {
+    const normalizedPath = assertDeletableVaultPath(remotePath);
+    const activeFolder = db.getFolders().find(folder =>
+      folderIdentity.isFolderEnabled(folder) &&
+      folder.remote_path &&
+      (
+        isRemotePathSameOrInside(normalizedPath, folder.remote_path) ||
+        isRemotePathSameOrInside(folder.remote_path, normalizedPath)
+      )
+    );
+
+    if (activeFolder) {
+      throw new Error(`"${activeFolder.local_path}" is still an active backup on this PC. Stop backing it up first, otherwise LabSuite would upload it again.`);
+    }
+
+    const purgeResult = await rclone.purgeRemotePath(normalizedPath);
+    const cleanup = cleanupLocalRecordsForDeletedRemotePath(normalizedPath);
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    await remoteCatalog.publish().catch(error => {
+      console.warn('LabSuite: Failed to publish remote catalog after vault purge:', error.message);
+    });
+    return { success: true, remotePath: normalizedPath, ...purgeResult, cleanup };
+  });
+
+  ipcMain.handle('restore:emptyTrash', async () => {
+    const result = await rclone.emptyVaultTrash();
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    return result;
   });
 
   // Helper to push restore activity rows to the Activity feed
@@ -2270,43 +2400,86 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
 
   // Health API
   ipcMain.handle('health:get', async () => {
-    let version = db.getCache('rclone_version', 10 * 60 * 1000);
-    if (!version) {
-      version = await rclone.getVersion();
-      db.setCache('rclone_version', version);
-    }
+    let version = 'Unknown';
+    let gdriveInfo = null;
+    let remoteSafetyStatus = { ok: true, marker: { status: 'checking' }, sampleWarnings: [], pending: true };
 
-    const gdriveInfo = await getCachedOrFreshGDriveInfo();
+    try {
+      try {
+        version = db.getCache('rclone_version', 10 * 60 * 1000);
+      } catch (cacheErr) {
+        console.warn('Failed to read rclone_version cache:', cacheErr.message);
+      }
 
-    // Get safety status from cache (or default if no cache exists)
-    let cachedSafety = db.getCache('remote_safety_status');
-    const freshSafety = db.getCache('remote_safety_status', 5 * 60 * 1000);
-    const isSafetyCacheStale = !freshSafety;
-    const remoteSafetyStatus = cachedSafety || { ok: true, marker: { status: 'checking' }, sampleWarnings: [], pending: true };
-
-    if (isSafetyCacheStale && gdriveInfo.email !== 'Disconnected' && !remoteSafetyRefresh) {
-      // Trigger background check
-      remoteSafetyRefresh = (async () => {
+      if (!version) {
         try {
-          console.log('LabSuite: Starting background remote safety integrity check...');
-          const freshStatus = await remoteSafety.getRemoteSafetyStatus({ sample: true });
-          db.setCache('remote_safety_status', freshStatus);
-          sendToRenderer('health:safety-update', freshStatus);
-          tray.refreshTrayHealth({ sampleRemote: false });
-        } catch (err) {
-          console.warn('LabSuite: Background remote safety check failed:', err.message);
-        } finally {
-          remoteSafetyRefresh = null;
+          version = await rclone.getVersion();
+          if (version) {
+            try {
+              db.setCache('rclone_version', version);
+            } catch (setErr) {
+              console.warn('Failed to cache rclone_version:', setErr.message);
+            }
+          }
+        } catch (rcloneErr) {
+          console.warn('rclone.getVersion failed in health:get:', rcloneErr.message);
+          version = 'Unknown';
         }
-      })();
-    }
+      }
 
-    return {
-      rcloneVersion: version,
-      gdriveStatus: gdriveInfo.email !== 'Disconnected' ? 'Connected' : 'Disconnected',
-      gdriveError: gdriveInfo.error || null,
-      remoteSafety: remoteSafetyStatus
-    };
+      try {
+        gdriveInfo = await getCachedOrFreshGDriveInfo();
+      } catch (gdriveErr) {
+        console.warn('getCachedOrFreshGDriveInfo failed in health:get:', gdriveErr.message);
+        gdriveInfo = createDisconnectedGDriveInfo(gdriveErr.message || String(gdriveErr));
+      }
+      const safeGDriveInfo = normalizeGDriveInfo(gdriveInfo);
+
+      // Get safety status from cache (or default if no cache exists)
+      try {
+        const cachedSafety = db.getCache('remote_safety_status');
+        const freshSafety = db.getCache('remote_safety_status', 5 * 60 * 1000);
+        const isSafetyCacheStale = !freshSafety;
+        if (cachedSafety) {
+          remoteSafetyStatus = cachedSafety;
+        }
+
+        if (isSafetyCacheStale && safeGDriveInfo.email !== 'Disconnected' && !remoteSafetyRefresh) {
+          // Trigger background check
+          remoteSafetyRefresh = (async () => {
+            try {
+              console.log('LabSuite: Starting background remote safety integrity check...');
+              const freshStatus = await remoteSafety.getRemoteSafetyStatus({ sample: true });
+              db.setCache('remote_safety_status', freshStatus);
+              sendToRenderer('health:safety-update', freshStatus);
+              tray.refreshTrayHealth?.({ sampleRemote: false });
+            } catch (err) {
+              console.warn('LabSuite: Background remote safety check failed:', err.message);
+            } finally {
+              remoteSafetyRefresh = null;
+            }
+          })();
+        }
+      } catch (safetyErr) {
+        console.warn('Remote safety cache check failed in health:get:', safetyErr.message);
+      }
+
+      return {
+        rcloneVersion: (version && typeof version === 'string') ? version : 'Unknown',
+        gdriveStatus: safeGDriveInfo.email !== 'Disconnected' ? 'Connected' : 'Disconnected',
+        gdriveError: safeGDriveInfo.error || null,
+        remoteSafety: remoteSafetyStatus
+      };
+    } catch (outerError) {
+      console.warn('Unhandled exception in health:get handler, returning fallback:', outerError.message);
+      const safeGDrive = normalizeGDriveInfo(gdriveInfo, outerError.message || 'Health check failed');
+      return {
+        rcloneVersion: (version && typeof version === 'string') ? version : 'Unknown',
+        gdriveStatus: safeGDrive.email !== 'Disconnected' ? 'Connected' : 'Disconnected',
+        gdriveError: safeGDrive.error || outerError.message || 'Health check failed',
+        remoteSafety: remoteSafetyStatus || { ok: true, marker: { status: 'checking' }, sampleWarnings: [], pending: true }
+      };
+    }
   });
 
   ipcMain.handle('health:verify', async (event, { folderId }) => {
@@ -2318,6 +2491,7 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
       sendToRenderer('health:verify-log', { folderId, logLine });
     });
     db.updateFolderVerificationStatus(folder.id, true, result);
+    sendToRenderer('status:change', { status: 'idle', details: 'Folder verified' });
     return result;
   });
 
@@ -3715,6 +3889,308 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return fastDriveSync.deleteFile(appName, fileName);
   });
 
+  // ── CryptPad Embedded Session Sync API ──────────────────────────────────────
+  const CRYPTPAD_APP_NAME = 'CryptPad';
+  const CRYPTPAD_SESSION_FILE = 'session.enc';
+  const CRYPTPAD_PARTITION = 'persist:cryptpad';
+
+  const getCryptPadPartitionSession = () => {
+    try {
+      const activeSession = session || require('electron').session;
+      return activeSession ? activeSession.fromPartition(CRYPTPAD_PARTITION) : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const handleCryptPadSaveSession = async (options = {}) => {
+    try {
+      const opts = (options && typeof options === 'object') ? options : {};
+      const partitionSession = getCryptPadPartitionSession();
+      if (!partitionSession || !partitionSession.cookies) {
+        return { success: false, error: 'CryptPad session partition is unavailable.' };
+      }
+
+      const cookies = await partitionSession.cookies.get({});
+      if (!cookies || cookies.length === 0) {
+        if (!opts.force) {
+          return {
+            success: false,
+            error: 'No active CryptPad session found. Open CryptPad Sheets and log in before saving.'
+          };
+        }
+      }
+
+      const masterPassword = await keychain.getPassword();
+      if (!masterPassword) {
+        return {
+          success: false,
+          error: 'Master password not found in keychain. Configure a master password in LabSuite setup to encrypt session data.'
+        };
+      }
+
+      const payload = {
+        version: 1,
+        app: CRYPTPAD_APP_NAME,
+        exportedAt: new Date().toISOString(),
+        timestamp: Date.now(),
+        exportedBy: folderIdentity?.getLocalComputerName?.() || os.hostname(),
+        cookies: (cookies || []).map(cookie => ({
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: !!cookie.secure,
+          httpOnly: !!cookie.httpOnly,
+          expirationDate: cookie.expirationDate,
+          sameSite: cookie.sameSite
+        }))
+      };
+
+      const serialized = JSON.stringify(payload);
+      let encrypted;
+      try {
+        encrypted = await fastCrypt.encrypt(serialized);
+      } catch (cryptErr) {
+        return {
+          success: false,
+          error: `Session encryption failed: ${cryptErr.message}`
+        };
+      }
+
+      try {
+        await fastDriveSync.uploadData(CRYPTPAD_APP_NAME, CRYPTPAD_SESSION_FILE, encrypted);
+      } catch (uploadErr) {
+        return {
+          success: false,
+          error: `Cloud vault upload failed: ${uploadErr.message}`
+        };
+      }
+
+      db.setSetting('cryptpad_last_synced_at', payload.exportedAt);
+
+      return {
+        success: true,
+        count: payload.cookies.length,
+        exportedAt: payload.exportedAt
+      };
+    } catch (err) {
+      console.error('CryptPad saveSession error:', err);
+      return { success: false, error: err.message || 'An unexpected error occurred while saving the CryptPad session.' };
+    }
+  };
+
+  const handleCryptPadRestoreSession = async () => {
+    try {
+      const masterPassword = await keychain.getPassword();
+      if (!masterPassword) {
+        return {
+          success: false,
+          error: 'Master password not found in keychain. Configure a master password in LabSuite setup to decrypt session data.'
+        };
+      }
+
+      let encryptedData;
+      try {
+        encryptedData = await fastDriveSync.downloadData(CRYPTPAD_APP_NAME, CRYPTPAD_SESSION_FILE);
+      } catch (downloadErr) {
+        return {
+          success: false,
+          error: `Failed to download session from vault: ${downloadErr.message}`
+        };
+      }
+
+      if (!encryptedData || typeof encryptedData !== 'string' || !encryptedData.trim()) {
+        return {
+          success: false,
+          error: 'Vault session backup file is empty or corrupted.'
+        };
+      }
+
+      let decryptedText;
+      try {
+        decryptedText = await fastCrypt.decrypt(encryptedData.trim());
+      } catch (decryptErr) {
+        return {
+          success: false,
+          error: `Session decryption failed: ${decryptErr.message}`
+        };
+      }
+
+      let payload;
+      try {
+        payload = JSON.parse(decryptedText);
+      } catch (jsonErr) {
+        return {
+          success: false,
+          error: `Invalid session payload format: ${jsonErr.message}`
+        };
+      }
+
+      if (!payload || !Array.isArray(payload.cookies)) {
+        return {
+          success: false,
+          error: 'Invalid session payload: cookies collection missing.'
+        };
+      }
+
+      const partitionSession = getCryptPadPartitionSession();
+      if (!partitionSession || !partitionSession.cookies) {
+        return {
+          success: false,
+          error: 'CryptPad session partition is unavailable.'
+        };
+      }
+
+      let appliedCount = 0;
+      const errors = [];
+      for (const cookie of payload.cookies) {
+        try {
+          if (!cookie || !cookie.name || cookie.value === undefined) continue;
+
+          const isSecure = !!cookie.secure;
+          const protocol = isSecure ? 'https:' : 'http:';
+          const rawDomain = String(cookie.domain || 'cryptpad.fr').trim();
+          const host = rawDomain.replace(/^\./, '');
+          const cookiePath = String(cookie.path || '/').startsWith('/') ? cookie.path : `/${cookie.path || ''}`;
+          const url = `${protocol}//${host}${cookiePath}`;
+
+          const cookieDetails = {
+            url,
+            name: String(cookie.name),
+            value: String(cookie.value),
+            domain: cookie.domain || undefined,
+            path: cookiePath,
+            secure: isSecure,
+            httpOnly: !!cookie.httpOnly
+          };
+
+          if (cookie.expirationDate && Number.isFinite(cookie.expirationDate) && cookie.expirationDate > 0) {
+            cookieDetails.expirationDate = cookie.expirationDate;
+          }
+
+          if (cookie.sameSite && ['unspecified', 'no_restriction', 'lax', 'strict'].includes(cookie.sameSite)) {
+            cookieDetails.sameSite = cookie.sameSite;
+          }
+
+          await partitionSession.cookies.set(cookieDetails);
+          appliedCount++;
+        } catch (cookieErr) {
+          errors.push({ name: cookie?.name, error: cookieErr.message });
+          console.warn('CryptPad restore cookie error:', cookie?.name, cookieErr.message);
+        }
+      }
+
+      try {
+        await partitionSession.cookies.flushStore();
+      } catch (flushErr) {
+        console.warn('CryptPad cookies flushStore error:', flushErr.message);
+      }
+
+      const syncTime = payload.exportedAt || new Date().toISOString();
+      db.setSetting('cryptpad_last_synced_at', syncTime);
+
+      return {
+        success: true,
+        count: appliedCount,
+        totalInBackup: payload.cookies.length,
+        exportedAt: syncTime,
+        exportedBy: payload.exportedBy || 'Unknown',
+        warnings: errors.length > 0 ? errors : undefined
+      };
+    } catch (err) {
+      console.error('CryptPad restoreSession error:', err);
+      return { success: false, error: err.message || 'An unexpected error occurred while restoring the CryptPad session.' };
+    }
+  };
+
+  const handleCryptPadGetSessionStatus = async () => {
+    try {
+      let localCookieCount = 0;
+      let hasLocalSession = false;
+      try {
+        const partitionSession = getCryptPadPartitionSession();
+        if (partitionSession && partitionSession.cookies) {
+          const cookies = await partitionSession.cookies.get({});
+          localCookieCount = Array.isArray(cookies) ? cookies.length : 0;
+          hasLocalSession = localCookieCount > 0;
+        }
+      } catch (localErr) {
+        console.warn('Could not read local CryptPad session partition:', localErr.message);
+      }
+
+      const localLastSaved = db.getSetting('cryptpad_last_synced_at') || null;
+
+      let hasCloudBackup = false;
+      let cloudModTime = null;
+      let cloudSize = 0;
+      let cloudStatus = 'connected';
+      let cloudError = null;
+
+      try {
+        const files = await fastDriveSync.listFiles(CRYPTPAD_APP_NAME);
+        if (Array.isArray(files)) {
+          const sessionFile = files.find(f => f.Name === CRYPTPAD_SESSION_FILE || f.Path === CRYPTPAD_SESSION_FILE);
+          if (sessionFile) {
+            hasCloudBackup = true;
+            cloudModTime = sessionFile.ModTime || null;
+            cloudSize = sessionFile.Size || 0;
+          }
+        }
+      } catch (cloudErr) {
+        cloudStatus = 'error';
+        cloudError = cloudErr.message;
+        if (cloudErr.message && (cloudErr.message.includes('directory not found') || cloudErr.message.includes('not found'))) {
+          cloudStatus = 'connected';
+          hasCloudBackup = false;
+          cloudError = null;
+        }
+      }
+
+      return {
+        success: true,
+        hasLocalSession,
+        localCookieCount,
+        localLastSaved,
+        hasCloudBackup,
+        cloudModTime,
+        cloudSize,
+        cloudStatus,
+        cloudError
+      };
+    } catch (err) {
+      console.error('CryptPad getSessionStatus error:', err);
+      return {
+        success: false,
+        hasLocalSession: false,
+        localCookieCount: 0,
+        localLastSaved: null,
+        hasCloudBackup: false,
+        cloudModTime: null,
+        cloudSize: 0,
+        cloudStatus: 'error',
+        cloudError: err.message,
+        error: err.message
+      };
+    }
+  };
+
+  ipcMain.handle('cryptpad:saveSession', async (_event, options) => {
+    return handleCryptPadSaveSession(options);
+  });
+
+  ipcMain.handle('cryptpad:backupSession', async (_event, options) => {
+    return handleCryptPadSaveSession(options);
+  });
+
+  ipcMain.handle('cryptpad:restoreSession', async () => {
+    return handleCryptPadRestoreSession();
+  });
+
+  ipcMain.handle('cryptpad:getSessionStatus', async () => {
+    return handleCryptPadGetSessionStatus();
+  });
+
   // Crypto market data API
   ipcMain.handle('crypto:marketData', async (event, { ids }) => {
     return cryptoMarketData.getMarketData(ids);
@@ -4529,4 +5005,12 @@ ${configContent}
   });
 }
 
-module.exports = { setupIpc };
+module.exports = {
+  setupIpc,
+  _internal: {
+    getCachedOrFreshGDriveInfo,
+    createDisconnectedGDriveInfo,
+    normalizeGDriveInfo,
+    isPlaceholderGDriveInfo
+  }
+};

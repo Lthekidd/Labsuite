@@ -1722,6 +1722,8 @@ export default function LabSuiteBackup({ active = true }) {
       if (!localPath) return;
 
       await ipcRenderer.invoke('folders:reconnect', { folderId: folder.id, localPath });
+      invalidateResource('folders:list');
+      window.dispatchEvent(new CustomEvent('folders-updated'));
       loadAppConfigs();
       await ipcRenderer.invoke('sync:triggerNow');
     } catch (error) {
@@ -1741,12 +1743,16 @@ export default function LabSuiteBackup({ active = true }) {
     );
     if (confirmed) {
       await ipcRenderer.invoke('folders:remove', folderId);
+      invalidateResource('folders:list');
+      window.dispatchEvent(new CustomEvent('folders-updated'));
       loadAppConfigs();
     }
   };
 
   const handleToggleFolder = async (folderId, enabled) => {
     await ipcRenderer.invoke('folders:toggle', { folderId, enabled });
+    invalidateResource('folders:list');
+    window.dispatchEvent(new CustomEvent('folders-updated'));
     loadAppConfigs();
   };
 
@@ -2177,12 +2183,111 @@ export default function LabSuiteBackup({ active = true }) {
     }
   };
 
+  const handlePurgeRemoteItem = async (item, itemFullPath) => {
+    const normalizedPath = normalizeRemoteBrowsePath(itemFullPath);
+    if (!normalizedPath || restoreTab !== 'live') return;
+    if (item?.Packed || item?.PackedVirtual) {
+      alert('This is a packed virtual item. Restore it first, or delete the whole backup folder that contains it.');
+      return;
+    }
+
+    const activeRoot = folders.find(folder => {
+      const enabled = folder.enabled === 1 || folder.enabled === true || folder.enabled === undefined;
+      return enabled && folder.remote_path && (
+        isRemotePathInside(folder.remote_path, normalizedPath) ||
+        isRemotePathInside(normalizedPath, folder.remote_path)
+      );
+    });
+    if (activeRoot) {
+      alert(`"${activeRoot.local_path}" is still an active backup on this PC. Stop backing it up first, otherwise LabSuite would upload it again.`);
+      return;
+    }
+
+    const label = getFriendlyRestorePath(normalizedPath, restorableFoldersList, restoreAliases);
+    const confirmed = confirm(
+      `PERMANENTLY PURGE from Google Drive?\n\n${label}\n\n` +
+      '⚠️ WARNING: This will immediately and permanently erase these encrypted backup files from your cloud storage to free up space.\n\n' +
+      'This CANNOT be undone. Are you sure you want to permanently delete this?'
+    );
+    if (!confirmed) return;
+
+    setVaultDeleteStatus('deleting');
+    try {
+      await ipcRenderer.invoke('restore:purgeRemote', { remotePath: normalizedPath });
+      setSelectedRemoteItem(null);
+      setSelectedRestorePath('');
+      await loadAppConfigs();
+      await handleLoadRemoteDir(remotePath, { forceAliasSync: true });
+      setVaultDeleteStatus('deleted');
+      setTimeout(() => setVaultDeleteStatus(''), 2500);
+    } catch (error) {
+      setVaultDeleteStatus('');
+      alert(error.message || 'Failed to purge this vault item.');
+    }
+  };
+
+  const handleDeleteRestorePoint = async () => {
+    if (!selectedRestorePointId) return;
+    const point = restorePoints.find(item => String(item.id) === String(selectedRestorePointId));
+    const label = point
+      ? `${point.folder_path} (${new Date(point.completed_at).toLocaleString()})`
+      : 'this restore point';
+
+    const confirmed = confirm(`Delete restore point checkpoint for:\n${label}?\n\nThis will remove this historical restore point.`);
+    if (!confirmed) return;
+
+    try {
+      await ipcRenderer.invoke('backup:deleteRestorePoint', { pointId: selectedRestorePointId });
+      invalidateResource('backup:restorePoints');
+      setSelectedRestorePointId('');
+      setRestorePointPlan(null);
+      setBrowseRestorePointId(null);
+      loadAppConfigs();
+    } catch (err) {
+      alert(err.message || 'Failed to delete restore point.');
+    }
+  };
+
+  const handleClearAllRestorePoints = async () => {
+    if (restorePoints.length === 0) return;
+    const confirmed = confirm(`Delete all ${restorePoints.length} restore point checkpoints?\n\nThis clears historical point-in-time restore points.`);
+    if (!confirmed) return;
+
+    try {
+      await ipcRenderer.invoke('backup:clearRestorePoints');
+      invalidateResource('backup:restorePoints');
+      setSelectedRestorePointId('');
+      setRestorePointPlan(null);
+      setBrowseRestorePointId(null);
+      loadAppConfigs();
+    } catch (err) {
+      alert(err.message || 'Failed to clear restore points.');
+    }
+  };
+
+  const handleEmptyVaultTrash = async () => {
+    const confirmed = confirm('Empty Vault Trash on Google Drive?\n\n⚠️ This will permanently purge all previously trashed encrypted files and folders from Google Drive to immediately free up cloud storage.\n\nProceed?');
+    if (!confirmed) return;
+
+    try {
+      await ipcRenderer.invoke('restore:emptyTrash');
+      invalidateResource('auth:getGDriveInfo');
+      alert('Vault Trash emptied successfully. Cloud storage reclaimed.');
+      loadAppConfigs();
+    } catch (err) {
+      alert(err.message || 'Failed to empty vault trash.');
+    }
+  };
+
   const handleVerifyBackup = async (folderId) => {
     setVerifyingFolderId(folderId);
     setVerifyLogs(['Starting cryptographic verification...']);
     try {
       await ipcRenderer.invoke('health:verify', { folderId });
       setVerifyLogs(prev => [...prev, '✅ Verification complete. All files intact.']);
+      invalidateResource('folders:list');
+      window.dispatchEvent(new CustomEvent('folders-updated'));
+      loadAppConfigs();
     } catch (e) {
       setVerifyLogs(prev => [...prev, `❌ Verification failed: ${e.message}`]);
     }
@@ -3972,13 +4077,24 @@ export default function LabSuiteBackup({ active = true }) {
                                 let parsedAliases = {};
                                 try { parsedAliases = JSON.parse(settings.computer_aliases || '{}'); } catch (e) {}
                                 const folderAlias = parsedAliases[f.selection_path || f.local_path];
-                                return folderAlias ? (
+                                return (
                                   <>
-                                    <span style={{ fontWeight: 700, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderAlias}</span>
-                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.selection_path || f.local_path}</span>
+                                    {folderAlias ? (
+                                      <>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{folderAlias}</span>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.selection_path || f.local_path}</span>
+                                      </>
+                                    ) : (
+                                      <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.selection_path || f.local_path}</span>
+                                    )}
+                                    {f.consecutive_failures > 0 && (
+                                      <span style={{ fontSize: '11px', color: 'var(--accent-error)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        {(f.last_error || '').toLowerCase().includes('missing')
+                                          ? `Backup folder is missing locally: "${f.local_path}". Reconnect or locate its new location.`
+                                          : `Backup failing (${f.consecutive_failures} attempt${f.consecutive_failures === 1 ? '' : 's'})`}
+                                      </span>
+                                    )}
                                   </>
-                                ) : (
-                                  <span style={{ fontWeight: 600, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.selection_path || f.local_path}</span>
                                 );
                               })()}
                             </div>
@@ -3992,6 +4108,15 @@ export default function LabSuiteBackup({ active = true }) {
 
                           {/* Alias, Exclusions and Remove buttons */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            {f.consecutive_failures > 0 && (
+                              <button
+                                className="btn btn-primary"
+                                style={{ padding: '4px 10px', fontSize: '11.5px', height: '26px', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                onClick={() => handleReconnectFolder(f)}
+                              >
+                                📁 Locate Folder
+                              </button>
+                            )}
                             <button
                               className="btn btn-secondary"
                               title="Give this folder a friendly name"
@@ -4446,8 +4571,23 @@ export default function LabSuiteBackup({ active = true }) {
                                   </div>
                                 ) : isFailing ? (
                                   <span style={{ color: 'var(--accent-error)', display: 'flex', flexDirection: 'column', maxWidth: '520px' }}>
-                                    <span>❌ Failing ({folder.consecutive_failures} attempts)</span>
-                                    <span style={{ fontSize: '11px', opacity: 0.85, marginTop: '4px', lineHeight: 1.35 }}>{readableIssue || 'The last backup attempt failed.'}</span>
+                                    <span>❌ Failing ({folder.consecutive_failures} {folder.consecutive_failures === 1 ? 'attempt' : 'attempts'})</span>
+                                    <span style={{ fontSize: '11px', opacity: 0.85, marginTop: '4px', lineHeight: 1.35 }}>
+                                      {(readableIssue || '').toLowerCase().includes('missing') || (folder.last_error || '').toLowerCase().includes('missing')
+                                        ? `Backup folder is missing locally: "${folder.local_path}". Reconnect or locate its new location.`
+                                        : (readableIssue || 'The last backup attempt failed.')}
+                                    </span>
+                                    {((readableIssue || '').toLowerCase().includes('missing') || (folder.last_error || '').toLowerCase().includes('missing') || folder.consecutive_failures > 0) && (
+                                      <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                                        <button
+                                          className="btn btn-primary"
+                                          style={{ padding: '3px 9px', fontSize: '11px', width: 'fit-content', cursor: 'pointer' }}
+                                          onClick={() => handleReconnectFolder(folder)}
+                                        >
+                                          📁 Locate Folder
+                                        </button>
+                                      </div>
+                                    )}
                                   </span>
                                 ) : !folder.last_success_at ? (
                                   <span style={{ color: '#fbbf24', display: 'flex', flexDirection: 'column' }}>
@@ -4458,14 +4598,25 @@ export default function LabSuiteBackup({ active = true }) {
                                 )}
                               </td>
                               <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                                <button 
-                                  className="btn btn-secondary" 
-                                  style={{ padding: '4px 10px', fontSize: '11px' }}
-                                  disabled={verifyingFolderId !== null}
-                                  onClick={() => handleVerifyBackup(folder.id)}
-                                >
-                                  {verifyingFolderId === folder.id ? 'Verifying...' : 'Verify Crypt'}
-                                </button>
+                                <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', justifyContent: 'flex-end' }}>
+                                  {isFailing && (
+                                    <button 
+                                      className="btn btn-primary" 
+                                      style={{ padding: '4px 10px', fontSize: '11px' }}
+                                      onClick={() => handleReconnectFolder(folder)}
+                                    >
+                                      📁 Locate Folder
+                                    </button>
+                                  )}
+                                  <button 
+                                    className="btn btn-secondary" 
+                                    style={{ padding: '4px 10px', fontSize: '11px' }}
+                                    disabled={verifyingFolderId !== null}
+                                    onClick={() => handleVerifyBackup(folder.id)}
+                                  >
+                                    {verifyingFolderId === folder.id ? 'Verifying...' : 'Verify Crypt'}
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -4609,6 +4760,12 @@ export default function LabSuiteBackup({ active = true }) {
                   🕒 Restore Checkpoint
                 </button>
                 <button
+                  className={`sub-tab-btn ${restoreSubTab === 'cleanup' ? 'active' : ''}`}
+                  onClick={() => setRestoreSubTab('cleanup')}
+                >
+                  🧹 Vault Cleanup
+                </button>
+                <button
                   className={`sub-tab-btn ${restoreSubTab === 'mount' ? 'active' : ''}`}
                   onClick={() => setRestoreSubTab('mount')}
                 >
@@ -4708,14 +4865,26 @@ export default function LabSuiteBackup({ active = true }) {
                                     Restore
                                   </button>
                                   {!enabled && (
-                                    <button
-                                      className="btn btn-danger"
-                                      style={{ padding: '4px 9px', fontSize: '11.5px' }}
-                                      disabled={vaultDeleteStatus === 'deleting'}
-                                      onClick={() => handleDeleteRemoteItem({ Name: displayName, IsDir: true }, folder.remote_path)}
-                                    >
-                                      Delete
-                                    </button>
+                                    <>
+                                      <button
+                                        className="btn btn-danger"
+                                        style={{ padding: '4px 9px', fontSize: '11.5px' }}
+                                        disabled={vaultDeleteStatus === 'deleting'}
+                                        onClick={() => handleDeleteRemoteItem({ Name: displayName, IsDir: true }, folder.remote_path)}
+                                        title="Move to Vault Trash"
+                                      >
+                                        Trash
+                                      </button>
+                                      <button
+                                        className="btn btn-danger"
+                                        style={{ padding: '4px 9px', fontSize: '11.5px', background: '#dc2626' }}
+                                        disabled={vaultDeleteStatus === 'deleting'}
+                                        onClick={() => handlePurgeRemoteItem({ Name: displayName, IsDir: true }, folder.remote_path)}
+                                        title="Permanently erase from Google Drive to free up space"
+                                      >
+                                        Purge
+                                      </button>
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -4924,17 +5093,32 @@ export default function LabSuiteBackup({ active = true }) {
                                       </button>
                                     )}
                                     {restoreTab === 'live' && !item.Packed && !item.PackedVirtual && !item.Shortcut && !item.VirtualComputerRoot && !item.VirtualBackupRoot && (
-                                      <button
-                                        className="btn btn-danger explorer-item-action-btn"
-                                        style={{ padding: '3px 8px', fontSize: '11px' }}
-                                        disabled={vaultDeleteStatus === 'deleting'}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleDeleteRemoteItem(item, fullPath);
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
+                                      <>
+                                        <button
+                                          className="btn btn-danger explorer-item-action-btn"
+                                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                                          disabled={vaultDeleteStatus === 'deleting'}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteRemoteItem(item, fullPath);
+                                          }}
+                                          title="Move to Vault Trash"
+                                        >
+                                          Trash
+                                        </button>
+                                        <button
+                                          className="btn btn-danger explorer-item-action-btn"
+                                          style={{ padding: '3px 8px', fontSize: '11px', background: '#dc2626' }}
+                                          disabled={vaultDeleteStatus === 'deleting'}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handlePurgeRemoteItem(item, fullPath);
+                                          }}
+                                          title="Permanently erase from Google Drive to free up space"
+                                        >
+                                          Purge
+                                        </button>
+                                      </>
                                     )}
                                   </div>
                                 </div>
@@ -4995,14 +5179,26 @@ export default function LabSuiteBackup({ active = true }) {
                               Restore Selection
                             </button>
                             {restoreTab === 'live' && selectedRemoteItem && !selectedRemoteItem.Packed && !selectedRemoteItem.PackedVirtual && !selectedRemoteItem.Shortcut && !selectedRemoteItem.VirtualComputerRoot && !selectedRemoteItem.VirtualBackupRoot && (
-                              <button
-                                className="btn btn-danger"
-                                style={{ padding: '6px 12px', fontSize: '12px' }}
-                                disabled={vaultDeleteStatus === 'deleting'}
-                                onClick={() => handleDeleteRemoteItem(selectedRemoteItem, selectedRestorePath)}
-                              >
-                                {vaultDeleteStatus === 'deleting' ? 'Deleting...' : 'Delete'}
-                              </button>
+                              <>
+                                <button
+                                  className="btn btn-danger"
+                                  style={{ padding: '6px 12px', fontSize: '12px' }}
+                                  disabled={vaultDeleteStatus === 'deleting'}
+                                  onClick={() => handleDeleteRemoteItem(selectedRemoteItem, selectedRestorePath)}
+                                  title="Move selected item to Vault Trash"
+                                >
+                                  {vaultDeleteStatus === 'deleting' ? 'Working...' : 'Trash'}
+                                </button>
+                                <button
+                                  className="btn btn-danger"
+                                  style={{ padding: '6px 12px', fontSize: '12px', background: '#dc2626' }}
+                                  disabled={vaultDeleteStatus === 'deleting'}
+                                  onClick={() => handlePurgeRemoteItem(selectedRemoteItem, selectedRestorePath)}
+                                  title="Permanently erase selected item from Google Drive to free up space"
+                                >
+                                  {vaultDeleteStatus === 'deleting' ? 'Working...' : 'Purge (Free Space)'}
+                                </button>
+                              </>
                             )}
                           </div>
                         )}
@@ -5183,7 +5379,7 @@ export default function LabSuiteBackup({ active = true }) {
                       </span>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto auto', gap: '8px', alignItems: 'center' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto auto auto auto', gap: '8px', alignItems: 'center' }}>
                       <select
                         className="input-control"
                         style={{ margin: 0 }}
@@ -5214,6 +5410,24 @@ export default function LabSuiteBackup({ active = true }) {
                       >
                         Choose Destination
                       </button>
+                      <button
+                        className="btn btn-danger"
+                        disabled={!selectedRestorePointId}
+                        onClick={handleDeleteRestorePoint}
+                        title="Delete selected restore point"
+                      >
+                        Delete Point
+                      </button>
+                      {restorePoints.length > 0 && (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ color: '#ef4444' }}
+                          onClick={handleClearAllRestorePoints}
+                          title="Clear all restore points"
+                        >
+                          Clear All
+                        </button>
+                      )}
                     </div>
 
                     {restoreDest && (
@@ -5326,6 +5540,146 @@ export default function LabSuiteBackup({ active = true }) {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {restoreSubTab === 'cleanup' && (
+                  <div>
+                    <div style={{ marginBottom: '20px' }}>
+                      <h2 style={{ marginBottom: '4px' }}>Vault Storage & Cleanup</h2>
+                      <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                        Free up Google Drive storage by permanently purging decommissioned computer backups, emptying vault trash, and pruning old restore points.
+                      </p>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                      {/* 1. Google Drive & Vault Trash */}
+                      <div className="card" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                            <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              🗑️ Vault Trash
+                            </h3>
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
+                              Cloud Trash
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                            When backups or files are deleted in LabSuite, they are first moved to Vault Trash (<code style={{ color: 'var(--accent-primary)' }}>.labsuite_trash</code>).
+                            Emptying the trash permanently deletes them from Google Drive to immediately reclaim storage space.
+                          </p>
+                        </div>
+                        <div style={{ marginTop: '16px' }}>
+                          <button
+                            className="btn btn-danger"
+                            style={{ width: '100%', padding: '9px 16px', fontSize: '12.5px', fontWeight: 600 }}
+                            onClick={handleEmptyVaultTrash}
+                          >
+                            Empty Vault Trash Now
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 2. Restore Points / Checkpoints */}
+                      <div className="card" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                            <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              🕒 Restore Points
+                            </h3>
+                            <span style={{ fontSize: '11px', color: 'var(--accent-primary)', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                              {restorePoints.length} recorded
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                            Point-in-time restore points store historical metadata for completed backup runs. You can delete individual points below or clear all of them to tidy up your checkpoint list.
+                          </p>
+                        </div>
+                        <div style={{ marginTop: '16px', display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ flex: 1, padding: '9px 16px', fontSize: '12.5px', color: '#ef4444' }}
+                            disabled={restorePoints.length === 0}
+                            onClick={handleClearAllRestorePoints}
+                          >
+                            Clear All Restore Points
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Manage Restore Points Table */}
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
+                      <h3 style={{ margin: '0 0 12px 0', fontSize: '14px' }}>Stored Restore Points</h3>
+                      {restorePoints.length === 0 ? (
+                        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No restore points recorded yet.</p>
+                      ) : (
+                        <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                <th style={{ padding: '8px 12px' }}>Date</th>
+                                <th style={{ padding: '8px 12px' }}>Folder Path</th>
+                                <th style={{ padding: '8px 12px' }}>Files</th>
+                                <th style={{ padding: '8px 12px' }}>Size</th>
+                                <th style={{ padding: '8px 12px', textAlign: 'right' }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {restorePoints.map(point => (
+                                <tr key={point.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                  <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{new Date(point.completed_at).toLocaleString()}</td>
+                                  <td style={{ padding: '8px 12px', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={point.folder_path}>
+                                    {point.folder_path}
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}>{point.files_total || 0}</td>
+                                  <td style={{ padding: '8px 12px' }}>{formatBytes(point.bytes_total || 0)}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                    <button
+                                      className="btn btn-danger"
+                                      style={{ padding: '2px 8px', fontSize: '11px' }}
+                                      onClick={async () => {
+                                        const confirmed = confirm(`Delete restore point from ${new Date(point.completed_at).toLocaleString()} for ${point.folder_path}?`);
+                                        if (!confirmed) return;
+                                        try {
+                                          await ipcRenderer.invoke('backup:deleteRestorePoint', { pointId: point.id });
+                                          invalidateResource('backup:restorePoints');
+                                          loadAppConfigs();
+                                        } catch (e) {
+                                          alert(e.message || 'Failed to delete restore point.');
+                                        }
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 4. Decommissioned / Remote Computers */}
+                    <div className="card" style={{ margin: 0, padding: '20px', border: '1px solid var(--border-color)' }}>
+                      <h3 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Decommissioned Computer Backups in Cloud</h3>
+                      <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+                        If you have old backups from previous computers that are no longer in use, you can permanently delete them from Google Drive to reclaim space.
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            setRestoreSubTab('browse');
+                            setRestoreTab('live');
+                            handleLoadRemoteDir('computers');
+                          }}
+                        >
+                          📂 Browse Computer Folders in Vault
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 

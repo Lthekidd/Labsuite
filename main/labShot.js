@@ -128,6 +128,14 @@ function findSourceForDisplay(display, sources, displays, primaryDisplay) {
   return sources[0];
 }
 
+function closeOverlays() {
+  activeOverlayWindows.forEach(win => {
+    if (win && !win.isDestroyed()) win.close();
+  });
+  activeOverlayWindows = [];
+  capturedDataUrlCache = null;
+}
+
 /**
  * Open native per-monitor overlay windows across all connected displays.
  * Creating one overlay window per display ensures Windows OS applies per-monitor DPI scaling,
@@ -140,10 +148,7 @@ async function startCapture({ delayMs = 0 } = {}) {
 
   try {
     // Close existing overlay windows
-    activeOverlayWindows.forEach(win => {
-      if (win && !win.isDestroyed()) win.close();
-    });
-    activeOverlayWindows = [];
+    closeOverlays();
 
     const displays = screen.getAllDisplays();
     const primaryDisplay = screen.getPrimaryDisplay();
@@ -431,10 +436,7 @@ function initIpc() {
   });
 
   ipcMain.handle('labshot:closeOverlay', async () => {
-    activeOverlayWindows.forEach(win => {
-      if (win && !win.isDestroyed()) win.close();
-    });
-    activeOverlayWindows = [];
+    closeOverlays();
     return { success: true };
   });
 
@@ -627,5 +629,6 @@ module.exports = {
   init,
   startCapture,
   pinToScreen,
-  getVirtualDesktopBounds
+  getVirtualDesktopBounds,
+  closeOverlays
 };

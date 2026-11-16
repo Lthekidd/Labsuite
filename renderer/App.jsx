@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useState, useEffect, useCallback, useRef } from 
 import { Minus } from '@phosphor-icons/react/Minus';
 import { Square } from '@phosphor-icons/react/Square';
 import { X } from '@phosphor-icons/react/X';
+import { SidebarSimple } from '@phosphor-icons/react/SidebarSimple';
 import ErrorBoundary from './ErrorBoundary';
 import AppHub, { HUB_APPS, renderSmallIcon } from './apps/AppHub';
 import AppIcon from './AppIcon';
@@ -43,6 +44,7 @@ const LabHWMonitor = React.memo(lazy(WORKSPACE_LOADERS.hwmonitor));
 const LanPeerDrive = React.memo(lazy(WORKSPACE_LOADERS.lan));
 const WakeOnLan = React.memo(lazy(WORKSPACE_LOADERS.wol));
 const LabMedia = React.memo(lazy(WORKSPACE_LOADERS.labmedia));
+const CryptPadSheets = React.memo(lazy(WORKSPACE_LOADERS.cryptpad));
 const MemoizedAppHub = React.memo(AppHub);
 
 const WORKSPACE_REGISTRY = {
@@ -56,7 +58,7 @@ const WORKSPACE_REGISTRY = {
   hwmonitor: { id: 'hwmonitor', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.hwmonitor },
   lan: { id: 'lan', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.lan },
   sheets: { id: 'sheets', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.sheets },
-  cryptpad: { id: 'cryptpad', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.cryptpad },
+  cryptpad: { id: 'cryptpad', mode: 'embedded', retention: 'pinned', loader: WORKSPACE_LOADERS.cryptpad },
   todo: { id: 'todo', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS.todo },
   'vm-protect': { id: 'vm-protect', mode: 'standalone', retention: 'window', loader: WORKSPACE_LOADERS['vm-protect'] },
   wol: { id: 'wol', mode: 'embedded', retention: 'light', loader: WORKSPACE_LOADERS.wol },
@@ -89,7 +91,7 @@ const SHUTDOWN_PRESETS = [
 const CORE_APP_IDS = new Set(['backup', 'telegram', 'crypto', 'settings']);
 
 // Apps that open in standalone windows (not embedded in sidebar content area)
-const STANDALONE_APP_IDS = new Set(['sheets', 'vm-protect', 'todo', 'cryptpad']);
+const STANDALONE_APP_IDS = new Set(['sheets', 'vm-protect', 'todo']);
 
 function parseInstalledApps(value) {
   try {
@@ -114,6 +116,40 @@ export default function App() {
   const isMac = /macintosh|mac os x/i.test(navigator.userAgent);
   const [activeTab, setActiveTab] = useState('backup');
   const [theme, setTheme] = useState('dark');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('labsuite_sidebar_collapsed') === 'true';
+    } catch (_) {
+      return false;
+    }
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('labsuite_sidebar_collapsed', String(next));
+      } catch (_) {}
+      safeInvoke('settings:set', { key: 'sidebar_collapsed', value: next ? '1' : '0' });
+      invalidateResource('settings:get');
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const target = e.target;
+      if (['INPUT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable) {
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleSidebar]);
   const [appVersion, setAppVersion] = useState('2.2.0');
   const [externalFilePath, setExternalFilePath] = useState(null);
   const [globalGDriveInfo, setGlobalGDriveInfo] = useState({ email: 'Disconnected', used: 0, total: 0 });
@@ -254,6 +290,13 @@ export default function App() {
         setInstalledApps(parseInstalledApps(s.installed_apps));
         if (s.theme) {
           setTheme(`theme-${s.theme}`);
+        }
+        if (s.sidebar_collapsed !== undefined && s.sidebar_collapsed !== null) {
+          const isCollapsed = s.sidebar_collapsed === '1' || s.sidebar_collapsed === 'true';
+          setSidebarCollapsed(isCollapsed);
+          try {
+            localStorage.setItem('labsuite_sidebar_collapsed', String(isCollapsed));
+          } catch (_) {}
         }
       }
       if (s && s.setup_complete !== '1') {
@@ -420,6 +463,8 @@ export default function App() {
         return isAppInstalled('wol') ? <WakeOnLan active={active} /> : null;
       case 'labmedia':
         return isAppInstalled('labmedia') ? <LabMedia active={active} /> : null;
+      case 'cryptpad':
+        return isAppInstalled('cryptpad') ? <CryptPadSheets active={active} /> : null;
       case 'settings':
         return <LabSuiteSettings active={active} />;
       default:
@@ -443,7 +488,20 @@ export default function App() {
       </div>
 
       <div className="main-content app-body" style={{ display: 'flex', height: 'calc(100vh - 36px)', background: 'var(--bg-main)' }}>
-        <nav className="suite-sidebar" style={{ width: '240px', background: 'var(--bg-panel)', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', padding: '20px 12px' }}>
+        <nav
+          className={`suite-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+          style={{
+            width: sidebarCollapsed ? '64px' : '240px',
+            background: 'var(--bg-panel)',
+            borderRight: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: sidebarCollapsed ? '16px 8px' : '20px 12px',
+            transition: 'width 200ms cubic-bezier(0.4, 0, 0.2, 1), padding 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+            flexShrink: 0,
+            boxSizing: 'border-box'
+          }}
+        >
           
           {/* Legacy E2E Test Navigation Compatibility Helpers */}
           <div style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', overflow: 'hidden', opacity: 0 }}>
@@ -454,19 +512,70 @@ export default function App() {
             <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { activateWorkspace('settings'); }}>Settings</button>
           </div>
 
+          {/* Top Header Row with Sidebar Toggle Button */}
+          <div
+            className="suite-sidebar-header"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: sidebarCollapsed ? 'center' : 'space-between',
+              padding: sidebarCollapsed ? '0 0 14px 0' : '0 10px 14px 10px',
+              marginBottom: '2px',
+              minHeight: '32px'
+            }}
+          >
+            {!sidebarCollapsed && (
+              <span
+                className="suite-sidebar-title"
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  fontWeight: 700
+                }}
+              >
+                Applications
+              </span>
+            )}
+            <button
+              type="button"
+              className="suite-sidebar-toggle sidebar-toggle-btn"
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '6px',
+                display: 'grid',
+                placeItems: 'center',
+                transition: 'background-color 120ms ease, color 120ms ease'
+              }}
+            >
+              <SidebarSimple size={18} weight={sidebarCollapsed ? 'fill' : 'regular'} />
+            </button>
+          </div>
+
           <div className="suite-sidebar-menu">
-            <div style={{ marginBottom: '30px', padding: '0 10px' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Applications</div>
-              <NavItem id="hub" icon={<AppIcon appId="hub" size={18} />} label="App Hub" activeTab={activeTab} setTab={activateWorkspace} />
-              <NavItem id="backup" icon={<AppIcon appId="backup" size={18} />} label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
-              {!isMac && <NavItem id="telegram" icon={<AppIcon appId="telegram" size={18} />} label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />}
-              <NavItem id="crypto" icon={<AppIcon appId="crypto" size={18} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+            <div style={{ marginBottom: sidebarCollapsed ? '16px' : '30px', padding: sidebarCollapsed ? '0' : '0 10px' }}>
+              <NavItem id="hub" icon={<AppIcon appId="hub" size={18} />} label="App Hub" activeTab={activeTab} setTab={activateWorkspace} collapsed={sidebarCollapsed} />
+              <NavItem id="backup" icon={<AppIcon appId="backup" size={18} />} label="Backup Engine" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} collapsed={sidebarCollapsed} />
+              {!isMac && <NavItem id="telegram" icon={<AppIcon appId="telegram" size={18} />} label="Telegram Backup" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} collapsed={sidebarCollapsed} />}
+              <NavItem id="crypto" icon={<AppIcon appId="crypto" size={18} />} label="Crypto Portfolio" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} collapsed={sidebarCollapsed} />
             </div>
 
             {/* Installed hub apps — show in sidebar */}
             {installedApps.length > 0 && (
-              <div style={{ marginBottom: '16px', padding: '0 10px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Installed</div>
+              <div style={{ marginBottom: '16px', padding: sidebarCollapsed ? '0' : '0 10px' }}>
+                {!sidebarCollapsed ? (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 700, marginBottom: '12px' }}>Installed</div>
+                ) : (
+                  <div style={{ height: '1px', background: 'var(--border-color)', margin: '8px 4px 12px 4px', opacity: 0.5 }} />
+                )}
                 {installedApps.map(appId => {
                   const hubApp = HUB_APPS.find(a => a.id === appId);
                   if (!hubApp) return null;
@@ -481,6 +590,7 @@ export default function App() {
                       setTab={isStandalone ? () => handleLaunchStandalone(appId) : activateWorkspace}
                       suffix={isStandalone ? (launchingApps.includes(appId) ? '…' : '↗') : null}
                       onPrefetch={prefetchWorkspace}
+                      collapsed={sidebarCollapsed}
                     />
                   );
                 })}
@@ -488,49 +598,102 @@ export default function App() {
             )}
           </div>
 
-          <div className="suite-sidebar-footer">
-            <NavItem id="settings" icon={<AppIcon appId="settings" size={18} />} label="Suite Settings" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} />
+          <div className="suite-sidebar-footer" style={{ padding: sidebarCollapsed ? '0' : '0 4px' }}>
+            <NavItem id="settings" icon={<AppIcon appId="settings" size={18} />} label="Suite Settings" activeTab={activeTab} setTab={activateWorkspace} onPrefetch={prefetchWorkspace} collapsed={sidebarCollapsed} />
             {/* Global Google Drive Status */}
-            <div className="suite-status-card">
-              <div className="suite-status-header">
-                <span className={`suite-status-dot ${isConnected ? 'is-connected' : 'is-disconnected'}`}></span>
-                <span className={`suite-status-label ${isConnected ? 'is-connected' : 'is-disconnected'}`}>
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </span>
-                <span title={globalStatusDetail} className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}>
-                  {compactStatus}
+            {sidebarCollapsed ? (
+              <div
+                className="suite-status-pill-compact"
+                data-tooltip={`${deviceName} • ${isConnected ? 'Connected' : 'Disconnected'} (${compactStatus})\n${realEmail ? realEmail + '\n' : ''}${globalStatusDetail}`}
+                title={`${deviceName} • ${isConnected ? 'Connected' : 'Disconnected'} (${compactStatus})\n${realEmail ? realEmail + '\n' : ''}${globalStatusDetail}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '8px 4px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'rgba(0, 0, 0, 0.18)',
+                  cursor: 'default',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <span className="suite-device-name" style={{ display: 'none' }}>{deviceName}</span>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AppIcon appId="device" size={18} weight="duotone" />
+                  <span
+                    className={`suite-status-dot ${isConnected ? 'is-connected' : 'is-disconnected'}`}
+                    style={{
+                      position: 'absolute',
+                      top: '-2px',
+                      right: '-4px',
+                      width: '7px',
+                      height: '7px'
+                    }}
+                  />
+                </div>
+                <span
+                  className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}
+                  style={{
+                    fontSize: '9px',
+                    padding: '1px 5px',
+                    borderRadius: '999px',
+                    maxWidth: '44px',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    textAlign: 'center',
+                    lineHeight: '13px'
+                  }}
+                >
+                  {globalStatus === 'Failing' ? (globalFailureCount || '!') : compactStatus}
                 </span>
               </div>
-              <div className="suite-device-identity" title={`This PC: ${deviceName}`}>
-                <span className="suite-device-icon"><AppIcon appId="device" size={16} weight="duotone" /></span>
-                <span className="suite-device-copy">
-                  <span className="suite-device-label">This PC</span>
-                  <strong className="suite-device-name">{deviceName}</strong>
-                </span>
-              </div>
-              {isConnected ? (
-                <div className="suite-storage">
-                  <div className="suite-status-email" title={realEmail || 'Google account email unavailable'}>
-                    {realEmail || 'Google account'}
-                  </div>
-                  <div className="suite-storage-text">
-                    {formatBytes(globalGDriveInfo.used)} / {globalGDriveInfo.total > 0 ? formatBytes(globalGDriveInfo.total) : '?'} used
-                  </div>
-                  {globalGDriveInfo.total > 0 && (
-                    <div className="suite-storage-bar">
-                      <div className="suite-storage-fill" style={{ width: `${storagePercent}%` }}></div>
+            ) : (
+              <div className="suite-status-card">
+                <div className="suite-status-header">
+                  <span className={`suite-status-dot ${isConnected ? 'is-connected' : 'is-disconnected'}`}></span>
+                  <span className={`suite-status-label ${isConnected ? 'is-connected' : 'is-disconnected'}`}>
+                    {isConnected ? 'Connected' : 'Disconnected'}
+                  </span>
+                  <span title={globalStatusDetail} className={`suite-status-pill ${globalStatus === 'Failing' ? 'is-failing' : globalStatus === 'pending' ? 'is-pending' : 'is-ok'}`}>
+                    {compactStatus}
+                  </span>
+                </div>
+                <div className="suite-device-identity" title={`This PC: ${deviceName}`}>
+                  <span className="suite-device-icon"><AppIcon appId="device" size={16} weight="duotone" /></span>
+                  <span className="suite-device-copy">
+                    <span className="suite-device-label">This PC</span>
+                    <strong className="suite-device-name">{deviceName}</strong>
+                  </span>
+                </div>
+                {isConnected ? (
+                  <div className="suite-storage">
+                    <div className="suite-status-email" title={realEmail || 'Google account email unavailable'}>
+                      {realEmail || 'Google account'}
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="suite-status-hint">
-                  Google Drive is unavailable.
-                </div>
-              )}
-            </div>
+                    <div className="suite-storage-text">
+                      {formatBytes(globalGDriveInfo.used)} / {globalGDriveInfo.total > 0 ? formatBytes(globalGDriveInfo.total) : '?'} used
+                    </div>
+                    {globalGDriveInfo.total > 0 && (
+                      <div className="suite-storage-bar">
+                        <div className="suite-storage-fill" style={{ width: `${storagePercent}%` }}></div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="suite-status-hint">
+                    Google Drive is unavailable.
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="suite-version">
-              LabSuite v{appVersion}
+              {sidebarCollapsed ? `v${appVersion}` : `LabSuite v${appVersion}`}
             </div>
           </div>
         </nav>
@@ -579,7 +742,10 @@ function WorkspacePanel({ id, active, children }) {
 function WorkspaceReady({ id, active, children }) {
   useEffect(() => {
     if (!active) return;
-    const frame = window.requestAnimationFrame(() => {
+    let recorded = false;
+    const record = () => {
+      if (recorded) return;
+      recorded = true;
       try {
         const startMark = `workspace-nav-${id}-start`;
         const readyMark = `workspace-nav-${id}-ready`;
@@ -590,8 +756,12 @@ function WorkspaceReady({ id, active, children }) {
           performance.measure(`workspace-nav-${id}`, startMark, readyMark);
         }
       } catch (_) {}
-    });
-    return () => window.cancelAnimationFrame(frame);
+    };
+    queueMicrotask(record);
+    const frame = window.requestAnimationFrame(record);
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
   }, [id, active]);
   return children;
 }
@@ -607,7 +777,7 @@ function AppLoadingState() {
   );
 }
 
-function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
+function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch, collapsed = false }) {
   const active = activeTab === id;
   return (
     <button
@@ -615,11 +785,14 @@ function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
       onClick={() => setTab(id)}
       onPointerEnter={() => onPrefetch?.(id)}
       onFocus={() => onPrefetch?.(id)}
+      data-tooltip={label}
+      title={collapsed ? (suffix ? `${label} (${suffix})` : label) : undefined}
       style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'flex-start',
         width: '100%',
-        padding: '10px 14px',
+        padding: collapsed ? '10px 0' : '10px 14px',
         marginBottom: '4px',
         background: active ? 'var(--accent-primary-alpha)' : 'transparent',
         border: 'none',
@@ -627,8 +800,10 @@ function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
         color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
         cursor: 'pointer',
         transition: 'background-color 120ms ease, color 120ms ease',
-        textAlign: 'left',
+        textAlign: collapsed ? 'center' : 'left',
         fontWeight: active ? 600 : 500,
+        position: 'relative',
+        boxSizing: 'border-box'
       }}
       onMouseEnter={(e) => {
         if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
@@ -637,9 +812,9 @@ function NavItem({ id, icon, label, activeTab, setTab, suffix, onPrefetch }) {
         if (!active) e.currentTarget.style.background = 'transparent';
       }}
     >
-      <span style={{ width: '20px', height: '20px', marginRight: '12px', display: 'grid', placeItems: 'center', flex: '0 0 20px' }}>{icon}</span>
-      <span style={{ flex: 1 }}>{label}</span>
-      {suffix && <span style={{ fontSize: '12px', opacity: 0.5, marginLeft: '4px' }}>{suffix}</span>}
+      <span className="nav-icon" style={{ width: '20px', height: '20px', marginRight: collapsed ? 0 : '12px', display: 'grid', placeItems: 'center', flex: '0 0 20px' }}>{icon}</span>
+      <span className="nav-label" style={{ flex: 1, display: collapsed ? 'none' : 'inline' }}>{label}</span>
+      {suffix && <span className="nav-suffix" style={{ fontSize: '12px', opacity: 0.5, marginLeft: '4px', display: collapsed ? 'none' : 'inline' }}>{suffix}</span>}
     </button>
   );
 }

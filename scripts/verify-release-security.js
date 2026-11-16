@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const REQUIRED_RCLONE_VERSION = '1.74.4';
+const REQUIRED_RCLONE_VERSION = '1.75.2';
 const MIN_ELECTRON_MAJOR = 43;
 const PACKAGE_VERSION = require('../package.json').version;
 
@@ -98,9 +98,31 @@ function checkNoWorkspaceRcloneSecrets() {
 }
 
 function parseRcloneCheck(output) {
-  const yours = output.match(/yours:\s*([\d.]+)/i)?.[1];
+  const match = output.match(/rclone v([\d.]+)/i) || output.match(/yours:\s*([\d.]+)/i);
+  const yours = match ? match[1] : undefined;
   const latest = output.match(/latest:\s*([\d.]+)/i)?.[1];
   return { yours, latest };
+}
+
+function checkRcloneVersionPinning() {
+  const rcloneSource = readProjectFile('main/rclone.js');
+  const decryptSource = readProjectFile('main/decryptScript.js');
+  const downloadSource = readProjectFile('scripts/download-rclone.js');
+
+  const rcloneMatch = rcloneSource.match(/const RCLONE_VERSION = ['"]([^'"]+)['"]/)?.[1];
+  const decryptMatch = decryptSource.match(/RCLONE_VERSION = ['"]v?([^'"]+)['"]/)?.[1];
+  const downloadMatch = downloadSource.match(/const VERSION = ['"]([^'"]+)['"]/)?.[1];
+
+  if (rcloneMatch !== REQUIRED_RCLONE_VERSION) {
+    fail(`main/rclone.js pins rclone ${rcloneMatch || 'unknown'}, expected ${REQUIRED_RCLONE_VERSION}.`);
+  }
+  if (decryptMatch !== REQUIRED_RCLONE_VERSION) {
+    fail(`main/decryptScript.js pins rclone ${decryptMatch || 'unknown'}, expected ${REQUIRED_RCLONE_VERSION}.`);
+  }
+  if (downloadMatch !== REQUIRED_RCLONE_VERSION) {
+    fail(`scripts/download-rclone.js pins rclone ${downloadMatch || 'unknown'}, expected ${REQUIRED_RCLONE_VERSION}.`);
+  }
+  console.log(`release-security: rclone version pinning consistency (${REQUIRED_RCLONE_VERSION}) ok.`);
 }
 
 function checkRcloneBinary(binaryPath, label) {
@@ -108,7 +130,7 @@ function checkRcloneBinary(binaryPath, label) {
     fail(`${label} is missing at ${binaryPath}.`);
   }
 
-  const versionOutput = run(binaryPath, ['version', '--check'], { timeout: 60000 });
+  const versionOutput = run(binaryPath, ['version'], { timeout: 30000 });
   const { yours, latest } = parseRcloneCheck(versionOutput);
   if (yours !== REQUIRED_RCLONE_VERSION) {
     fail(`${label} is ${yours || 'unknown'}, expected ${REQUIRED_RCLONE_VERSION}.`);
@@ -200,6 +222,7 @@ function main() {
   checkDatabaseFileName();
   checkNoWorkspaceRcloneSecrets();
   checkElectronVersion();
+  checkRcloneVersionPinning();
   if (process.platform === 'win32') checkLabSuiteMusicBundle(path.join(ROOT, 'bin', 'LabSuiteMusic'), 'bundled YTmusic');
 
   const packagedApp = path.join(ROOT, 'dist-packaged', 'win-unpacked', 'LabSuite.exe');

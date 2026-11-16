@@ -57,12 +57,47 @@ function safeParseJson(content, fallback = null) {
 function readDatabaseFile(filePath) {
   if (!fs.existsSync(filePath)) return null;
   const content = safeReadFileSync(filePath, 'utf8');
-  if (content === null) return null;
+  if (content === null || !content.trim()) return null;
   const parsed = safeParseJson(content);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  // Basic integrity check
-  if (parsed.folders && !Array.isArray(parsed.folders)) return null;
-  if (parsed.settings && (typeof parsed.settings !== 'object' || Array.isArray(parsed.settings))) return null;
+
+  // Validate settings: reject explicit null or non-object settings
+  if (parsed.settings !== undefined) {
+    if (!parsed.settings || typeof parsed.settings !== 'object' || Array.isArray(parsed.settings)) {
+      return null;
+    }
+  }
+
+  // Validate and sanitize folders array
+  if (parsed.folders) {
+    if (!Array.isArray(parsed.folders)) return null;
+    parsed.folders = parsed.folders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
+  } else {
+    parsed.folders = [];
+  }
+
+  // Sanitize array collections against null or non-object elements
+  if (parsed.telegramArchiveChats) {
+    if (!Array.isArray(parsed.telegramArchiveChats)) return null;
+    parsed.telegramArchiveChats = parsed.telegramArchiveChats.filter(c => c && typeof c === 'object' && !Array.isArray(c));
+  }
+  if (parsed.wolDevices) {
+    if (!Array.isArray(parsed.wolDevices)) return null;
+    parsed.wolDevices = parsed.wolDevices.filter(d => d && typeof d === 'object' && !Array.isArray(d));
+  }
+  if (Array.isArray(parsed.restore_points)) {
+    parsed.restore_points = parsed.restore_points.filter(r => r && typeof r === 'object' && !Array.isArray(r));
+  }
+  if (Array.isArray(parsed.sync_log)) {
+    parsed.sync_log = parsed.sync_log.filter(s => s && typeof s === 'object' && !Array.isArray(s));
+  }
+  if (Array.isArray(parsed.telegramInstalls)) {
+    parsed.telegramInstalls = parsed.telegramInstalls.filter(t => t && typeof t === 'object' && !Array.isArray(t));
+  }
+  if (Array.isArray(parsed.labshot_history)) {
+    parsed.labshot_history = parsed.labshot_history.filter(h => h && typeof h === 'object' && !Array.isArray(h));
+  }
+
   return parsed;
 }
 
@@ -157,19 +192,24 @@ const DEFAULT_SETTINGS = {
   labmedia_settings: '{"schemaVersion":2,"enabled":true,"size":"normal","opacity":1,"showAlbumArt":true,"showProgress":true,"hideWhenFullscreen":true,"primaryClickAction":"panel","taskbarControlMode":"adaptive","controls":{"previous":true,"playPause":true,"next":true}}'
 };
 
-// Default database structure matching SQLite schema
-let data = {
-  folders: [],
-  backup_manifest: {},
-  restore_points: [],
-  sync_log: [],
-  settings: { ...DEFAULT_SETTINGS },
-  cache: {},
-  telegramInstalls: [],
-  telegramArchiveChats: [],
-  wolDevices: [],
-  labshot_history: []
-};
+// Centralized default database structure matching SQLite schema
+function createDefaultDatabase() {
+  return {
+    folders: [],
+    backup_manifest: {},
+    restore_points: [],
+    sync_log: [],
+    active_restores: [],
+    settings: { ...DEFAULT_SETTINGS },
+    cache: {},
+    telegramInstalls: [],
+    telegramArchiveChats: [],
+    wolDevices: [],
+    labshot_history: []
+  };
+}
+
+let data = createDefaultDatabase();
 
 function normalizeStoredErrorMessage(errorMessage) {
   const text = String(errorMessage || '').trim();
@@ -298,12 +338,15 @@ function invalidateManifestSummaryCache() {
 
 function getManifestSummarySignature() {
   return (data.folders || [])
+    .filter(folder => folder && typeof folder === 'object')
     .map(folder => `${folder.id}:${folder.local_path || ''}:${folder.remote_path || ''}`)
     .join('|');
 }
 
 function computeManifestSummary() {
-  return (data.folders || []).map(folder => {
+  return (data.folders || [])
+    .filter(folder => folder && typeof folder === 'object')
+    .map(folder => {
     const summary = {
       folderId: folder.id,
       folderPath: folder.local_path,
@@ -332,7 +375,7 @@ function computeManifestSummary() {
 async function computeManifestSummaryAsync() {
   const summaries = [];
   let visited = 0;
-  for (const folder of data.folders || []) {
+  for (const folder of (data.folders || []).filter(folder => folder && typeof folder === 'object')) {
     const summary = {
       folderId: folder.id,
       folderPath: folder.local_path,
@@ -430,17 +473,23 @@ function loadDatabase() {
         preferAsyncPersistence = fs.statSync(databaseSource.path).size >= ASYNC_WRITE_THRESHOLD_BYTES;
       } catch (_) {}
       // Ensure required top-level properties exist
-      if (!data.folders) data.folders = [];
-      if (!data.backup_manifest) data.backup_manifest = {};
-      if (!data.restore_points) data.restore_points = [];
-      if (!data.sync_log) data.sync_log = [];
-      if (!data.active_restores) data.active_restores = [];
-      if (!data.settings) data.settings = {};
-      if (!data.cache) data.cache = {};
-      if (!data.telegramInstalls) data.telegramInstalls = [];
-      if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
-      if (!data.wolDevices) data.wolDevices = [];
-      if (!data.labshot_history) data.labshot_history = [];
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        data = createDefaultDatabase();
+      }
+      if (!data.folders || !Array.isArray(data.folders)) data.folders = [];
+      data.folders = data.folders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
+      if (!data.backup_manifest || typeof data.backup_manifest !== 'object') data.backup_manifest = {};
+      if (!data.restore_points || !Array.isArray(data.restore_points)) data.restore_points = [];
+      if (!data.sync_log || !Array.isArray(data.sync_log)) data.sync_log = [];
+      if (!data.active_restores || !Array.isArray(data.active_restores)) data.active_restores = [];
+      if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) data.settings = {};
+      if (!data.cache || typeof data.cache !== 'object') data.cache = {};
+      if (!data.telegramInstalls || !Array.isArray(data.telegramInstalls)) data.telegramInstalls = [];
+      if (!data.telegramArchiveChats || !Array.isArray(data.telegramArchiveChats)) data.telegramArchiveChats = [];
+      data.telegramArchiveChats = data.telegramArchiveChats.filter(c => c && typeof c === 'object' && !Array.isArray(c));
+      if (!data.wolDevices || !Array.isArray(data.wolDevices)) data.wolDevices = [];
+      data.wolDevices = data.wolDevices.filter(d => d && typeof d === 'object' && !Array.isArray(d));
+      if (!data.labshot_history || !Array.isArray(data.labshot_history)) data.labshot_history = [];
 
       // ── Migrations ──────────────────────────────────────────────────────
       let migrated = databaseSource.path !== dbPath;
@@ -579,21 +628,30 @@ function loadDatabase() {
     } catch (error) {
       console.error('Database load error, trying backup copy:', error);
       try {
-        if (!fs.existsSync(dbBackupPath)) throw error;
-        const backupContent = safeReadFileSync(dbBackupPath, 'utf8') || "{}";
-        data = safeParseJson(backupContent);
-        if (!data || typeof data !== 'object') {
-          throw new Error('Backup database is not a valid JSON object');
+        const backupData = readDatabaseFile(dbBackupPath);
+        if (!backupData) {
+          throw new Error('Backup database is not a valid JSON object or is corrupt');
         }
-        if (!data.folders) data.folders = [];
-        if (!data.backup_manifest) data.backup_manifest = {};
-        if (!data.restore_points) data.restore_points = [];
-        if (!data.sync_log) data.sync_log = [];
-        if (!data.settings) data.settings = {};
-        if (!data.cache) data.cache = {};
-        if (!data.telegramInstalls) data.telegramInstalls = [];
-        if (!data.telegramArchiveChats) data.telegramArchiveChats = [];
-        if (!data.labshot_history) data.labshot_history = [];
+        data = backupData;
+        if (!data.folders || !Array.isArray(data.folders)) data.folders = [];
+        data.folders = data.folders.filter(f => f && typeof f === 'object' && !Array.isArray(f));
+        if (!data.backup_manifest || typeof data.backup_manifest !== 'object') data.backup_manifest = {};
+        if (!data.restore_points || !Array.isArray(data.restore_points)) data.restore_points = [];
+        if (!data.sync_log || !Array.isArray(data.sync_log)) data.sync_log = [];
+        if (!data.active_restores || !Array.isArray(data.active_restores)) data.active_restores = [];
+        if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) data.settings = {};
+        for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+          if (data.settings[key] === undefined) {
+            data.settings[key] = value;
+          }
+        }
+        if (!data.cache || typeof data.cache !== 'object') data.cache = {};
+        if (!data.telegramInstalls || !Array.isArray(data.telegramInstalls)) data.telegramInstalls = [];
+        if (!data.telegramArchiveChats || !Array.isArray(data.telegramArchiveChats)) data.telegramArchiveChats = [];
+        data.telegramArchiveChats = data.telegramArchiveChats.filter(c => c && typeof c === 'object' && !Array.isArray(c));
+        if (!data.wolDevices || !Array.isArray(data.wolDevices)) data.wolDevices = [];
+        data.wolDevices = data.wolDevices.filter(d => d && typeof d === 'object' && !Array.isArray(d));
+        if (!data.labshot_history || !Array.isArray(data.labshot_history)) data.labshot_history = [];
 
         console.warn('Database recovered from backup copy.');
         primaryIsKnownGood = false;
@@ -604,22 +662,15 @@ function loadDatabase() {
         isLoaded = true;
       } catch (backupError) {
         console.error('Database backup recovery failed, resetting to defaults:', backupError);
-        data = {
-          folders: [],
-          backup_manifest: {},
-          restore_points: [],
-          sync_log: [],
-          settings: { ...DEFAULT_SETTINGS },
-          cache: {},
-          telegramInstalls: [],
-          telegramArchiveChats: [],
-          labshot_history: []
-        };
+        data = createDefaultDatabase();
+        primaryIsKnownGood = false;
         saveDatabase();
         isLoaded = true;
       }
     }
   } else {
+    data = createDefaultDatabase();
+    primaryIsKnownGood = false;
     saveDatabase();
     isLoaded = true;
   }
@@ -632,6 +683,16 @@ function saveDatabaseSync() {
   if (writeBatchDepth > 0) {
     hasDeferredWrite = true;
     return;
+  }
+
+  // Assertion: verify data is a valid database object before writing to disk
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    console.error('Database integrity alert: Attempted to persist invalid data object to disk. Resetting to default schema.');
+    data = createDefaultDatabase();
+  }
+
+  if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) {
+    data.settings = { ...DEFAULT_SETTINGS };
   }
 
   let tempPath = null;
@@ -649,6 +710,9 @@ function saveDatabaseSync() {
 
     tempPath = `${dbPath}.${process.pid}.${Date.now()}.tmp`;
     const serialized = JSON.stringify(data, null, 2);
+    if (!serialized || serialized.trim() === 'null') {
+      throw new Error('Database serialization error: Resulting payload is null.');
+    }
     fs.writeFileSync(tempPath, serialized, 'utf8');
     let fd = null;
     try {
@@ -752,6 +816,9 @@ function shouldOmitJsonObjectValue(value) {
  * tray events remain responsive during persistence.
  */
 async function writeJsonFileIncrementally(filePath, rootValue) {
+  if (!rootValue || typeof rootValue !== 'object' || Array.isArray(rootValue)) {
+    throw new Error(`Incremental writer error: Invalid root value (${rootValue === null ? 'null' : typeof rootValue}).`);
+  }
   const handle = await fs.promises.open(filePath, 'w');
   const stack = [{ kind: 'value', value: rootValue, inArray: false }];
   let buffer = '';
@@ -832,11 +899,21 @@ async function writeJsonFileIncrementally(filePath, rootValue) {
 }
 
 async function persistDatabaseRevision(revision) {
+  // Assertion: verify data is a valid database object before writing to disk
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    console.error('Database integrity alert: Attempted to asynchronously persist invalid data object to disk. Resetting to default schema.');
+    data = createDefaultDatabase();
+  }
+
+  if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) {
+    data.settings = { ...DEFAULT_SETTINGS };
+  }
+
   const tempPath = `${dbPath}.${process.pid}.${Date.now()}.${revision}.tmp`;
   const startedAt = Date.now();
   let handle = null;
   try {
-    if (primaryIsKnownGood && fs.existsSync(dbPath)) {
+    if (primaryIsKnownGood && fs.existsSync(dbPath) && readDatabaseFile(dbPath)) {
       try {
         await fs.promises.copyFile(dbPath, dbBackupPath);
       } catch (backupError) {
@@ -1006,11 +1083,21 @@ module.exports = {
     console.log(`JSON Database initialized at ${dbPath}`);
   },
   
-  getDb: () => data,
+  createDefaultDatabase,
+  getDb: () => {
+    loadDatabase();
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      data = createDefaultDatabase();
+    }
+    return data;
+  },
+
+  saveDatabase,
+  saveDatabaseSync,
 
   getLabShotHistory: () => {
     loadDatabase();
-    return (data.labshot_history || []).map(item => ({ ...item }));
+    return (data.labshot_history || []).filter(item => item && typeof item === 'object').map(item => ({ ...item }));
   },
 
   setLabShotHistory: (history = []) => {
@@ -1023,12 +1110,14 @@ module.exports = {
   // Folders operations
   getFolders: () => {
     loadDatabase();
-    return data.folders;
+    return (data && Array.isArray(data.folders)) ? data.folders : [];
   },
 
   getEnabledFolders: () => {
     loadDatabase();
-    return data.folders.filter(f => f.enabled === 1 || f.enabled === true || f.enabled === undefined);
+    return (data && Array.isArray(data.folders))
+      ? data.folders.filter(f => f && (f.enabled === 1 || f.enabled === true || f.enabled === undefined))
+      : [];
   },
 
   addFolder: (localPath, remotePath, metadata = {}) => {
@@ -1082,6 +1171,9 @@ module.exports = {
     folder.local_path = localPath;
     folder.enabled = 1;
     folder.encrypted = 1;
+    folder.consecutive_failures = 0;
+    folder.last_error = '';
+    folder.sync_state = 'idle';
     if (metadata.device_fingerprint) folder.device_fingerprint = String(metadata.device_fingerprint).trim();
     if (metadata.device_name) folder.device_name = String(metadata.device_name).trim();
     folder.reconnected_at = now;
@@ -1299,6 +1391,11 @@ module.exports = {
       folder.last_crypto_verify_error = success ? '' : String(details.error || details.message || details || '');
       folder.last_crypto_verify_files = Number(details.totalFilesChecked) || 0;
       folder.last_crypto_verify_packs = Number(details.packsChecked) || 0;
+      if (success) {
+        folder.consecutive_failures = 0;
+        folder.last_error = '';
+        folder.sync_state = 'idle';
+      }
       saveDatabase();
     }
     return true;
@@ -1522,6 +1619,28 @@ module.exports = {
     return removed;
   },
 
+  deleteRestorePoint: (id) => {
+    loadDatabase();
+    const before = (data.restore_points || []).length;
+    data.restore_points = (data.restore_points || []).filter(p => String(p.id) !== String(id));
+    const deleted = before - (data.restore_points || []).length;
+    if (deleted > 0) saveDatabase();
+    return deleted > 0;
+  },
+
+  clearAllRestorePoints: (folderId = null) => {
+    loadDatabase();
+    const before = (data.restore_points || []).length;
+    if (folderId) {
+      data.restore_points = (data.restore_points || []).filter(p => String(p.folder_id) !== String(folderId));
+    } else {
+      data.restore_points = [];
+    }
+    const deleted = before - (data.restore_points || []).length;
+    if (deleted > 0) saveDatabase();
+    return deleted;
+  },
+
   addRestorePoint: ({ folderId, folderPath, remotePath, filesTotal, bytesTotal, status = 'success', startedAt, completedAt }) => {
     loadDatabase();
     const point = {
@@ -1720,11 +1839,13 @@ module.exports = {
   // Settings operations
   getSetting: (key) => {
     loadDatabase();
+    if (!data.settings || typeof data.settings !== 'object') data.settings = {};
     return data.settings[key] !== undefined ? String(data.settings[key]) : null;
   },
 
   setSetting: (key, value) => {
     loadDatabase();
+    if (!data.settings || typeof data.settings !== 'object') data.settings = {};
     data.settings[key] = String(value);
     saveDatabase();
     return true;
@@ -1732,6 +1853,7 @@ module.exports = {
 
   getAllSettings: () => {
     loadDatabase();
+    if (!data.settings || typeof data.settings !== 'object') data.settings = {};
     const settingsCopy = {};
     for (const key in data.settings) {
       settingsCopy[key] = String(data.settings[key]);
@@ -1933,5 +2055,8 @@ module.exports = {
 
   withWriteBatch,
   flushWrites,
-  flushWritesAsync
+  flushWritesAsync,
+  createDefaultDatabase,
+  saveDatabase,
+  saveDatabaseSync
 };

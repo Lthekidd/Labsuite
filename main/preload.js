@@ -65,6 +65,8 @@ const INVOKE_CHANNELS = new Set([
   'activity:get',
   'activity:clear',
   'backup:restorePoints',
+  'backup:deleteRestorePoint',
+  'backup:clearRestorePoints',
   'backup:manifestSummary',
   'backup:planRestorePoint',
   'restore:pointInTime',
@@ -73,6 +75,8 @@ const INVOKE_CHANNELS = new Set([
   'restore:listRemote',
   'restore:listShortcuts',
   'restore:deleteRemote',
+  'restore:purgeRemote',
+  'restore:emptyTrash',
   'restore:start',
   'restore:packedFile',
   'restore:getActiveJobs',
@@ -254,7 +258,13 @@ const INVOKE_CHANNELS = new Set([
   'labmedia:ytmdForget',
   'labmedia:ytmdRefresh',
   'labmedia:mediaAction',
-  'labmedia:copyTrackInfo'
+  'labmedia:copyTrackInfo',
+
+  // CryptPad Session Sync API
+  'cryptpad:saveSession',
+  'cryptpad:backupSession',
+  'cryptpad:restoreSession',
+  'cryptpad:getSessionStatus'
 ]);
 
 const LISTEN_CHANNELS = new Set([

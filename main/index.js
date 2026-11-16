@@ -268,7 +268,7 @@ app.on('web-contents-created', (_event, contents) => {
     contents.setWindowOpenHandler(({ url }) => {
       try {
         const parsed = new URL(url);
-        if (parsed.hostname === 'cryptpad.fr' || parsed.hostname.endsWith('.cryptpad.fr') || parsed.hostname.endsWith('.cryptpad.info')) {
+        if (['http:', 'https:'].includes(parsed.protocol) && (parsed.hostname === 'cryptpad.fr' || parsed.hostname.endsWith('.cryptpad.fr') || parsed.hostname.endsWith('.cryptpad.info'))) {
           contents.loadURL(url);
           return { action: 'deny' };
         }
@@ -614,6 +614,7 @@ function createWindow() {
       nodeIntegration: false,       // ✅ Secure
       contextIsolation: true,        // ✅ Secure
       sandbox: false,                // Needed: preload uses require()
+      webviewTag: true,              // Needed for embedded CryptPad <webview>
       preload: path.join(__dirname, 'preload.js'),
     }
   });

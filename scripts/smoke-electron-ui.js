@@ -60,7 +60,10 @@ fs.writeFileSync(path.join(tempDir, 'labsuite_db.json'), JSON.stringify({
 const child = spawn(electronPath, [
   path.join(root, 'main', 'index.js'),
   `--user-data-dir=${tempDir}`,
-  `--remote-debugging-port=${port}`
+  `--remote-debugging-port=${port}`,
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding'
 ], {
   cwd: root,
   env: {
@@ -122,6 +125,14 @@ async function run() {
     await wait(100);
   }
   assert.strictEqual(await evaluate(`!!document.querySelector('.app-body')`), true, 'Main UI did not render.');
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const isReady = await evaluate(`(() => {
+      const name = document.querySelector('.suite-device-name')?.textContent.trim();
+      return !!name && name !== 'This PC';
+    })()`);
+    if (isReady) break;
+    await wait(100);
+  }
   assert.strictEqual(
     await evaluate(`(() => {
       const name = document.querySelector('.suite-device-name')?.textContent.trim();
@@ -240,9 +251,11 @@ async function run() {
           ));
           return;
         }
-        requestAnimationFrame(check);
+        if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(check);
+        setTimeout(check, 16);
       };
-      requestAnimationFrame(check);
+      if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(check);
+      setTimeout(check, 16);
     })`);
     assert.ok(Number.isFinite(duration), `${label} did not produce a navigation measurement.`);
     return duration;

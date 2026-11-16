@@ -1245,11 +1245,168 @@ input:checked + .slider:before {
   min-width: 0;
 }
 
+/* --- Base Sidebar & Smooth Expansion/Collapse Transition --- */
 .suite-sidebar {
   box-sizing: border-box;
   min-height: 0;
   overflow: hidden;
   -webkit-app-region: no-drag;
+  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1), padding 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
+}
+
+/* Sidebar Header & Toggle Button */
+.suite-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 4px 14px 4px;
+  flex-shrink: 0;
+}
+
+.suite-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+  padding: 0;
+}
+
+.suite-sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.suite-sidebar-toggle:active {
+  transform: scale(0.95);
+}
+
+/* --- Collapsed Rail Mode (64px) --- */
+.suite-sidebar.collapsed {
+  width: 64px !important;
+  padding: 16px 8px !important;
+  overflow: visible !important;
+  z-index: 10;
+}
+
+.suite-sidebar.collapsed .suite-sidebar-header {
+  justify-content: center;
+  padding: 0 0 12px 0;
+}
+
+.suite-sidebar.collapsed .suite-sidebar-toggle {
+  width: 40px;
+  height: 36px;
+  margin: 0 auto;
+}
+
+.suite-sidebar.collapsed .suite-sidebar-menu {
+  overflow: visible !important;
+  scrollbar-gutter: auto;
+}
+
+.suite-sidebar.collapsed .suite-sidebar-footer {
+  overflow: visible !important;
+}
+
+/* Collapsed NavItem: Centered 44px Icon Button */
+.suite-sidebar.collapsed .nav-item {
+  position: relative;
+  justify-content: center !important;
+  padding: 10px 0 !important;
+  width: 44px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 0 auto 4px auto !important;
+  border-left: 3px solid transparent !important;
+  border-radius: 8px !important;
+  box-sizing: border-box;
+}
+
+/* Reset icon container margins for true horizontal centering */
+.suite-sidebar.collapsed .nav-icon-container,
+.suite-sidebar.collapsed .nav-item > span:first-child,
+.suite-sidebar.collapsed .nav-icon {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  flex: 0 0 auto !important;
+  display: grid !important;
+  place-items: center !important;
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* Cleanly hide labels and suffixes while preserving DOM text for test runners */
+.suite-sidebar.collapsed .nav-label,
+.suite-sidebar.collapsed .nav-suffix,
+.suite-sidebar.collapsed .nav-item > span:not(:first-child) {
+  display: none !important;
+}
+
+/* Hide section headers and version string in rail mode */
+.suite-sidebar.collapsed .suite-sidebar-section-header,
+.suite-sidebar.collapsed .suite-sidebar-section-title,
+.suite-sidebar.collapsed .suite-sidebar-title,
+.suite-sidebar.collapsed .suite-sidebar-menu > div > div:first-child,
+.suite-sidebar.collapsed .suite-version {
+  display: none !important;
+}
+
+.suite-sidebar.collapsed .suite-sidebar-menu > div {
+  margin-bottom: 12px !important;
+  padding: 0 !important;
+}
+
+/* Active Selection Indicator: Accent Pill Background */
+.suite-sidebar.collapsed .nav-item.active {
+  background: var(--accent-primary-alpha) !important;
+  color: var(--accent-primary) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 0 10px var(--accent-primary-alpha);
+}
+
+/* Active Selection Indicator: Crisp Left Bar Indicator on the Rail Edge */
+.suite-sidebar.collapsed .nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 22px;
+  background: var(--accent-primary);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px var(--accent-primary);
+}
+
+/* Floating Hover Tooltip: Positioned to the right of the rail */
+.suite-sidebar.collapsed .nav-item[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 6px 11px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 1000;
+  background: rgba(15, 28, 26, 0.96);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  animation: tooltip-fade-in 120ms ease-out forwards;
 }
 
 .suite-wordmark {
@@ -1463,6 +1620,174 @@ input:checked + .slider:before {
   color: var(--text-muted);
   font-size: 10.5px;
   text-align: center;
+}
+
+/* --- Status Card / Compact Pill Visibility Toggle --- */
+.suite-sidebar.collapsed .suite-status-card {
+  display: none !important;
+}
+
+.suite-sidebar:not(.collapsed) .suite-status-pill-compact {
+  display: none !important;
+}
+
+/* --- Compact Status Pill Container (64px Rail Mode) --- */
+.suite-status-pill-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 44px;
+  padding: 8px 4px;
+  margin: 6px auto;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+  user-select: none;
+}
+
+.suite-status-pill-compact:hover {
+  background: rgba(40, 90, 72, 0.25);
+  border-color: rgba(176, 228, 204, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Pulsing Connection Dot in Compact Pill */
+.suite-status-pill-compact .suite-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.suite-status-pill-compact .suite-status-dot.is-connected {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  animation: status-dot-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.suite-status-pill-compact .suite-status-dot.is-disconnected {
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.55);
+}
+
+/* Device Icon in Compact Pill */
+.suite-status-pill-compact .suite-status-compact-icon,
+.suite-status-pill-compact .suite-device-icon {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--accent-secondary);
+}
+
+/* Status / Issue Badge in Compact Pill */
+.suite-status-pill-compact .suite-status-badge,
+.suite-status-pill-compact .suite-status-pill {
+  max-width: 38px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 8.5px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.3px;
+  text-align: center;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suite-status-pill-compact .suite-status-badge.is-ok,
+.suite-status-pill-compact .suite-status-pill.is-ok {
+  color: #86efac;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.suite-status-pill-compact .suite-status-badge.is-failing,
+.suite-status-pill-compact .suite-status-pill.is-failing {
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.2);
+  font-weight: 900;
+}
+
+.suite-status-pill-compact .suite-status-badge.is-pending,
+.suite-status-pill-compact .suite-status-pill.is-pending {
+  color: #b0e4cc;
+  border: 1px solid rgba(176, 228, 204, 0.35);
+  background: rgba(176, 228, 204, 0.1);
+}
+
+.suite-status-pill-compact .suite-status-badge.is-offline,
+.suite-status-pill-compact .suite-status-pill.is-offline {
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Multiline Hover Tooltip for Compact Status Pill */
+.suite-status-pill-compact[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  bottom: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  white-space: pre;
+  z-index: 1000;
+  pointer-events: none;
+  background: rgba(15, 28, 26, 0.96);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  animation: tooltip-fade-in 120ms ease-out forwards;
+}
+
+/* --- Keyframe Animations --- */
+@keyframes tooltip-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+@keyframes status-dot-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.7);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+    box-shadow: 0 0 3px rgba(34, 197, 94, 0.3);
+  }
+}
+
+/* --- Accessibility: prefers-reduced-motion --- */
+@media (prefers-reduced-motion: reduce) {
+  .suite-sidebar,
+  .suite-sidebar.collapsed,
+  .suite-status-pill-compact .suite-status-dot.is-connected,
+  .suite-sidebar.collapsed .nav-item[data-tooltip]:hover::after,
+  .suite-status-pill-compact[data-tooltip]:hover::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 .nav-icon {
@@ -2524,6 +2849,97 @@ body.theme-apple .suite-sidebar .nav-item.active {
     0 8px 22px rgba(54, 91, 137, 0.14),
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
     inset 0 -1px 0 rgba(79, 133, 201, 0.08);
+}
+
+/* --- Apple Theme: Collapsed Sidebar Overrides --- */
+body.theme-apple .suite-sidebar.collapsed {
+  width: 64px !important;
+  padding: 16px 8px !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(241, 245, 251, 0.52)) !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow:
+    1px 0 0 rgba(52, 62, 80, 0.06),
+    8px 0 24px rgba(59, 71, 94, 0.08) !important;
+  overflow: visible !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .suite-sidebar-toggle {
+  color: #55565d !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .suite-sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.65) !important;
+  color: #1c1c1e !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .nav-item {
+  width: 44px !important;
+  padding: 9px 0 !important;
+  margin: 0 auto 5px auto !important;
+  border-radius: 11px !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .nav-item.active {
+  color: #075fb9 !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(219, 236, 255, 0.75)) !important;
+  border-color: rgba(255, 255, 255, 0.95) !important;
+  box-shadow:
+    0 6px 16px rgba(54, 91, 137, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .nav-item.active::before {
+  background: #007aff !important;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.45) !important;
+}
+
+body.theme-apple .suite-sidebar.collapsed .nav-item[data-tooltip]:hover::after {
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #17171a !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 10px 24px rgba(50, 60, 80, 0.16), 0 2px 6px rgba(50, 60, 80, 0.08) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Apple Theme: Compact Status Pill */
+body.theme-apple .suite-status-pill-compact {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(244, 247, 252, 0.52)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.85) !important;
+  box-shadow:
+    0 4px 14px rgba(59, 70, 92, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95) !important;
+}
+
+body.theme-apple .suite-status-pill-compact:hover {
+  background: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 6px 20px rgba(59, 70, 92, 0.14) !important;
+}
+
+body.theme-apple .suite-status-pill-compact .suite-status-compact-icon,
+body.theme-apple .suite-status-pill-compact .suite-device-icon {
+  color: #007aff !important;
+}
+
+body.theme-apple .suite-status-pill-compact .suite-status-badge.is-ok,
+body.theme-apple .suite-status-pill-compact .suite-status-pill.is-ok {
+  color: #14833b !important;
+  border-color: rgba(25, 143, 64, 0.25) !important;
+  background: rgba(48, 209, 88, 0.12) !important;
+}
+
+body.theme-apple .suite-status-pill-compact .suite-status-badge.is-failing,
+body.theme-apple .suite-status-pill-compact .suite-status-pill.is-failing {
+  color: #d62f28 !important;
+  border-color: rgba(214, 47, 40, 0.3) !important;
+  background: rgba(255, 59, 48, 0.12) !important;
+}
+
+body.theme-apple .suite-status-pill-compact[data-tooltip]:hover::after {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #17171a !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 12px 30px rgba(50, 60, 80, 0.18) !important;
+  backdrop-filter: blur(20px) saturate(180%);
 }
 
 body.theme-apple .suite-content-area {

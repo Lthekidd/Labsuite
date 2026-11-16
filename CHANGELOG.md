@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.10.49 - 2026-11-16
+
+### Vault Space Reclamation, Collapsible Sidebar, Embedded CryptPad Sync & Stability Hardening
+
+- **Vault Storage & Space Reclamation**:
+  - Added dedicated **Vault Cleanup** section in the Restore view.
+  - Implemented **Empty Vault Trash Now** to permanently purge `.labsuite_trash` on Google Drive and immediately reclaim cloud quota.
+  - Added interactive management for Point-in-Time Restore Points with individual deletion and full clearance capabilities.
+  - Added direct **Purge (Free Space)** actions in the Live Vault Explorer to permanently delete cloud folders (e.g. unneeded VM disks) directly from Google Drive.
+- **Collapsible Navigation Rail**:
+  - Implemented collapsible sidebar toggle button and `Ctrl+B` shortcut transitioning from 240px to an icon-only 64px rail with floating tooltips and compact status card.
+  - Persistent state across application restarts and reloads.
+- **Embedded CryptPad & Encrypted Google Drive Session Sync**:
+  - Embedded CryptPad Sheets directly inside the primary window workspace.
+  - Implemented AES-256-GCM master-key encryption for session cookies with automated Google Drive vault backup and cross-device auto-login.
+  - Enforced strict HTTPS navigation protocol validation inside the webview sandbox.
+- **Database & IPC Hardening**:
+  - Guarded against `null` corruption in `main/database.js` ensuring automatic schema fallback.
+  - Added resilient error handling for `auth:getGDriveInfo` and `health:get` IPC handlers.
+- **Upgraded Bundled Rclone**:
+  - Upgraded pinned Rclone binary to **v1.75.2** with multi-architecture support and upstream checksum verification.
+- **Core Apps Hardening**:
+  - Fixed `2 ISSUES` status badge trigger to dynamically track failing folders and clear in real-time.
+  - Hardened Wake-on-LAN against unreachable hosts and network timeouts.
+  - Prevented heap memory leaks in LabShot screenshot history and added safe overlay lifecycle disposal.
+
 ## 2.10.48 - 2026-10-07
 
 ### CryptPad Sheets: Real-Time Collaborative Encrypted Spreadsheets
