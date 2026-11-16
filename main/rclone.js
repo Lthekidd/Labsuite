@@ -1890,6 +1890,114 @@ async function emptyVaultTrash() {
   }
 }
 
+async function emptyAllVaultTrash() {
+  const remote = getRemote();
+  const results = [];
+  for (const trashFolder of ['.labsuite_trash', '.vaultsync_trash']) {
+    try {
+      await runRclone(['purge', `${remote}:${trashFolder}`]);
+      results.push({ folder: trashFolder, success: true });
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        results.push({ folder: trashFolder, success: true, skipped: true });
+      } else {
+        results.push({ folder: trashFolder, success: false, error: err.message });
+      }
+    }
+  }
+  return { success: true, results };
+}
+
+async function purgeAllVersionHistory() {
+  const remote = getRemote();
+  const results = [];
+  for (const historyFolder of ['.labsuite_history', '.vaultsync_history']) {
+    try {
+      await runRclone(['purge', `${remote}:${historyFolder}`]);
+      results.push({ folder: historyFolder, success: true });
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        results.push({ folder: historyFolder, success: true, skipped: true });
+      } else {
+        results.push({ folder: historyFolder, success: false, error: err.message });
+      }
+    }
+  }
+  return { success: true, results };
+}
+
+async function listGoogleDriveRootFolders() {
+  const rawRemote = getRawRemoteName();
+  const configuredCryptRoot = getConfiguredCryptRemoteRoot();
+  const activeCryptFolder = (configuredCryptRoot
+    ? configuredCryptRoot.replace(new RegExp(`^${rawRemote}:`, 'i'), '').split('/')[0].trim()
+    : getEncryptedFolder().split('/')[0].trim()) || UNIFIED_CLOUD_ROOT;
+
+  let rootDirs = [];
+  try {
+    const stdout = await runRclone(['lsf', '--dirs-only', '--max-depth', '1', '--format', 'ip', `${rawRemote}:`], { timeoutMs: 30000 });
+    const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (line.startsWith('202') || line.startsWith('NOTICE:')) continue;
+      const parts = line.split(';');
+      if (parts.length >= 2) {
+        const id = parts[0].trim();
+        const name = parts[1].replace(/\/$/, '').trim();
+        const isLabSuiteRelated = /labsuite|vaultsync/i.test(name);
+        const isActiveVault = activeCryptFolder ? name.toLowerCase() === activeCryptFolder.toLowerCase() : false;
+        const isOrphaned = isLabSuiteRelated && !isActiveVault;
+        rootDirs.push({ id, name, isLabSuiteRelated, isActiveVault, isOrphaned });
+      }
+    }
+  } catch (err) {
+    console.error('listGoogleDriveRootFolders failed:', err);
+    throw new Error(`Failed to list Google Drive root folders: ${err.message}`);
+  }
+
+  return {
+    success: true,
+    activeCryptFolder,
+    folders: rootDirs
+  };
+}
+
+async function getGoogleDriveFolderSize(folderId) {
+  if (!folderId) throw new Error('A Google Drive folder ID is required.');
+  const rawRemote = getRawRemoteName();
+  try {
+    const sizeOut = await runRclone(['size', `${rawRemote},root_folder_id=${folderId}:`, '--json'], { timeoutMs: 60000 });
+    const parsed = safeParseJson(sizeOut);
+    return {
+      success: true,
+      folderId,
+      bytes: Number(parsed?.bytes) || 0,
+      count: Number(parsed?.count) || 0
+    };
+  } catch (err) {
+    return {
+      success: false,
+      folderId,
+      error: err.message
+    };
+  }
+}
+
+async function purgeGoogleDriveFolderById(folderId, folderName = '', force = false) {
+  if (!folderId) throw new Error('A Google Drive folder ID is required.');
+  const rawRemote = getRawRemoteName();
+  const configuredCryptRoot = getConfiguredCryptRemoteRoot();
+  const activeCryptFolder = (configuredCryptRoot
+    ? configuredCryptRoot.replace(new RegExp(`^${rawRemote}:`, 'i'), '').split('/')[0].trim()
+    : getEncryptedFolder().split('/')[0].trim()) || UNIFIED_CLOUD_ROOT;
+
+  if (!force && folderName && activeCryptFolder && folderName.toLowerCase() === activeCryptFolder.toLowerCase()) {
+    throw new Error(`"${folderName}" is currently your active LabSuite vault folder. You cannot purge your active vault.`);
+  }
+
+  await runRclone(['purge', `${rawRemote},root_folder_id=${folderId}:`], { timeoutMs: 180000 });
+  return { success: true, folderId, folderName };
+}
+
 function moveRemoteFile(remoteFilePath, destinationRemoteFilePath) {
   const remote = getRemote();
 
@@ -2685,6 +2793,11 @@ module.exports = {
   deleteRemotePath,
   purgeRemotePath,
   emptyVaultTrash,
+  emptyAllVaultTrash,
+  purgeAllVersionHistory,
+  listGoogleDriveRootFolders,
+  getGoogleDriveFolderSize,
+  purgeGoogleDriveFolderById,
   moveRemoteFile,
   restore,
   listRemoteDir,

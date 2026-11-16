@@ -1996,6 +1996,35 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return result;
   });
 
+  ipcMain.handle('storage:listDriveRoots', async () => {
+    return await rclone.listGoogleDriveRootFolders();
+  });
+
+  ipcMain.handle('storage:measureFolderSize', async (event, folderId) => {
+    return await rclone.getGoogleDriveFolderSize(folderId);
+  });
+
+  ipcMain.handle('storage:purgeDriveRoot', async (event, { folderId, folderName, force } = {}) => {
+    const result = await rclone.purgeGoogleDriveFolderById(folderId, folderName, force);
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    return result;
+  });
+
+  ipcMain.handle('storage:purgeHistory', async () => {
+    const result = await rclone.purgeAllVersionHistory();
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    return result;
+  });
+
+  ipcMain.handle('storage:emptyAllTrash', async () => {
+    const result = await rclone.emptyAllVaultTrash();
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    return result;
+  });
+
   // Helper to push restore activity rows to the Activity feed
   const sendRestoreActivityRow = (job, stage = 'restoring', extra = {}) => {
     const bytesDone = Math.max(0, Number(job.bytesDone) || 0);

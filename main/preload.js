@@ -82,6 +82,13 @@ const INVOKE_CHANNELS = new Set([
   'restore:getActiveJobs',
   'restore:resumeJob',
 
+  // Storage & Drive Analyzer API
+  'storage:listDriveRoots',
+  'storage:measureFolderSize',
+  'storage:purgeDriveRoot',
+  'storage:purgeHistory',
+  'storage:emptyAllTrash',
+
   // Filesystem API
   'filesystem:listDrives',
   'filesystem:listDir',

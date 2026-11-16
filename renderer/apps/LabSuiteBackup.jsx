@@ -523,6 +523,15 @@ export default function LabSuiteBackup({ active = true }) {
   const [browseSnapshotError, setBrowseSnapshotError] = useState('');
   const [browseSnapshotPath, setBrowseSnapshotPath] = useState(''); // Current folder path in browsed snapshot
 
+  // Google Drive Root Storage Analyzer State
+  const [driveRoots, setDriveRoots] = useState([]);
+  const [driveRootsLoading, setDriveRootsLoading] = useState(false);
+  const [driveRootsError, setDriveRootsError] = useState(null);
+  const [driveFolderSizes, setDriveFolderSizes] = useState({});
+  const [purgingFolderId, setPurgingFolderId] = useState(null);
+  const [purgingTrash, setPurgingTrash] = useState(false);
+  const [purgingHistory, setPurgingHistory] = useState(false);
+
   const [mountInfo, setMountInfo] = useState({ status: 'unmounted', drive: null, error: '' });
   const [showWinfspDialog, setShowWinfspDialog] = useState(false);
   const [showAliasModal, setShowAliasModal] = useState(false);
@@ -2278,6 +2287,139 @@ export default function LabSuiteBackup({ active = true }) {
       alert(err.message || 'Failed to empty vault trash.');
     }
   };
+
+  const handleMeasureFolderSize = async (folderId) => {
+    if (!folderId) return;
+    setDriveFolderSizes(prev => ({ ...prev, [folderId]: { loading: true } }));
+    try {
+      const res = await ipcRenderer.invoke('storage:measureFolderSize', folderId);
+      if (res && res.success) {
+        setDriveFolderSizes(prev => ({
+          ...prev,
+          [folderId]: { bytes: res.bytes, count: res.count, loading: false }
+        }));
+      } else {
+        setDriveFolderSizes(prev => ({
+          ...prev,
+          [folderId]: { error: res?.error || 'Failed to measure', loading: false }
+        }));
+      }
+    } catch (err) {
+      setDriveFolderSizes(prev => ({
+        ...prev,
+        [folderId]: { error: err.message, loading: false }
+      }));
+    }
+  };
+
+  const handleScanDriveRoots = async () => {
+    setDriveRootsLoading(true);
+    setDriveRootsError(null);
+    try {
+      const res = await ipcRenderer.invoke('storage:listDriveRoots');
+      if (res && res.success) {
+        const foldersList = res.folders || [];
+        setDriveRoots(foldersList);
+        for (const folder of foldersList) {
+          if (folder.isLabSuiteRelated) {
+            handleMeasureFolderSize(folder.id);
+          }
+        }
+      } else {
+        setDriveRootsError(res?.error || 'Failed to list Google Drive root folders.');
+      }
+    } catch (err) {
+      setDriveRootsError(err.message || 'Failed to list Google Drive root folders.');
+    } finally {
+      setDriveRootsLoading(false);
+    }
+  };
+
+  const handlePurgeDriveFolder = async (folder) => {
+    if (!folder || !folder.id) return;
+    if (folder.isActiveVault) {
+      alert(`"${folder.name}" is your currently active LabSuite vault folder. You cannot delete the active vault.`);
+      return;
+    }
+
+    const folderSize = driveFolderSizes[folder.id];
+    const sizeStr = folderSize?.bytes !== undefined ? `\nSize: ${formatBytes(folderSize.bytes)} (${(folderSize.count || 0).toLocaleString()} files)` : '';
+
+    const confirmed = confirm(
+      `⚠️ PERMANENTLY PURGE FOLDER FROM GOOGLE DRIVE?\n\n` +
+      `Folder Name: ${folder.name}\n` +
+      `Google Drive ID: ${folder.id}` +
+      sizeStr +
+      `\n\nThis will permanently delete this entire folder and all its contents directly from Google Drive to reclaim cloud storage.\n\n` +
+      `⚠️ THIS ACTION CANNOT BE UNDONE.\n\n` +
+      `Proceed with permanent deletion?`
+    );
+    if (!confirmed) return;
+
+    setPurgingFolderId(folder.id);
+    try {
+      await ipcRenderer.invoke('storage:purgeDriveRoot', { folderId: folder.id, folderName: folder.name });
+      alert(`Folder "${folder.name}" was permanently purged from Google Drive.`);
+      invalidateResource('auth:getGDriveInfo');
+      loadAppConfigs();
+      setDriveRoots(prev => prev.filter(f => f.id !== folder.id));
+    } catch (err) {
+      alert(`Failed to purge folder: ${err.message}`);
+    } finally {
+      setPurgingFolderId(null);
+    }
+  };
+
+  const handleEmptyAllVaultTrash = async () => {
+    const confirmed = confirm(
+      'Empty All Vault Trash on Google Drive?\n\n' +
+      '⚠️ This will permanently purge all deleted files from both .labsuite_trash and legacy .vaultsync_trash from Google Drive to immediately reclaim storage space.\n\n' +
+      'Proceed?'
+    );
+    if (!confirmed) return;
+
+    setPurgingTrash(true);
+    try {
+      await ipcRenderer.invoke('storage:emptyAllTrash');
+      invalidateResource('auth:getGDriveInfo');
+      alert('Vault Trash emptied successfully. Cloud storage reclaimed.');
+      loadAppConfigs();
+    } catch (err) {
+      alert(err.message || 'Failed to empty vault trash.');
+    } finally {
+      setPurgingTrash(false);
+    }
+  };
+
+  const handlePurgeVersionHistory = async () => {
+    const confirmed = confirm(
+      'Purge All Backup Version History from Google Drive?\n\n' +
+      '⚠️ This will permanently delete old file version snapshots (.labsuite_history and .vaultsync_history) from Google Drive to reclaim storage space.\n\n' +
+      'Your latest backups and currently active files will NOT be affected.\n\n' +
+      'Proceed?'
+    );
+    if (!confirmed) return;
+
+    setPurgingHistory(true);
+    try {
+      await ipcRenderer.invoke('storage:purgeHistory');
+      invalidateResource('auth:getGDriveInfo');
+      alert('Backup Version History purged successfully. Cloud storage reclaimed.');
+      loadAppConfigs();
+    } catch (err) {
+      alert(err.message || 'Failed to purge version history.');
+    } finally {
+      setPurgingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'restore' && restoreSubTab === 'cleanup') {
+      if (driveRoots.length === 0 && !driveRootsLoading) {
+        handleScanDriveRoots();
+      }
+    }
+  }, [activeTab, restoreSubTab]);
 
   const handleVerifyBackup = async (folderId) => {
     setVerifyingFolderId(folderId);
@@ -5548,11 +5690,184 @@ export default function LabSuiteBackup({ active = true }) {
                     <div style={{ marginBottom: '20px' }}>
                       <h2 style={{ marginBottom: '4px' }}>Vault Storage & Cleanup</h2>
                       <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
-                        Free up Google Drive storage by permanently purging decommissioned computer backups, emptying vault trash, and pruning old restore points.
+                        Analyze Google Drive storage usage, inspect root vaults by unique ID, purge orphaned/duplicate vaults, empty vault trash, and reclaim gigabytes of storage space.
                       </p>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                    {/* Google Drive Account Storage Overview Card */}
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '16px 20px', border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                        <div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Connected Google Drive Account</div>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>☁️</span>
+                            <span>{gdriveInfo.email || 'Google Drive'}</span>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Total Cloud Storage</div>
+                          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginTop: '2px' }}>
+                            {hasDriveStorage ? (
+                              <span>
+                                {formatBytes(gdriveInfo.used)} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>of</span> {formatBytes(gdriveInfo.total)}{' '}
+                                <span style={{ color: driveUsedPercent >= 90 ? '#ef4444' : driveUsedPercent >= 75 ? '#f59e0b' : '#10b981', fontSize: '12.5px' }}>
+                                  ({driveUsedPercent.toFixed(1)}%)
+                                </span>
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>Calculating...</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {hasDriveStorage && (
+                        <div style={{ marginTop: '12px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${Math.min(100, Math.max(2, driveUsedPercent))}%`,
+                              height: '100%',
+                              background: driveUsedPercent >= 90 ? '#ef4444' : driveUsedPercent >= 75 ? '#f59e0b' : 'var(--accent-primary)',
+                              borderRadius: '4px',
+                              transition: 'width 0.3s ease'
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Google Drive Root Storage Analyzer */}
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>📁 Google Drive Root Vaults & Folders</span>
+                          </h3>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                            View all top-level folders in your Google Drive account by unique Drive ID. Safely purge orphaned vaults or duplicates created by previous setups.
+                          </p>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ padding: '6px 14px', fontSize: '12px' }}
+                            disabled={driveRootsLoading}
+                            onClick={handleScanDriveRoots}
+                          >
+                            {driveRootsLoading ? 'Scanning Drive...' : '🔄 Scan Root Folders'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {driveRootsLoading && driveRoots.length === 0 ? (
+                        <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+                          <div className="spinner" style={{ margin: '0 auto 12px' }} />
+                          Scanning Google Drive root folders...
+                        </div>
+                      ) : driveRootsError ? (
+                        <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#ef4444', fontSize: '12.5px' }}>
+                          {driveRootsError}
+                        </div>
+                      ) : driveRoots.length === 0 ? (
+                        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12.5px', background: 'rgba(0,0,0,0.15)', borderRadius: '6px' }}>
+                          Click <strong>"🔄 Scan Root Folders"</strong> to list the top-level folders in your Google Drive account.
+                        </div>
+                      ) : (
+                        <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(0,0,0,0.25)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                <th style={{ padding: '10px 14px' }}>Folder Name</th>
+                                <th style={{ padding: '10px 14px' }}>Google Drive ID</th>
+                                <th style={{ padding: '10px 14px' }}>Status</th>
+                                <th style={{ padding: '10px 14px' }}>Calculated Size</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {driveRoots.map(folder => {
+                                const sizeInfo = driveFolderSizes[folder.id];
+                                const isPurgingThis = purgingFolderId === folder.id;
+
+                                return (
+                                  <tr
+                                    key={folder.id}
+                                    style={{
+                                      borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                      background: folder.isActiveVault ? 'rgba(16, 185, 129, 0.04)' : folder.isOrphaned ? 'rgba(239, 68, 68, 0.04)' : 'transparent'
+                                    }}
+                                  >
+                                    <td style={{ padding: '10px 14px', fontWeight: 600 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span>{folder.isActiveVault ? '🟢' : folder.isOrphaned ? '⚠️' : '📁'}</span>
+                                        <span>{folder.name}</span>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      {folder.id}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      {folder.isActiveVault ? (
+                                        <span style={{ fontSize: '11px', color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                          Active Vault
+                                        </span>
+                                      ) : folder.isOrphaned ? (
+                                        <span style={{ fontSize: '11px', color: '#ef4444', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                          Orphaned Vault
+                                        </span>
+                                      ) : (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '4px' }}>
+                                          Drive Folder
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      {sizeInfo?.loading ? (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>⏳ Measuring...</span>
+                                      ) : sizeInfo?.bytes !== undefined ? (
+                                        <span>
+                                          <strong>{formatBytes(sizeInfo.bytes)}</strong>
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: '6px' }}>
+                                            ({(sizeInfo.count || 0).toLocaleString()} files)
+                                          </span>
+                                        </span>
+                                      ) : sizeInfo?.error ? (
+                                        <span style={{ fontSize: '11px', color: '#ef4444' }}>Error reading size</span>
+                                      ) : (
+                                        <button
+                                          className="btn btn-secondary"
+                                          style={{ padding: '2px 8px', fontSize: '11px' }}
+                                          onClick={() => handleMeasureFolderSize(folder.id)}
+                                        >
+                                          Calculate Size
+                                        </button>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                      {folder.isActiveVault ? (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                          Protected (Active)
+                                        </span>
+                                      ) : (
+                                        <button
+                                          className="btn btn-danger"
+                                          style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 600 }}
+                                          disabled={isPurgingThis || purgingFolderId !== null}
+                                          onClick={() => handlePurgeDriveFolder(folder)}
+                                        >
+                                          {isPurgingThis ? 'Purging...' : 'Purge from Google Drive'}
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
                       {/* 1. Google Drive & Vault Trash */}
                       <div className="card" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
                         <div>
@@ -5565,22 +5880,49 @@ export default function LabSuiteBackup({ active = true }) {
                             </span>
                           </div>
                           <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                            When backups or files are deleted in LabSuite, they are first moved to Vault Trash (<code style={{ color: 'var(--accent-primary)' }}>.labsuite_trash</code>).
-                            Emptying the trash permanently deletes them from Google Drive to immediately reclaim storage space.
+                            Permanently purge all deleted files and folders from <code style={{ color: 'var(--accent-primary)' }}>.labsuite_trash</code> and legacy <code style={{ color: 'var(--accent-primary)' }}>.vaultsync_trash</code> on Google Drive to immediately free up space.
                           </p>
                         </div>
                         <div style={{ marginTop: '16px' }}>
                           <button
                             className="btn btn-danger"
                             style={{ width: '100%', padding: '9px 16px', fontSize: '12.5px', fontWeight: 600 }}
-                            onClick={handleEmptyVaultTrash}
+                            disabled={purgingTrash}
+                            onClick={handleEmptyAllVaultTrash}
                           >
-                            Empty Vault Trash Now
+                            {purgingTrash ? 'Emptying Trash...' : 'Empty Vault Trash Now'}
                           </button>
                         </div>
                       </div>
 
-                      {/* 2. Restore Points / Checkpoints */}
+                      {/* 2. Version History */}
+                      <div className="card" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                            <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              📜 Version History
+                            </h3>
+                            <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                              Old Revisions
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                            When modified files are synced, previous versions are archived into <code style={{ color: 'var(--accent-primary)' }}>.labsuite_history</code>. Purging deletes old snapshots while keeping all your latest backup files safe.
+                          </p>
+                        </div>
+                        <div style={{ marginTop: '16px' }}>
+                          <button
+                            className="btn btn-secondary"
+                            style={{ width: '100%', padding: '9px 16px', fontSize: '12.5px', fontWeight: 600, color: '#f59e0b', borderColor: 'rgba(245,158,11,0.3)' }}
+                            disabled={purgingHistory}
+                            onClick={handlePurgeVersionHistory}
+                          >
+                            {purgingHistory ? 'Purging History...' : 'Purge All Version History'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3. Restore Points / Checkpoints */}
                       <div className="card" style={{ margin: 0, padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -5608,9 +5950,14 @@ export default function LabSuiteBackup({ active = true }) {
                       </div>
                     </div>
 
-                    {/* 3. Manage Restore Points Table */}
+                    {/* 4. Manage Restore Points Table */}
                     <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
-                      <h3 style={{ margin: '0 0 12px 0', fontSize: '14px' }}>Stored Restore Points</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                        <h3 style={{ margin: 0, fontSize: '14px' }}>Stored Restore Points</h3>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          💡 Point-in-time indexes do not consume extra cloud storage; files are deduplicated.
+                        </span>
+                      </div>
                       {restorePoints.length === 0 ? (
                         <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No restore points recorded yet.</p>
                       ) : (
@@ -5661,7 +6008,7 @@ export default function LabSuiteBackup({ active = true }) {
                       )}
                     </div>
 
-                    {/* 4. Decommissioned / Remote Computers */}
+                    {/* 5. Decommissioned / Remote Computers */}
                     <div className="card" style={{ margin: 0, padding: '20px', border: '1px solid var(--border-color)' }}>
                       <h3 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Decommissioned Computer Backups in Cloud</h3>
                       <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>

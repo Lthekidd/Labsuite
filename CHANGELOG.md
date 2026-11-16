@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.10.50 - 2026-11-16
+
+### Google Drive Root Storage Analyzer, Orphaned Vault Purge & Massive Storage Reclamation
+
+- **Google Drive Root Storage Analyzer**:
+  - Added full top-level Google Drive storage inspection in **Restore → 🧹 Vault Cleanup**.
+  - Identifies all root folders by their unique Google Drive ID, resolving ambiguous duplicate folder names (e.g. multiple `LabSuite-Encrypted` folders).
+  - Displays calculated storage size and file counts dynamically per root folder.
+  - Automatically identifies and categorizes folders: `🟢 Active Vault`, `⚠️ Orphaned Vault`, or `📁 Drive Folder`.
+- **Orphaned Cloud Vaults Purge**:
+  - Added dedicated **Purge from Google Drive** action with confirmation modal to permanently erase abandoned or duplicate vault folders directly from Google Drive.
+  - Protected the active vault (`LABSUITE - DON'T DELETE`) from accidental deletion with strict backend and frontend safeguards.
+- **Deep Version History & Trash Cleanup**:
+  - Implemented **Purge All Version History** to permanently delete `.labsuite_history` and `.vaultsync_history` from the cloud, reclaiming gigabytes or terabytes of superseded file diffs without affecting current backups.
+  - Implemented **Empty All Vault Trash** purging both `.labsuite_trash` and legacy `.vaultsync_trash`.
+- **Cloud Account & Quota Overview**:
+  - Added real-time Google Drive storage usage progress bar and capacity summary directly in Vault Cleanup.
+  - Added clarifying contextual guidance explaining that Restore Points are deduplicated snapshot index records that do not consume extra cloud storage.
+
 ## 2.10.49 - 2026-11-16
 
 ### Vault Space Reclamation, Collapsible Sidebar, Embedded CryptPad Sync & Stability Hardening
