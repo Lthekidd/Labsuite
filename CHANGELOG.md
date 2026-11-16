@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.10.52 - 2026-11-16
+
+### Visual Storage Breakdown Audit & Anomaly Detection
+
+- **Visual Storage Breakdown Audit Card**:
+  - Added dedicated **📊 Storage Breakdown** card at the top of **Restore → 🧹 Vault Cleanup**.
+  - Displays a color-coded stacked progress bar and detailed breakdown across all storage categories:
+    - 📜 **Version History** (`.labsuite_history` & `.vaultsync_history`): accurately measured via `storage:measureHistory`.
+    - 🔴 **Orphaned Vaults**: legacy / duplicate root vault folders in Google Drive.
+    - 🗑️ **Vault Trash** (`.labsuite_trash` & `.vaultsync_trash`): accurately measured via `storage:measureTrash`.
+    - 📦 **Active Backups**: sum of all live backup folders in the encrypted vault.
+    - ⚪ **Other / System**: unaccounted or general Google Drive data.
+  - Interactive direct action buttons for each category to purge history, empty trash, or view folders directly.
+- **Large Folder Anomaly Detection**:
+  - Highlights backed-up folders exceeding 100 GiB with an alert banner and a `⚠️` warning badge next to the folder size.
+  - Helps users instantly spot anomalous data bloat (such as uncompressed disk images or runaway folders).
+- **Backed-Up Folders Totals Footer**:
+  - Added a live summary footer to the backed-up folders table showing the total measured size and progress indicator while folders are being measured.
+
 ## 2.10.51 - 2026-11-16
 
 ### Dedicated Backed-Up Folders Manager & Instant Cloud Folder Deletion

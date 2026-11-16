@@ -18,7 +18,9 @@ const expectedChannels = [
   'storage:purgeHistory',
   'storage:emptyAllTrash',
   'storage:deleteBackupFolder',
-  'storage:measureVaultFolderSize'
+  'storage:measureVaultFolderSize',
+  'storage:measureHistory',
+  'storage:measureTrash',
 ];
 
 for (const channel of expectedChannels) {
@@ -31,7 +33,7 @@ for (const channel of expectedChannels) {
     `ipc.js must register handler for channel ${channel}`
   );
 }
-console.log('  [PASS] Test Case 1: All 7 storage channels registered in preload.js and ipc.js');
+console.log(`  [PASS] Test Case 1: All ${expectedChannels.length} storage channels registered in preload.js and ipc.js`);
 
 // 2. rclone.js Exports Check
 const rclone = require('../main/rclone');
@@ -41,7 +43,9 @@ assert.strictEqual(typeof rclone.listGoogleDriveRootFolders, 'function', 'rclone
 assert.strictEqual(typeof rclone.getGoogleDriveFolderSize, 'function', 'rclone.getGoogleDriveFolderSize must be a function');
 assert.strictEqual(typeof rclone.getVaultFolderSize, 'function', 'rclone.getVaultFolderSize must be a function');
 assert.strictEqual(typeof rclone.purgeGoogleDriveFolderById, 'function', 'rclone.purgeGoogleDriveFolderById must be a function');
-console.log('  [PASS] Test Case 2: All 6 backend storage functions exported in rclone.js');
+assert.strictEqual(typeof rclone.getHistorySize, 'function', 'rclone.getHistorySize must be a function');
+assert.strictEqual(typeof rclone.getTrashSize, 'function', 'rclone.getTrashSize must be a function');
+console.log('  [PASS] Test Case 2: All 8 backend storage functions exported in rclone.js');
 
 // 3. Active Vault Deletion Guard
 (async () => {
@@ -65,6 +69,14 @@ console.log('  [PASS] Test Case 2: All 6 backend storage functions exported in r
   assert.ok(backupUiSource.includes('Purge All Version History'), 'UI must include Purge All Version History button');
   assert.ok(backupUiSource.includes('Empty Vault Trash Now'), 'UI must include Empty Vault Trash button');
   assert.ok(backupUiSource.includes('Connected Google Drive Account'), 'UI must render Google Drive account summary');
+  // Storage Breakdown Audit card checks
+  assert.ok(backupUiSource.includes('Storage Breakdown'), 'UI must render Storage Breakdown card');
+  assert.ok(backupUiSource.includes('Version History'), 'UI must show Version History row in breakdown');
+  assert.ok(backupUiSource.includes('Orphaned Vaults'), 'UI must show Orphaned Vaults row in breakdown');
+  assert.ok(backupUiSource.includes('Vault Trash'), 'UI must show Vault Trash row in breakdown');
+  assert.ok(backupUiSource.includes('Active Backups'), 'UI must show Active Backups row in breakdown');
+  assert.ok(backupUiSource.includes('Re-run Audit'), 'UI must include Re-run Audit button');
+  assert.ok(backupUiSource.includes('unusually large'), 'UI must include anomaly warning in table footer');
   console.log('  [PASS] Test Case 4: UI rendering elements verified in LabSuiteBackup.jsx');
 
   console.log('=======================================================');

@@ -533,6 +533,10 @@ export default function LabSuiteBackup({ active = true }) {
   const [purgingHistory, setPurgingHistory] = useState(false);
   const [vaultFolderSizes, setVaultFolderSizes] = useState({});
   const [deletingFolderRemotePath, setDeletingFolderRemotePath] = useState(null);
+  // Storage Breakdown Audit State
+  const [historySize, setHistorySize] = useState(null);   // { bytes, count, loading, error }
+  const [trashSize, setTrashSize] = useState(null);       // { bytes, count, loading, error }
+  const [auditRunning, setAuditRunning] = useState(false);
 
   const [mountInfo, setMountInfo] = useState({ status: 'unmounted', drive: null, error: '' });
   const [showWinfspDialog, setShowWinfspDialog] = useState(false);
@@ -2415,6 +2419,36 @@ export default function LabSuiteBackup({ active = true }) {
     }
   };
 
+  const handleRunStorageAudit = async () => {
+    if (auditRunning) return;
+    setAuditRunning(true);
+    // Measure history size (fire and forget — results flow into state)
+    setHistorySize(prev => ({ ...(prev || {}), loading: true }));
+    ipcRenderer.invoke('storage:measureHistory').then(res => {
+      if (res && res.success) {
+        setHistorySize({ bytes: res.bytes, count: res.count, loading: false });
+      } else {
+        setHistorySize({ bytes: 0, count: 0, loading: false, error: res?.error || 'Failed' });
+      }
+    }).catch(err => setHistorySize({ bytes: 0, count: 0, loading: false, error: err.message }))
+      .finally(() => setAuditRunning(false));
+
+    // Measure trash size
+    setTrashSize(prev => ({ ...(prev || {}), loading: true }));
+    ipcRenderer.invoke('storage:measureTrash').then(res => {
+      if (res && res.success) {
+        setTrashSize({ bytes: res.bytes, count: res.count, loading: false });
+      } else {
+        setTrashSize({ bytes: 0, count: 0, loading: false, error: res?.error || 'Failed' });
+      }
+    }).catch(err => setTrashSize({ bytes: 0, count: 0, loading: false, error: err.message }));
+
+    // Scan drive roots if not already loaded
+    if (driveRoots.length === 0 && !driveRootsLoading) {
+      handleScanDriveRoots();
+    }
+  };
+
   const handleMeasureVaultFolderSize = async (remotePath) => {
     if (!remotePath) return;
     setVaultFolderSizes(prev => ({ ...prev, [remotePath]: { loading: true } }));
@@ -2474,8 +2508,9 @@ export default function LabSuiteBackup({ active = true }) {
 
   useEffect(() => {
     if (activeTab === 'restore' && restoreSubTab === 'cleanup') {
-      if (driveRoots.length === 0 && !driveRootsLoading) {
-        handleScanDriveRoots();
+      // Trigger full storage audit on first open
+      if (!historySize && !trashSize && !auditRunning) {
+        handleRunStorageAudit();
       }
       // Measure vault folders that don't have recorded size yet
       for (const folder of restorableFoldersList) {
@@ -5800,8 +5835,107 @@ export default function LabSuiteBackup({ active = true }) {
                       )}
                     </div>
 
+                    {/* ── Storage Breakdown Audit Card ── */}
+                    {(() => {
+                      const totalDrive = gdriveInfo.used || 0;
+                      const histBytes = historySize?.bytes || 0;
+                      const trashBytes = trashSize?.bytes || 0;
+                      const folderBytes = Object.values(vaultFolderSizes).reduce((sum, s) => sum + (s?.bytes || 0), 0);
+                      const orphanBytes = driveRoots
+                        .filter(r => r.isOrphaned)
+                        .reduce((sum, r) => sum + (driveFolderSizes[r.id]?.bytes || 0), 0);
+                      const accounted = histBytes + trashBytes + folderBytes + orphanBytes;
+                      const other = Math.max(0, totalDrive - accounted);
+                      const pct = (n) => totalDrive > 0 ? Math.min(100, (n / totalDrive) * 100) : 0;
+
+                      const isLoading = historySize?.loading || trashSize?.loading;
+                      const hasData = historySize || trashSize;
+
+                      return (
+                        <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }} id="storage-breakdown">
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                            <div>
+                              <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>📊 Storage Breakdown</span>
+                                {isLoading && <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 400 }}>Measuring...</span>}
+                              </h3>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                                Where your {totalDrive > 0 ? formatBytes(totalDrive) : '—'} of Google Drive storage is being used.
+                              </p>
+                            </div>
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 14px', fontSize: '12px' }}
+                              disabled={auditRunning || isLoading}
+                              onClick={handleRunStorageAudit}
+                            >
+                              {auditRunning || isLoading ? '⏳ Measuring...' : '🔄 Re-run Audit'}
+                            </button>
+                          </div>
+
+                          {!hasData && !isLoading ? (
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                              Click <strong>Re-run Audit</strong> to measure all storage categories.
+                            </p>
+                          ) : (
+                            <>
+                              {/* Stacked bar */}
+                              {totalDrive > 0 && (
+                                <div style={{ marginBottom: '16px', borderRadius: '6px', overflow: 'hidden', height: '10px', display: 'flex', background: 'rgba(255,255,255,0.06)' }}>
+                                  {histBytes > 0 && <div style={{ width: `${pct(histBytes)}%`, background: '#f59e0b', transition: 'width 0.5s ease' }} title={`Version History: ${formatBytes(histBytes)}`} />}
+                                  {orphanBytes > 0 && <div style={{ width: `${pct(orphanBytes)}%`, background: '#ef4444', transition: 'width 0.5s ease' }} title={`Orphaned Vaults: ${formatBytes(orphanBytes)}`} />}
+                                  {trashBytes > 0 && <div style={{ width: `${pct(trashBytes)}%`, background: '#8b5cf6', transition: 'width 0.5s ease' }} title={`Vault Trash: ${formatBytes(trashBytes)}`} />}
+                                  {folderBytes > 0 && <div style={{ width: `${pct(folderBytes)}%`, background: '#10b981', transition: 'width 0.5s ease' }} title={`Active Backups: ${formatBytes(folderBytes)}`} />}
+                                  {other > 0 && <div style={{ width: `${pct(other)}%`, background: 'rgba(255,255,255,0.15)', transition: 'width 0.5s ease' }} title={`Other: ${formatBytes(other)}`} />}
+                                </div>
+                              )}
+
+                              {/* Legend rows */}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {[
+                                  { dot: '#f59e0b', label: '📜 Version History', bytes: histBytes, loading: historySize?.loading, action: 'Purge All →', onAction: () => document.getElementById('purge-history-btn')?.click(), desc: '.labsuite_history • accumulates old file versions on every sync' },
+                                  { dot: '#ef4444', label: '🔴 Orphaned Vaults', bytes: orphanBytes, loading: driveRootsLoading, action: 'View →', onAction: () => document.getElementById('drive-roots-section')?.scrollIntoView({ behavior: 'smooth' }), desc: 'Duplicate/old LabSuite vault root folders in Google Drive' },
+                                  { dot: '#8b5cf6', label: '🗑️ Vault Trash', bytes: trashBytes, loading: trashSize?.loading, action: 'Empty Trash →', onAction: () => document.getElementById('empty-trash-btn')?.click(), desc: '.labsuite_trash • deleted files staged for removal' },
+                                  { dot: '#10b981', label: '📦 Active Backups', bytes: folderBytes, loading: Object.values(vaultFolderSizes).some(s => s?.loading), action: 'Manage →', onAction: () => document.getElementById('backed-up-folders')?.scrollIntoView({ behavior: 'smooth' }), desc: 'Your backed-up folder contents in the encrypted vault' },
+                                  { dot: 'rgba(255,255,255,0.3)', label: '⚪ Other / System', bytes: other, loading: false, action: null, desc: 'App data, logs, or unaccounted Drive usage' },
+                                ].map(row => (
+                                  <div key={row.label} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', borderRadius: '5px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: row.dot, flexShrink: 0 }} />
+                                    <div style={{ flex: '0 0 170px', fontSize: '12px', fontWeight: 600, color: 'var(--text-main)' }}>{row.label}</div>
+                                    <div style={{ flex: '0 0 100px', fontSize: '12px', fontWeight: 700, color: row.bytes > 500 * 1024 * 1024 * 1024 ? '#ef4444' : 'var(--text-main)' }}>
+                                      {row.loading ? <span style={{ color: 'var(--text-muted)' }}>Measuring…</span> : (row.bytes > 0 ? formatBytes(row.bytes) : <span style={{ color: 'var(--text-muted)' }}>—</span>)}
+                                    </div>
+                                    <div style={{ flex: '0 0 50px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      {totalDrive > 0 && row.bytes > 0 ? `${pct(row.bytes).toFixed(1)}%` : ''}
+                                    </div>
+                                    <div style={{ flex: 1, fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>{row.desc}</div>
+                                    {row.action && (
+                                      <button
+                                        className="btn btn-secondary"
+                                        style={{ padding: '2px 8px', fontSize: '10px', flexShrink: 0 }}
+                                        onClick={row.onAction}
+                                      >
+                                        {row.action}
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+
+                              {/* Warning: single large anomalous entry */}
+                              {Object.entries(vaultFolderSizes).some(([, s]) => (s?.bytes || 0) > 100 * 1024 * 1024 * 1024) && (
+                                <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', fontSize: '12px', color: '#ef4444' }}>
+                                  ⚠️ <strong>Anomaly detected:</strong> One or more backed-up folders exceed 100 GiB. Scroll down to the folders table — look for the ⚠️ warning badge to identify the culprit and consider deleting it from cloud if it's not needed.
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Backed-Up Folders in Vault */}
-                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }} id="backed-up-folders">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                         <div>
                           <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -5841,6 +5975,7 @@ export default function LabSuiteBackup({ active = true }) {
                                 const bytes = sizeInfo?.bytes !== undefined ? sizeInfo.bytes : (folder.sync_bytes_total || matchingPoint?.bytes_total || 0);
                                 const count = sizeInfo?.count !== undefined ? sizeInfo.count : (folder.sync_files_total || matchingPoint?.files_total || 0);
                                 const isDeletingThis = deletingFolderRemotePath === folder.remote_path;
+                                const isAnomalous = bytes > 100 * 1024 * 1024 * 1024; // >100 GiB
 
                                 return (
                                   <tr key={folder.id || folder.remote_path} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -5869,7 +6004,10 @@ export default function LabSuiteBackup({ active = true }) {
                                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>⏳ Measuring...</span>
                                       ) : bytes > 0 ? (
                                         <span>
-                                          <strong>{formatBytes(bytes)}</strong>
+                                          {isAnomalous && (
+                                            <span title="This folder is unusually large. Consider deleting if not needed." style={{ marginRight: '6px', fontSize: '13px' }}>⚠️</span>
+                                          )}
+                                          <strong style={{ color: isAnomalous ? '#ef4444' : 'var(--text-main)' }}>{formatBytes(bytes)}</strong>
                                           <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: '6px' }}>
                                             ({count.toLocaleString()} files)
                                           </span>
@@ -5898,13 +6036,33 @@ export default function LabSuiteBackup({ active = true }) {
                                 );
                               })}
                             </tbody>
+                            {(() => {
+                              const measuredFolders = restorableFoldersList.filter(f => vaultFolderSizes[f.remote_path]?.bytes !== undefined);
+                              const stillMeasuring = restorableFoldersList.filter(f => vaultFolderSizes[f.remote_path]?.loading).length;
+                              const totalBytes = measuredFolders.reduce((sum, f) => sum + (vaultFolderSizes[f.remote_path]?.bytes || 0), 0);
+                              const anomalyCount = measuredFolders.filter(f => (vaultFolderSizes[f.remote_path]?.bytes || 0) > 100 * 1024 * 1024 * 1024).length;
+                              if (measuredFolders.length === 0 && stillMeasuring === 0) return null;
+                              return (
+                                <tfoot>
+                                  <tr style={{ background: 'rgba(0,0,0,0.3)', borderTop: '1px solid var(--border-color)' }}>
+                                    <td colSpan={3} style={{ padding: '8px 14px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                      {stillMeasuring > 0 ? `⏳ Measuring ${stillMeasuring} more folder${stillMeasuring > 1 ? 's' : ''}…` : `${measuredFolders.length} of ${restorableFoldersList.length} folders measured`}
+                                      {anomalyCount > 0 && <span style={{ marginLeft: '10px', color: '#ef4444', fontWeight: 600 }}>⚠️ {anomalyCount} unusually large (&gt;100 GiB)</span>}
+                                    </td>
+                                    <td colSpan={2} style={{ padding: '8px 14px', fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', textAlign: 'right' }}>
+                                      {totalBytes > 0 ? `Total: ${formatBytes(totalBytes)}` : ''}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              );
+                            })()}
                           </table>
                         </div>
                       )}
                     </div>
 
                     {/* Google Drive Root Storage Analyzer */}
-                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
+                    <div className="card" id="drive-roots-section" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                         <div>
                           <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -6053,6 +6211,7 @@ export default function LabSuiteBackup({ active = true }) {
                         </div>
                         <div style={{ marginTop: '16px' }}>
                           <button
+                            id="empty-trash-btn"
                             className="btn btn-danger"
                             style={{ width: '100%', padding: '9px 16px', fontSize: '12.5px', fontWeight: 600 }}
                             disabled={purgingTrash}
@@ -6080,6 +6239,7 @@ export default function LabSuiteBackup({ active = true }) {
                         </div>
                         <div style={{ marginTop: '16px' }}>
                           <button
+                            id="purge-history-btn"
                             className="btn btn-secondary"
                             style={{ width: '100%', padding: '9px 16px', fontSize: '12.5px', fontWeight: 600, color: '#f59e0b', borderColor: 'rgba(245,158,11,0.3)' }}
                             disabled={purgingHistory}

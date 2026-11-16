@@ -90,6 +90,8 @@ const INVOKE_CHANNELS = new Set([
   'storage:emptyAllTrash',
   'storage:deleteBackupFolder',
   'storage:measureVaultFolderSize',
+  'storage:measureHistory',
+  'storage:measureTrash',
 
   // Filesystem API
   'filesystem:listDrives',

@@ -2052,6 +2052,14 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return await rclone.getVaultFolderSize(remotePath);
   });
 
+  ipcMain.handle('storage:measureHistory', async () => {
+    return await rclone.getHistorySize();
+  });
+
+  ipcMain.handle('storage:measureTrash', async () => {
+    return await rclone.getTrashSize();
+  });
+
   // Helper to push restore activity rows to the Activity feed
   const sendRestoreActivityRow = (job, stage = 'restoring', extra = {}) => {
     const bytesDone = Math.max(0, Number(job.bytesDone) || 0);

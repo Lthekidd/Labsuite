@@ -2020,6 +2020,62 @@ async function getVaultFolderSize(remotePath) {
   }
 }
 
+/**
+ * Measures the total size of version history folders (.labsuite_history + .vaultsync_history).
+ */
+async function getHistorySize() {
+  const remote = getRemote();
+  let totalBytes = 0;
+  let totalCount = 0;
+  const details = [];
+  for (const histFolder of ['.labsuite_history', '.vaultsync_history']) {
+    try {
+      const sizeOut = await runRclone(['size', `${remote}:${histFolder}`, '--json'], { timeoutMs: 120000 });
+      const parsed = safeParseJson(sizeOut);
+      const bytes = Number(parsed?.bytes) || 0;
+      const count = Number(parsed?.count) || 0;
+      totalBytes += bytes;
+      totalCount += count;
+      details.push({ folder: histFolder, bytes, count, success: true });
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        details.push({ folder: histFolder, bytes: 0, count: 0, success: true, skipped: true });
+      } else {
+        details.push({ folder: histFolder, bytes: 0, count: 0, success: false, error: err.message });
+      }
+    }
+  }
+  return { success: true, bytes: totalBytes, count: totalCount, details };
+}
+
+/**
+ * Measures the total size of vault trash folders (.labsuite_trash + .vaultsync_trash).
+ */
+async function getTrashSize() {
+  const remote = getRemote();
+  let totalBytes = 0;
+  let totalCount = 0;
+  const details = [];
+  for (const trashFolder of ['.labsuite_trash', '.vaultsync_trash']) {
+    try {
+      const sizeOut = await runRclone(['size', `${remote}:${trashFolder}`, '--json'], { timeoutMs: 120000 });
+      const parsed = safeParseJson(sizeOut);
+      const bytes = Number(parsed?.bytes) || 0;
+      const count = Number(parsed?.count) || 0;
+      totalBytes += bytes;
+      totalCount += count;
+      details.push({ folder: trashFolder, bytes, count, success: true });
+    } catch (err) {
+      if (isNotFoundError(err)) {
+        details.push({ folder: trashFolder, bytes: 0, count: 0, success: true, skipped: true });
+      } else {
+        details.push({ folder: trashFolder, bytes: 0, count: 0, success: false, error: err.message });
+      }
+    }
+  }
+  return { success: true, bytes: totalBytes, count: totalCount, details };
+}
+
 function moveRemoteFile(remoteFilePath, destinationRemoteFilePath) {
   const remote = getRemote();
 
@@ -2820,6 +2876,8 @@ module.exports = {
   listGoogleDriveRootFolders,
   getGoogleDriveFolderSize,
   getVaultFolderSize,
+  getHistorySize,
+  getTrashSize,
   purgeGoogleDriveFolderById,
   moveRemoteFile,
   restore,
