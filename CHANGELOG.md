@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.10.51 - 2026-11-16
+
+### Dedicated Backed-Up Folders Manager & Instant Cloud Folder Deletion
+
+- **Dedicated Backed-Up Folders Manager**:
+  - Added dedicated **Backed-Up Folders in Google Drive** manager in **Restore → 🧹 Vault Cleanup**.
+  - Displays all configured folders with their paths, computer names, active/cloud-only status, file counts, and exact cloud sizes.
+- **One-Click Delete Folder from Cloud**:
+  - Implemented **`🗑️ Delete Folder from Cloud`** button for every backed-up folder with strict confirmation.
+  - Automatically unregisters/stops local backup watch on the PC and permanently purges the folder from Google Drive, immediately freeing up tens or hundreds of gigabytes of cloud storage.
+- **Live Vault Folder Sizing**:
+  - Added on-demand and automatic size calculation for individual folders inside the encrypted cloud vault via `storage:measureVaultFolderSize`.
+
 ## 2.10.50 - 2026-11-16
 
 ### Google Drive Root Storage Analyzer, Orphaned Vault Purge & Massive Storage Reclamation

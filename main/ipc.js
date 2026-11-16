@@ -2025,6 +2025,33 @@ function setupIpc(mainWindowArg, getMainWindow, createAppWindow) {
     return result;
   });
 
+  ipcMain.handle('storage:deleteBackupFolder', async (event, { folderId, remotePath } = {}) => {
+    const folders = db.getFolders();
+    const folder = folders.find(f => (folderId && f.id === folderId) || (remotePath && f.remote_path === remotePath));
+    if (folder) {
+      watcher.removePath(folder.local_path);
+      backupWorker.clearDirtyFolder(folder.id);
+      db.removeFolder(folder.id);
+    }
+    const targetPath = (remotePath || folder?.remote_path || '').replace(/^\/+|\/+$/g, '');
+    let purgeResult = null;
+    if (targetPath) {
+      purgeResult = await rclone.purgeRemotePath(targetPath);
+      cleanupLocalRecordsForDeletedRemotePath(targetPath);
+    }
+    directBrowseCache.clear();
+    packedBrowseCache.clear();
+    await remoteCatalog.publish().catch(error => {
+      console.warn('LabSuite: Failed to publish remote catalog after folder purge:', error.message);
+    });
+    sendToRenderer('status:change', { status: 'idle', details: 'Folder deleted from vault' });
+    return { success: true, remotePath: targetPath, purgeResult };
+  });
+
+  ipcMain.handle('storage:measureVaultFolderSize', async (event, remotePath) => {
+    return await rclone.getVaultFolderSize(remotePath);
+  });
+
   // Helper to push restore activity rows to the Activity feed
   const sendRestoreActivityRow = (job, stage = 'restoring', extra = {}) => {
     const bytesDone = Math.max(0, Number(job.bytesDone) || 0);

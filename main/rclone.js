@@ -1998,6 +1998,28 @@ async function purgeGoogleDriveFolderById(folderId, folderName = '', force = fal
   return { success: true, folderId, folderName };
 }
 
+async function getVaultFolderSize(remotePath) {
+  const normalized = String(remotePath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  if (!normalized) throw new Error('A remote vault path is required.');
+  const remote = getRemote();
+  try {
+    const sizeOut = await runRclone(['size', `${remote}:${normalized}`, '--json'], { timeoutMs: 60000 });
+    const parsed = safeParseJson(sizeOut);
+    return {
+      success: true,
+      remotePath: normalized,
+      bytes: Number(parsed?.bytes) || 0,
+      count: Number(parsed?.count) || 0
+    };
+  } catch (err) {
+    return {
+      success: false,
+      remotePath: normalized,
+      error: err.message
+    };
+  }
+}
+
 function moveRemoteFile(remoteFilePath, destinationRemoteFilePath) {
   const remote = getRemote();
 
@@ -2797,6 +2819,7 @@ module.exports = {
   purgeAllVersionHistory,
   listGoogleDriveRootFolders,
   getGoogleDriveFolderSize,
+  getVaultFolderSize,
   purgeGoogleDriveFolderById,
   moveRemoteFile,
   restore,

@@ -16,7 +16,9 @@ const expectedChannels = [
   'storage:measureFolderSize',
   'storage:purgeDriveRoot',
   'storage:purgeHistory',
-  'storage:emptyAllTrash'
+  'storage:emptyAllTrash',
+  'storage:deleteBackupFolder',
+  'storage:measureVaultFolderSize'
 ];
 
 for (const channel of expectedChannels) {
@@ -29,7 +31,7 @@ for (const channel of expectedChannels) {
     `ipc.js must register handler for channel ${channel}`
   );
 }
-console.log('  [PASS] Test Case 1: All 5 storage channels registered in preload.js and ipc.js');
+console.log('  [PASS] Test Case 1: All 7 storage channels registered in preload.js and ipc.js');
 
 // 2. rclone.js Exports Check
 const rclone = require('../main/rclone');
@@ -37,8 +39,9 @@ assert.strictEqual(typeof rclone.emptyAllVaultTrash, 'function', 'rclone.emptyAl
 assert.strictEqual(typeof rclone.purgeAllVersionHistory, 'function', 'rclone.purgeAllVersionHistory must be a function');
 assert.strictEqual(typeof rclone.listGoogleDriveRootFolders, 'function', 'rclone.listGoogleDriveRootFolders must be a function');
 assert.strictEqual(typeof rclone.getGoogleDriveFolderSize, 'function', 'rclone.getGoogleDriveFolderSize must be a function');
+assert.strictEqual(typeof rclone.getVaultFolderSize, 'function', 'rclone.getVaultFolderSize must be a function');
 assert.strictEqual(typeof rclone.purgeGoogleDriveFolderById, 'function', 'rclone.purgeGoogleDriveFolderById must be a function');
-console.log('  [PASS] Test Case 2: All 5 backend storage functions exported in rclone.js');
+console.log('  [PASS] Test Case 2: All 6 backend storage functions exported in rclone.js');
 
 // 3. Active Vault Deletion Guard
 (async () => {
@@ -54,6 +57,8 @@ console.log('  [PASS] Test Case 2: All 5 backend storage functions exported in r
   console.log('  [PASS] Test Case 3: Active vault deletion guard verified (protected against accidental purge)');
 
   // 4. UI Elements Check
+  assert.ok(backupUiSource.includes('Backed-Up Folders in Google Drive'), 'UI must render Backed-Up Folders in Google Drive card');
+  assert.ok(backupUiSource.includes('Delete from Cloud'), 'UI must include Delete from Cloud action');
   assert.ok(backupUiSource.includes('Google Drive Root Vaults & Folders'), 'UI must render Google Drive root vaults card');
   assert.ok(backupUiSource.includes('Scan Root Folders'), 'UI must include Scan Root Folders action');
   assert.ok(backupUiSource.includes('Purge from Google Drive'), 'UI must include Purge from Google Drive button');

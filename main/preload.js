@@ -88,6 +88,8 @@ const INVOKE_CHANNELS = new Set([
   'storage:purgeDriveRoot',
   'storage:purgeHistory',
   'storage:emptyAllTrash',
+  'storage:deleteBackupFolder',
+  'storage:measureVaultFolderSize',
 
   // Filesystem API
   'filesystem:listDrives',

@@ -531,6 +531,8 @@ export default function LabSuiteBackup({ active = true }) {
   const [purgingFolderId, setPurgingFolderId] = useState(null);
   const [purgingTrash, setPurgingTrash] = useState(false);
   const [purgingHistory, setPurgingHistory] = useState(false);
+  const [vaultFolderSizes, setVaultFolderSizes] = useState({});
+  const [deletingFolderRemotePath, setDeletingFolderRemotePath] = useState(null);
 
   const [mountInfo, setMountInfo] = useState({ status: 'unmounted', drive: null, error: '' });
   const [showWinfspDialog, setShowWinfspDialog] = useState(false);
@@ -2413,10 +2415,73 @@ export default function LabSuiteBackup({ active = true }) {
     }
   };
 
+  const handleMeasureVaultFolderSize = async (remotePath) => {
+    if (!remotePath) return;
+    setVaultFolderSizes(prev => ({ ...prev, [remotePath]: { loading: true } }));
+    try {
+      const res = await ipcRenderer.invoke('storage:measureVaultFolderSize', remotePath);
+      if (res && res.success) {
+        setVaultFolderSizes(prev => ({
+          ...prev,
+          [remotePath]: { bytes: res.bytes, count: res.count, loading: false }
+        }));
+      } else {
+        setVaultFolderSizes(prev => ({
+          ...prev,
+          [remotePath]: { error: res?.error || 'Failed', loading: false }
+        }));
+      }
+    } catch (err) {
+      setVaultFolderSizes(prev => ({
+        ...prev,
+        [remotePath]: { error: err.message, loading: false }
+      }));
+    }
+  };
+
+  const handleDeleteBackupFolder = async (folder, bytes, count) => {
+    const sizeStr = bytes > 0 ? `\nCloud Size: ${formatBytes(bytes)} (${(count || 0).toLocaleString()} files)` : '';
+    const folderName = folder.local_path || folder.remote_path;
+
+    const confirmed = confirm(
+      `⚠️ PERMANENTLY DELETE FOLDER FROM GOOGLE DRIVE?\n\n` +
+      `Folder: ${folderName}\n` +
+      `Computer: ${folder.remote_computer_name || 'This PC'}` +
+      sizeStr +
+      `\n\nThis will:\n` +
+      `1. Stop backing up this folder on your computer.\n` +
+      `2. Permanently erase all its backed-up files from Google Drive to immediately free up space.\n\n` +
+      `(Your local files on your computer will NOT be touched.)\n\n` +
+      `⚠️ THIS ACTION CANNOT BE UNDONE.\n\n` +
+      `Proceed with permanent deletion?`
+    );
+    if (!confirmed) return;
+
+    setDeletingFolderRemotePath(folder.remote_path);
+    try {
+      await ipcRenderer.invoke('storage:deleteBackupFolder', { folderId: folder.id, remotePath: folder.remote_path });
+      alert(`"${folderName}" was successfully deleted from Google Drive. Cloud storage reclaimed.`);
+      invalidateResource('folders:list');
+      invalidateResource('backup:restorePoints');
+      invalidateResource('auth:getGDriveInfo');
+      loadAppConfigs();
+    } catch (err) {
+      alert(`Failed to delete folder from cloud: ${err.message}`);
+    } finally {
+      setDeletingFolderRemotePath(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'restore' && restoreSubTab === 'cleanup') {
       if (driveRoots.length === 0 && !driveRootsLoading) {
         handleScanDriveRoots();
+      }
+      // Measure vault folders that don't have recorded size yet
+      for (const folder of restorableFoldersList) {
+        if (folder.remote_path && !vaultFolderSizes[folder.remote_path]) {
+          handleMeasureVaultFolderSize(folder.remote_path);
+        }
       }
     }
   }, [activeTab, restoreSubTab]);
@@ -5731,6 +5796,109 @@ export default function LabSuiteBackup({ active = true }) {
                               transition: 'width 0.3s ease'
                             }}
                           />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Backed-Up Folders in Vault */}
+                    <div className="card" style={{ margin: '0 0 20px 0', padding: '20px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>📦 Backed-Up Folders in Google Drive</span>
+                          </h3>
+                          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                            All folders stored in your encrypted cloud vault. You can delete any folder to stop backing it up and permanently reclaim its cloud storage.
+                          </p>
+                        </div>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                          {restorableFoldersList.length} folders in vault
+                        </span>
+                      </div>
+
+                      {restorableFoldersList.length === 0 ? (
+                        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)', margin: 0 }}>No backup folders configured yet.</p>
+                      ) : (
+                        <div style={{ border: '1px solid var(--border-color)', borderRadius: '6px', overflow: 'hidden' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(0,0,0,0.25)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                                <th style={{ padding: '10px 14px' }}>Folder Path</th>
+                                <th style={{ padding: '10px 14px' }}>Computer</th>
+                                <th style={{ padding: '10px 14px' }}>Status</th>
+                                <th style={{ padding: '10px 14px' }}>Cloud Size</th>
+                                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {restorableFoldersList.map(folder => {
+                                const isEnabled = isBackupFolderEnabled(folder);
+                                const matchingPoint = restorePoints.find(p =>
+                                  p.folder_id === folder.id ||
+                                  (p.folder_path && folder.local_path && p.folder_path.toLowerCase() === folder.local_path.toLowerCase())
+                                );
+                                const sizeInfo = vaultFolderSizes[folder.remote_path];
+                                const bytes = sizeInfo?.bytes !== undefined ? sizeInfo.bytes : (folder.sync_bytes_total || matchingPoint?.bytes_total || 0);
+                                const count = sizeInfo?.count !== undefined ? sizeInfo.count : (folder.sync_files_total || matchingPoint?.files_total || 0);
+                                const isDeletingThis = deletingFolderRemotePath === folder.remote_path;
+
+                                return (
+                                  <tr key={folder.id || folder.remote_path} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                                    <td style={{ padding: '10px 14px', fontWeight: 600, maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={folder.local_path || folder.remote_path}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span>📁</span>
+                                        <span>{folder.local_path || folder.remote_path}</span>
+                                      </div>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', color: 'var(--text-muted)' }}>
+                                      {folder.remote_computer_name || 'This PC'}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      {isEnabled ? (
+                                        <span style={{ fontSize: '11px', color: '#10b981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                          Active Backup
+                                        </span>
+                                      ) : (
+                                        <span style={{ fontSize: '11px', color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                                          Cloud Only
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '10px 14px' }}>
+                                      {sizeInfo?.loading ? (
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>⏳ Measuring...</span>
+                                      ) : bytes > 0 ? (
+                                        <span>
+                                          <strong>{formatBytes(bytes)}</strong>
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '11px', marginLeft: '6px' }}>
+                                            ({count.toLocaleString()} files)
+                                          </span>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          className="btn btn-secondary"
+                                          style={{ padding: '2px 8px', fontSize: '11px' }}
+                                          onClick={() => handleMeasureVaultFolderSize(folder.remote_path)}
+                                        >
+                                          Calculate Size
+                                        </button>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                      <button
+                                        className="btn btn-danger"
+                                        style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 600 }}
+                                        disabled={isDeletingThis || deletingFolderRemotePath !== null}
+                                        onClick={() => handleDeleteBackupFolder(folder, bytes, count)}
+                                      >
+                                        {isDeletingThis ? 'Deleting...' : '🗑️ Delete from Cloud'}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </div>
